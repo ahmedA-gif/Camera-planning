@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPlanEngine } from '@/lib/plan-engine/engine';
 import { getAIConfig } from '@/lib/ai-provider';
 
+// Allow slow AI providers room to answer on Vercel (Hobby plan caps at 60s).
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

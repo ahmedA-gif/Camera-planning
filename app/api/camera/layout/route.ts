@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { fetchOpenRouter, getLayoutAIConfig, getLayoutAICompletionsURL } from '@/lib/ai-provider';
 
+// Allow OpenRouter free models room to answer on Vercel (Hobby plan caps at 60s).
+export const maxDuration = 60;
+
 const AI_CONFIG = getLayoutAIConfig();
 
 /** Known-good free models used when the configured router/model returns unusable JSON. */
@@ -153,10 +156,15 @@ export async function POST(request: NextRequest) {
       : `The project already has drawn site structure; do NOT duplicate it. You may return an empty "structure" array.`;
     const systemPrompt = `You are a computer-vision site and camera-layout planner with reasoning. Work from the supplied scenario, requirements, use cases, and existing drawing.
 ${structureInstruction}
-Then produce ${requestedCount} additional camera suggestion(s) for the selected project (produce exactly ${requestedCount}, or as close as possible). Use normalized map coordinates from 0 to 1. Position cameras to cover the supplied zones, critical components, entrances, and use cases; account for existing camera positions, walls, and obstacles to avoid duplicates or blocked sight lines. Treat coordinates and view ranges as editable conceptual suggestions, never as measured placements. Keep positions within 0.05-0.95, orientation between 0-359 degrees, horizontal FOV between 30-120 degrees, and view range between 0.2-0.8. Assign only supplied use-case IDs. Explain the reasoning behind the overall plan and each camera briefly. Return JSON only, with this shape: {"summary":"...","reasoning":["..."],"structure":[{"name":"...","type":"wall|obstacle|entrance","points":[{"x":0.1,"y":0.1},{"x":0.9,"y":0.1}],"rationale":"..."}],"cameras":[{"name":"...","x":0.5,"y":0.5,"orientation_degrees":180,"horizontal_fov_degrees":90,"view_range":0.5,"resolution_width":1920,"resolution_height":1080,"assigned_use_case_ids":[],"target_area":"...","rationale":"..."}]}. For "wall" and "entrance" use 2 points per segment; for "obstacle" use 4 points forming a rectangle. Keep "reasoning" to at most 6 short items.`;
+Then produce ${requestedCount} additional camera suggestion(s) for the selected project (produce exactly ${requestedCount}, or as close as possible). Use normalized map coordinates from 0 to 1. Position cameras to cover the supplied zones, critical components, entrances, and use cases; account for existing camera positions, walls, and obstacles to avoid duplicates or blocked sight lines. Treat coordinates and view ranges as editable conceptual suggestions, never as measured placements. Keep positions within 0.05-0.95, orientation between 0-359 degrees, horizontal FOV between 30-120 degrees, and view range between 0.2-0.8. Assign only supplied use-case IDs. Explain the reasoning behind the overall plan and each camera briefly. Return compact single-line JSON only (no code fences, no pretty printing), with this shape: {"summary":"...","reasoning":["..."],"structure":[{"name":"...","type":"wall|obstacle|entrance","points":[{"x":0.1,"y":0.1},{"x":0.9,"y":0.1}],"rationale":"..."}],"cameras":[{"name":"...","x":0.5,"y":0.5,"orientation_degrees":180,"horizontal_fov_degrees":90,"view_range":0.5,"resolution_width":1920,"resolution_height":1080,"assigned_use_case_ids":[],"target_area":"...","rationale":"..."}]}. For "wall" and "entrance" use 2 points per segment; for "obstacle" use 4 points forming a rectangle. Keep "reasoning" to at most 6 short items.`;
     const userPrompt = `Requested additional camera count: ${requestedCount}. Generate site structure first if the project has none, then cameras.\nSelected project and scenario context:\n${JSON.stringify(context)}`;
 
-    async function callModel(model: string, jsonMode: boolean) {
+    // OpenRouter free models queue unpredictably, so race the whole model chain
+    // concurrently and keep the first valid layout. This keeps the total request
+    // comfortably inside Vercel's 60s function budget.
+    const ATTEMPT_TIMEOUT_MS = 45_000;
+
+    async function callModel(model: string, jsonMode: boolean, signal: AbortSignal) {
       return fetchOpenRouter(model, getLayoutAICompletionsURL(), {
         method: 'POST',
         headers: {
@@ -172,64 +180,111 @@ Then produce ${requestedCount} additional camera suggestion(s) for the selected 
           max_completion_tokens: Math.min(2400, 700 + requestedCount * 200),
           ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
         }),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.any([AbortSignal.timeout(ATTEMPT_TIMEOUT_MS), signal]),
       });
     }
 
     const modelChain = getLayoutModelChain(AI_CONFIG.model);
-    let lastFailure: { status: number; detail: string; response: Response } | null = null;
-    let parsed: Record<string, unknown> | null = null;
-    let parsedCameras: unknown[] = [];
-    let parsedStructure: NormalizedStructure[] = [];
-    let responseUsage: Record<string, unknown> | null = null;
-    let modelUsed = modelChain[0];
 
-    for (const model of modelChain) {
-      modelUsed = model;
-      let response: Response;
+    type AttemptSuccess = { ok: true; model: string; parsed: Record<string, unknown>; cameras: unknown[]; structure: NormalizedStructure[]; usage: Record<string, unknown> | null };
+    type AttemptFailure = { ok: false; model: string; status: number; detail: string; response: Response };
+
+    async function attemptModel(model: string, signal: AbortSignal): Promise<AttemptSuccess | AttemptFailure> {
       try {
-        response = await callModel(model, true);
-        if (response.status === 400) response = await callModel(model, false);
-      } catch (error) {
-        if (error instanceof Error && error.name === 'TimeoutError') {
-          lastFailure = { status: 504, detail: 'timeout', response: new Response() };
-          continue;
+        let response: Response;
+        try {
+          response = await callModel(model, true, signal);
+          if (response.status === 400) response = await callModel(model, false, signal);
+        } catch (error) {
+          if (error instanceof Error && error.name === 'TimeoutError') return { ok: false, model, status: 504, detail: 'timeout', response: new Response() };
+          return { ok: false, model, status: 502, detail: error instanceof Error ? error.message : 'request failed', response: new Response() };
         }
-        lastFailure = { status: 502, detail: error instanceof Error ? error.message : 'request failed', response: new Response() };
-        continue;
-      }
 
-      if (!response.ok) {
-        const responseText = await response.text();
-        let detail = '';
-        try { detail = JSON.parse(responseText)?.error?.message || ''; } catch { detail = responseText.slice(0, 240); }
-        lastFailure = { status: response.status, detail, response };
-        if (response.status === 401 || response.status === 403) break;
-        continue;
-      }
+        if (!response.ok) {
+          const responseText = await response.text();
+          let detail = '';
+          try { detail = JSON.parse(responseText)?.error?.message || ''; } catch { detail = responseText.slice(0, 240); }
+          return { ok: false, model, status: response.status, detail, response };
+        }
 
-      const data = await response.json();
-      const raw = data.choices?.[0]?.message?.content;
-      if (typeof raw !== 'string' || !raw.trim()) {
-        lastFailure = { status: 502, detail: 'The model returned an empty camera layout.', response };
-        continue;
+        const data = await response.json();
+        // Some routers answer HTTP 200 with an error payload (e.g. an unavailable
+        // free model); treat that as a failed attempt.
+        if (data && typeof data === 'object' && data.error) {
+          const message = typeof data.error === 'object' ? data.error.message || JSON.stringify(data.error) : String(data.error);
+          return { ok: false, model, status: 502, detail: String(message).slice(0, 240), response };
+        }
+        const raw = data.choices?.[0]?.message?.content;
+        if (typeof raw !== 'string' || !raw.trim()) return { ok: false, model, status: 502, detail: 'The model returned an empty camera layout.', response };
+        const candidate = extractJsonObject(raw);
+        const candidateCameras = Array.isArray(candidate?.cameras) ? candidate.cameras : [];
+        if (!candidate || candidateCameras.length === 0) return { ok: false, model, status: 502, detail: 'The model returned an incomplete camera layout.', response };
+        return {
+          ok: true,
+          model,
+          parsed: candidate,
+          cameras: candidateCameras,
+          structure: normalizeStructure(candidate.structure),
+          usage: data.usage && typeof data.usage === 'object' ? data.usage as Record<string, unknown> : null,
+        };
+      } catch (error) {
+        // Never let an attempt reject: a rejected attempt would otherwise leave
+        // the race without a winner and the caller waiting until the deadline.
+        const detail = error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : error instanceof Error ? error.message : 'request failed';
+        return { ok: false, model, status: error instanceof Error && error.name === 'TimeoutError' ? 504 : 502, detail, response: new Response() };
       }
-      const candidate = extractJsonObject(raw);
-      const candidateCameras = Array.isArray(candidate?.cameras) ? candidate.cameras : [];
-      if (!candidate || candidateCameras.length === 0) {
-        lastFailure = { status: 502, detail: 'The model returned an incomplete camera layout.', response };
-        continue;
-      }
-      parsed = candidate;
-      parsedCameras = candidateCameras;
-      parsedStructure = normalizeStructure(candidate.structure);
-      responseUsage = data.usage && typeof data.usage === 'object' ? data.usage as Record<string, unknown> : null;
-      lastFailure = null;
-      break;
     }
 
-    if (lastFailure || !parsed) {
-      const { status, detail, response } = lastFailure ?? { status: 502, detail: '', response: new Response() };
+    const controllers = modelChain.map(() => new AbortController());
+    const failureRank = (status: number) => (status === 401 || status === 403 ? 4 : status === 429 ? 3 : status === 504 ? 2 : 1);
+    const results: Array<AttemptSuccess | AttemptFailure | null> = modelChain.map(() => null);
+
+    // Race every model concurrently and take the first valid layout. A hard
+    // deadline guarantees a response even when the provider queues a request
+    // for minutes and ignores aborts; slower attempts are simply abandoned.
+    await new Promise<void>(resolve => {
+      let settled = 0;
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(hardDeadline);
+        resolve();
+      };
+      const hardDeadline = setTimeout(finish, ATTEMPT_TIMEOUT_MS + 3_000);
+      hardDeadline.unref?.();
+      modelChain.forEach((model, index) => {
+        void attemptModel(model, controllers[index].signal).then(outcome => {
+          results[index] = outcome;
+          settled++;
+          if (outcome.ok) {
+            controllers.forEach((controller, other) => { if (other !== index) controller.abort(); });
+            finish();
+          } else if (settled === modelChain.length) {
+            finish();
+          }
+        }, () => {
+          results[index] = { ok: false, model, status: 502, detail: 'request failed', response: new Response() };
+          settled++;
+          if (settled === modelChain.length) finish();
+        });
+      });
+    });
+
+    const settledOutcomes = results.filter((entry): entry is AttemptSuccess | AttemptFailure => entry !== null);
+    const success = settledOutcomes.find((entry): entry is AttemptSuccess => entry.ok) ?? null;
+    const failure = settledOutcomes
+      .filter((entry): entry is AttemptFailure => !entry.ok)
+      .sort((a, b) => failureRank(b.status) - failureRank(a.status))[0] ?? null;
+
+    const parsed = success?.parsed ?? null;
+    const parsedCameras = success?.cameras ?? [];
+    const parsedStructure = success?.structure ?? [];
+    const responseUsage = success?.usage ?? null;
+    const modelUsed = success?.model ?? modelChain[0];
+
+    if (!parsed) {
+      const { status, detail, response } = failure ?? { status: 502, detail: '', response: new Response() };
       const retry_after_seconds = retryAfterSeconds(response);
       if (status === 429) {
         const localGuard = detail.startsWith('Local OpenRouter layout guard');

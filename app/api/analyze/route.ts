@@ -4,6 +4,9 @@ import { createEmptyProject } from '@/lib/project-factory';
 import type { TaskType, FeasibilityStatus } from '@/lib/types';
 import { fetchGroq, getAIConfig, getAICompletionsURL } from '@/lib/ai-provider';
 
+// Allow slow AI providers room to answer on Vercel (Hobby plan caps at 60s).
+export const maxDuration = 60;
+
 const SYSTEM_PROMPT = `You are a computer vision architect. Return only a JSON object with these keys: use_cases, assumptions, missing_information, camera_recommendations. Create 1–4 concise use cases based on the supplied facility and requirements. Each use case must include name, description, task_type (object_detection|classification|segmentation|ocr|measurement|tracking|counting|anomaly_detection|pose_estimation|other), candidate_techniques (array), input_description, output_description, feasibility_status (feasible|conditional|infeasible|unknown), feasibility_notes (array), acceptance_criteria (array with at least one item), and assumptions (array). camera_recommendations must be a short array of practical camera specification and placement suggestions (resolution, lens/FOV, frame rate, lighting/environment rating) guided by the supplied inputs. Treat coverage as a target, not a measured result. Use practical techniques where relevant. Do not create IDs, cameras, zones, or workflow data. Never claim unknown site facts are confirmed.`;
 
 async function callAI(prompt: string): Promise<string> {

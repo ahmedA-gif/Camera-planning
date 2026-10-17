@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Report rendering happens in the document service; allow it room to finish on Vercel.
+export const maxDuration = 60;
+
 const DOC_SERVICE_URL = process.env.DOC_SERVICE_URL || 'http://localhost:8001';
 
 export async function POST(request: NextRequest) {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchGroq, getAIConfig, getAICompletionsURL } from '@/lib/ai-provider';
 
+// Allow slow AI providers room to answer on Vercel (Hobby plan caps at 60s).
+export const maxDuration = 60;
+
 const AI_CONFIG = getAIConfig('vision');
 const MODEL = AI_CONFIG.model;
 const CAMERA_REVIEW_SCHEMA = {

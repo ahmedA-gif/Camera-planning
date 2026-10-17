@@ -2,7 +2,11 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Stage, Layer, Image as KonvaImage, Group, Circle, Line, Transformer, Rect, Text } from 'react-konva';
-import Konva from 'konva';
+// Type-only import: importing `konva` at runtime here creates a second Konva
+// instance alongside the copy bundled by react-konva ("Several Konva instances
+// detected"). Types are erased at build time, so `react-konva` remains the
+// single runtime instance.
+import type Konva from 'konva';
 import { 
   Plus, 
   Trash2, 
@@ -23,7 +27,6 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import type { Camera, Zone, Point, DetVisionProject, LayoutElement } from '@/lib/types';
-import { v4 as uuidv4 } from 'uuid';
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -46,6 +49,7 @@ interface SuggestedCamera {
 interface LayoutDraftMeta {
   source: 'ai' | 'local';
   summary: string;
+  reasoning?: string[];
   model_used?: string;
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
   notice?: string;
@@ -91,8 +95,10 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
   const [imageLoaded, setImageLoaded] = useState(false);
   const [layoutDraft, setLayoutDraft] = useState<SuggestedCamera[]>([]);
+  const [layoutStructureDraft, setLayoutStructureDraft] = useState<LayoutElement[]>([]);
   const [layoutDraftMeta, setLayoutDraftMeta] = useState<LayoutDraftMeta | null>(null);
   const [layoutLoading, setLayoutLoading] = useState(false);
+  const autoLayoutForRef = useRef<string | null>(null);
 
   useEffect(() => {
     const canResize = project.zones.some(zone => zone.id === selectedZoneId && zone.type !== 'virtual_line');
@@ -277,6 +283,19 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
   const layoutReview = getLayoutReview(project, stageSize);
   const zoneCoverage = getZoneCenterCoverage(project, stageSize);
 
+  const createLocalStructureDraft = (): LayoutElement[] => {
+    const wall = (name: string, from: Point, to: Point): LayoutElement => ({ id: uuid(), name, type: 'wall', points: [from, to] });
+    return [
+      wall('Suggested north wall', { x: 0.06, y: 0.06 }, { x: 0.94, y: 0.06 }),
+      wall('Suggested east wall', { x: 0.94, y: 0.06 }, { x: 0.94, y: 0.94 }),
+      wall('Suggested south wall', { x: 0.94, y: 0.94 }, { x: 0.06, y: 0.94 }),
+      wall('Suggested west wall', { x: 0.06, y: 0.94 }, { x: 0.06, y: 0.06 }),
+      { id: uuid(), name: 'Suggested entrance', type: 'entrance', points: [{ x: 0.4, y: 0.94 }, { x: 0.6, y: 0.94 }] },
+      { id: uuid(), name: 'Suggested obstacle block A', type: 'obstacle', points: [{ x: 0.62, y: 0.2 }, { x: 0.82, y: 0.2 }, { x: 0.82, y: 0.45 }, { x: 0.62, y: 0.45 }] },
+      { id: uuid(), name: 'Suggested obstacle block B', type: 'obstacle', points: [{ x: 0.18, y: 0.55 }, { x: 0.4, y: 0.55 }, { x: 0.4, y: 0.8 }, { x: 0.18, y: 0.8 }] },
+    ];
+  };
+
   const createLocalLayoutDraft = (count: number, uncovered: Zone[]): SuggestedCamera[] => {
     const resolution = /4k|3840\s*[x×]\s*2160/i.test(project.camera_specifications || '') ? [3840, 2160] : [1920, 1080];
     return Array.from({ length: count }, (_, index) => {
@@ -309,6 +328,7 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
     const count = Math.max(1, Math.min(8, uncovered.length || remainingCameraCount));
     setLayoutLoading(true);
     setLayoutDraft([]);
+    setLayoutStructureDraft([]);
     setLayoutDraftMeta(null);
     try {
       const response = await fetch('/api/camera/layout', {
@@ -339,12 +359,37 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
         target_area: camera.target_area || uncovered[index]?.name || project.layout_sections?.[index] || `Layout section ${index + 1}`,
         rationale: camera.rationale,
       }));
+      const generatedStructure: LayoutElement[] = Array.isArray(data.structure)
+        ? data.structure
+          .filter((item: Record<string, unknown>) => item && typeof item === 'object' && ['wall', 'obstacle', 'entrance'].includes(String(item.type)))
+          .slice(0, 40)
+          .map((item: Record<string, unknown>, index: number) => ({
+            id: uuid(),
+            name: String(item.name || `Suggested ${String(item.type)} ${index + 1}`).slice(0, 80),
+            type: String(item.type) as LayoutElement['type'],
+            points: Array.isArray(item.points)
+              ? item.points.slice(0, 30).map((point: unknown) => {
+                  const value = point && typeof point === 'object' ? point as Record<string, unknown> : {};
+                  return { x: Math.max(0, Math.min(1, Number(value.x))), y: Math.max(0, Math.min(1, Number(value.y))) };
+                }).filter((point: Point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+              : [],
+          }))
+          .filter((item: LayoutElement) => item.points.length >= (item.type === 'obstacle' ? 3 : 2))
+        : [];
       setLayoutDraft(generated);
-      setLayoutDraftMeta({ source: 'ai', summary: data.summary, model_used: data.model_used, usage: data.usage });
+      setLayoutStructureDraft(generatedStructure);
+      setLayoutDraftMeta({
+        source: 'ai',
+        summary: data.summary,
+        reasoning: Array.isArray(data.reasoning) ? data.reasoning.filter((item: unknown): item is string => typeof item === 'string').slice(0, 6) : undefined,
+        model_used: data.model_used,
+        usage: data.usage,
+      });
       setSelectedCameraId(generated[0]?.camera.id ?? null);
     } catch (error) {
       const notice = error instanceof Error ? error.message : 'AI layout generation failed.';
       setLayoutDraft(createLocalLayoutDraft(count, uncovered));
+      setLayoutStructureDraft((project.structure ?? []).length ? [] : createLocalStructureDraft());
       setLayoutDraftMeta({ source: 'local', summary: 'A locally generated camera draft is ready. Review it against the selected scenario and adjust its positions before applying.', notice });
       setSelectedCameraId(null);
     } finally {
@@ -353,18 +398,36 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
   };
 
   const applyLayoutDraft = () => {
-    if (!layoutDraft.length) return;
+    if (!layoutDraft.length && !layoutStructureDraft.length) return;
     const cameras = [...project.cameras, ...layoutDraft.map(item => item.camera)];
     const zones = project.zones.map(zone => {
       const assigned = layoutDraft.filter(item => item.zoneId === zone.id).map(item => item.camera.id);
       return assigned.length ? { ...zone, camera_ids: [...new Set([...zone.camera_ids, ...assigned])] } : zone;
     });
     const use_cases = project.use_cases.map(useCase => ({ ...useCase, camera_ids: [...new Set([...useCase.camera_ids, ...layoutDraft.filter(item => item.camera.assigned_use_case_ids.includes(useCase.id)).map(item => item.camera.id)])] }));
-    onUpdate({ cameras, zones, use_cases });
+    const structure = [...(project.structure ?? []), ...layoutStructureDraft];
+    onUpdate({ cameras, zones, use_cases, structure });
     setSelectedCameraId(null);
     setLayoutDraft([]);
+    setLayoutStructureDraft([]);
     setLayoutDraftMeta(null);
   };
+
+  // If the user has not placed any cameras yet, generate a possible camera layout
+  // (buildings, obstacles, and cameras) automatically once per project per browser
+  // session. It stays an editable draft until the user applies it.
+  useEffect(() => {
+    if (typeof window === 'undefined' || autoLayoutForRef.current === project.id) return;
+    if (!project.business_description.trim()) return;
+    if (project.cameras.length > 0 || layoutDraft.length > 0 || layoutLoading) return;
+    const storageKey = `detvision_auto_layout:${project.id}`;
+    if (window.sessionStorage.getItem(storageKey)) return;
+    window.sessionStorage.setItem(storageKey, '1');
+    autoLayoutForRef.current = project.id;
+    void generateLayoutDraft();
+    // generateLayoutDraft is intentionally read from the latest render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, project.business_description, project.cameras.length, layoutDraft.length, layoutLoading]);
 
   const requestCameraReview = async () => {
     setReviewLoading(true);
@@ -667,6 +730,26 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
     </>;
   };
 
+  const StructureDraftShape = ({ item, width, height }: { item: LayoutElement; width: number; height: number }) => {
+    const points = item.points.flatMap(point => [point.x * width, point.y * height]);
+    const center = item.points.reduce((acc, point) => ({ x: acc.x + point.x / item.points.length, y: acc.y + point.y / item.points.length }), { x: 0, y: 0 });
+    return <>
+      <Line
+        points={points}
+        closed={item.type === 'obstacle'}
+        fill={item.type === 'obstacle' ? '#7c3aed22' : undefined}
+        stroke="#7c3aed"
+        strokeWidth={item.type === 'wall' ? 6 : 3}
+        dash={[8, 5]}
+        lineCap="round"
+        lineJoin="round"
+        listening={false}
+        opacity={0.9}
+      />
+      <MapLabel x={center.x * width} y={center.y * height} label={`DRAFT ${item.type.toUpperCase()} · ${item.name}`} color="#7c3aed" />
+    </>;
+  };
+
   const DrawingPreview = () => {
     if (zonePoints.length === 0) return null;
     
@@ -901,6 +984,10 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
               />
             ))}
 
+            {layoutStructureDraft.map(item => (
+              <StructureDraftShape key={`draft-structure-${item.id}`} item={item} width={stageSize.width} height={stageSize.height} />
+            ))}
+
             {layoutDraft.map(item => (
               <CameraMarker
                 key={`draft-${item.camera.id}`}
@@ -955,14 +1042,16 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
             </div>
             <div className="mb-3 rounded-lg border border-border bg-muted p-3 text-foreground">
               <div className="mb-3 rounded-lg border border-primary/20 bg-primary/5 p-3"><div className="flex items-center justify-between text-xs font-semibold"><span>Estimated zone-center coverage</span><span>{zoneCoverage.percent === null ? '—' : `${zoneCoverage.percent}%`}</span></div><p className="mt-1 text-[10px] text-muted-foreground">{zoneCoverage.percent === null ? 'Draw a detection zone to estimate camera view coverage.' : `${zoneCoverage.covered}/${zoneCoverage.total} detection-zone centers fall inside an estimated camera cone. Target: ${project.detection_coverage_target ?? 90}%. This is a map estimate, not a measured site result.`}</p>{zoneCoverage.percent !== null && zoneCoverage.percent < (project.detection_coverage_target ?? 90) && <p className="mt-2 text-[11px] font-medium text-amber-700">Add or reposition a camera to reach the target; generate a layout suggestion.</p>}</div>
-              {layoutDraft.length > 0 && <div className="mb-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950">
-                <p className="font-semibold">{layoutDraftMeta?.source === 'ai' ? 'AI camera layout draft' : 'Camera layout draft'} · {layoutDraft.length} camera{layoutDraft.length === 1 ? '' : 's'}</p>
+              {(layoutDraft.length > 0 || layoutStructureDraft.length > 0) && <div className="mb-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950">
+                <p className="font-semibold">{layoutDraftMeta?.source === 'ai' ? 'AI camera layout draft' : 'Camera layout draft'} · {layoutDraft.length} camera{layoutDraft.length === 1 ? '' : 's'}{layoutStructureDraft.length > 0 ? ` · ${layoutStructureDraft.length} site element${layoutStructureDraft.length === 1 ? '' : 's'}` : ''}</p>
                 <p className="mt-1">{layoutDraftMeta?.summary || 'Review the suggested positions and specifications before applying.'}</p>
                 {layoutDraftMeta?.model_used && <p className="mt-1 text-[10px]">Model: {layoutDraftMeta.model_used}{layoutDraftMeta.usage ? ` · Tokens: ${layoutDraftMeta.usage.prompt_tokens} input + ${layoutDraftMeta.usage.completion_tokens} output = ${layoutDraftMeta.usage.total_tokens} total` : ''}</p>}
+                {layoutDraftMeta?.reasoning?.length ? <div className="mt-1"><p className="font-medium">Model reasoning</p><ul className="mt-0.5 list-inside list-disc space-y-0.5 text-[10px]">{layoutDraftMeta.reasoning.map((line, index) => <li key={index}>{line}</li>)}</ul></div> : null}
+                {layoutStructureDraft.length > 0 && <p className="mt-1 text-[10px]">Draft walls, obstacles, and entrances (purple dashed) will be added to the map when you apply this layout.</p>}
                 {layoutDraftMeta?.notice && <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">{layoutDraftMeta.notice} A local suggestion is shown so you can keep working.</p>}
                 <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto">{layoutDraft.map(item => <li key={item.camera.id}><b>{item.camera.name}</b> · {item.target_area || 'General coverage'}{item.rationale ? ` — ${item.rationale}` : ''}</li>)}</ul>
                 <p className="mt-2">Drag a purple draft camera or select it to edit its properties. Changes stay as a draft until applied.</p>
-                <div className="mt-2 flex gap-2"><button onClick={applyLayoutDraft} className="rounded-md bg-violet-700 px-2.5 py-1.5 font-medium text-white">Apply layout to {project.name}</button><button onClick={() => { setLayoutDraft([]); setLayoutDraftMeta(null); setSelectedCameraId(null); }} className="rounded-md border border-violet-300 px-2.5 py-1.5">Discard</button></div>
+                <div className="mt-2 flex gap-2"><button onClick={applyLayoutDraft} className="rounded-md bg-violet-700 px-2.5 py-1.5 font-medium text-white">Apply layout to {project.name}</button><button onClick={() => { setLayoutDraft([]); setLayoutStructureDraft([]); setLayoutDraftMeta(null); setSelectedCameraId(null); }} className="rounded-md border border-violet-300 px-2.5 py-1.5">Discard</button></div>
               </div>}
               <h3 className="text-xs font-semibold">Layout review</h3>
               <p className="mt-1 text-[11px] text-muted-foreground">Rule-based checks from your drawing and camera assignments. Confirm dimensions and sight lines on site.</p>

@@ -4,6 +4,15 @@ import { fetchOpenRouter, getLayoutAIConfig, getLayoutAICompletionsURL } from '@
 
 const AI_CONFIG = getLayoutAIConfig();
 
+/** Known-good free models used when the configured router/model returns unusable JSON. */
+function getLayoutModelChain(primary: string): string[] {
+  const fallbacks = [
+    process.env.OPENROUTER_LAYOUT_FALLBACK_MODEL_1 || 'nvidia/nemotron-3-super-120b-a12b:free',
+    process.env.OPENROUTER_LAYOUT_FALLBACK_MODEL_2 || 'google/gemma-4-31b-it:free',
+  ];
+  return [...new Set([primary, ...fallbacks].filter((model): model is string => typeof model === 'string' && model.trim().length > 0))];
+}
+
 function clamp(value: unknown, minimum: number, maximum: number, fallback: number): number {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(minimum, Math.min(maximum, number)) : fallback;
@@ -23,6 +32,66 @@ function retryAfterSeconds(response: Response): number | null {
     if (match && (match[1] || match[2])) return Math.max(1, Math.ceil(Number(match[1] || 0) * 60 + Number(match[2] || 0)));
   }
   return null;
+}
+
+/** Leniently read a JSON object from a model reply (handles code fences and surrounding prose). */
+function extractJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  const candidates = [trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')];
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
+function normalizePoint(value: unknown): { x: number; y: number } | null {
+  if (!value || typeof value !== 'object') return null;
+  const point = value as Record<string, unknown>;
+  const x = Number(point.x);
+  const y = Number(point.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+}
+
+type NormalizedStructure = { name: string; type: 'wall' | 'obstacle' | 'entrance'; points: Array<{ x: number; y: number }>; rationale: string };
+
+function normalizeStructure(raw: unknown): NormalizedStructure[] {
+  if (!Array.isArray(raw)) return [];
+  const allowedTypes = new Set(['wall', 'obstacle', 'entrance']);
+  const items: NormalizedStructure[] = [];
+  for (const entry of raw.slice(0, 40)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const item = entry as Record<string, unknown>;
+    const type = String(item.type || '').toLowerCase();
+    if (!allowedTypes.has(type)) continue;
+    const points = Array.isArray(item.points) ? item.points.slice(0, 30).map(normalizePoint).filter((point): point is { x: number; y: number } => point !== null) : [];
+    const expanded = type === 'obstacle' && points.length === 2
+      ? (() => {
+          const left = Math.min(points[0].x, points[1].x);
+          const right = Math.max(points[0].x, points[1].x);
+          const top = Math.min(points[0].y, points[1].y);
+          const bottom = Math.max(points[0].y, points[1].y);
+          return [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+        })()
+      : points;
+    const minimumPoints = type === 'obstacle' ? 3 : 2;
+    if (expanded.length < minimumPoints) continue;
+    items.push({
+      name: String(item.name || `${type === 'wall' ? 'Wall' : type === 'obstacle' ? 'Obstacle' : 'Entrance'} ${items.length + 1}`).slice(0, 80),
+      type: type as NormalizedStructure['type'],
+      points: expanded,
+      rationale: String(item.rationale || '').slice(0, 300),
+    });
+  }
+  return items;
 }
 
 export async function POST(request: NextRequest) {
@@ -59,6 +128,7 @@ export async function POST(request: NextRequest) {
     const existingCameraCount = Array.isArray(project.cameras) ? project.cameras.length : 0;
     const inferredAdditionalCount = Math.max(1, inferredTotal - existingCameraCount);
     const requestedCount = Math.round(clamp(hasExplicitCount ? explicitCount : inferredAdditionalCount, 1, 8, 3));
+    const wantsStructure = structure.length === 0;
     const validUseCaseIds = new Set(useCases.map((item: { id: string }) => item.id));
     const context = {
       project_id: project.id,
@@ -78,81 +148,148 @@ export async function POST(request: NextRequest) {
       site_structure: structure,
     };
 
-    const systemPrompt = `You are a computer-vision camera-layout planner. Produce exactly ${requestedCount} additional camera suggestions for the selected project. Use normalized map coordinates from 0 to 1. Position cameras to cover the supplied zones, critical components, entrances, and use cases; account for existing camera positions to avoid duplicates. Use the scenario and requirements as the source of intent. If there is no floor plan or dimensional data, treat coordinates and view ranges as editable conceptual suggestions, never as measured placements. Keep positions within 0.05–0.95, orientation between 0–359 degrees, horizontal FOV between 30–120 degrees, and view range between 0.2–0.8. Assign only supplied use-case IDs. Return JSON only, with this shape: {"summary":"...","cameras":[{"name":"...","x":0.5,"y":0.5,"orientation_degrees":180,"horizontal_fov_degrees":90,"view_range":0.5,"resolution_width":1920,"resolution_height":1080,"assigned_use_case_ids":[],"target_area":"...","rationale":"..."}]}. Include concise rationale per camera.`;
-    const userPrompt = `Requested additional camera count: ${requestedCount}.\nSelected project and scenario context:\n${JSON.stringify(context)}`;
-    const response = await fetchOpenRouter(AI_CONFIG.model, getLayoutAICompletionsURL(), {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${AI_CONFIG.apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-        'X-Title': 'DetVision Camera Layout Planner',
-      },
-      body: JSON.stringify({
-        model: AI_CONFIG.model,
-        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
-        temperature: 0.2,
-        max_completion_tokens: Math.min(1600, 240 + requestedCount * 160),
-        response_format: { type: 'json_object' },
-      }),
-      signal: AbortSignal.timeout(45000),
-    });
+    const structureInstruction = wantsStructure
+      ? `The project has no drawn site structure. Infer an editable conceptual facility layout for the scenario: the building outline and internal partitions as "wall" polylines, storage racks, machines, columns, or other blockers as "obstacle" rectangles, and doors or gates as "entrance" segments. Keep it small and simple (6-14 elements) and consistent with the scenario.`
+      : `The project already has drawn site structure; do NOT duplicate it. You may return an empty "structure" array.`;
+    const systemPrompt = `You are a computer-vision site and camera-layout planner with reasoning. Work from the supplied scenario, requirements, use cases, and existing drawing.
+${structureInstruction}
+Then produce ${requestedCount} additional camera suggestion(s) for the selected project (produce exactly ${requestedCount}, or as close as possible). Use normalized map coordinates from 0 to 1. Position cameras to cover the supplied zones, critical components, entrances, and use cases; account for existing camera positions, walls, and obstacles to avoid duplicates or blocked sight lines. Treat coordinates and view ranges as editable conceptual suggestions, never as measured placements. Keep positions within 0.05-0.95, orientation between 0-359 degrees, horizontal FOV between 30-120 degrees, and view range between 0.2-0.8. Assign only supplied use-case IDs. Explain the reasoning behind the overall plan and each camera briefly. Return JSON only, with this shape: {"summary":"...","reasoning":["..."],"structure":[{"name":"...","type":"wall|obstacle|entrance","points":[{"x":0.1,"y":0.1},{"x":0.9,"y":0.1}],"rationale":"..."}],"cameras":[{"name":"...","x":0.5,"y":0.5,"orientation_degrees":180,"horizontal_fov_degrees":90,"view_range":0.5,"resolution_width":1920,"resolution_height":1080,"assigned_use_case_ids":[],"target_area":"...","rationale":"..."}]}. For "wall" and "entrance" use 2 points per segment; for "obstacle" use 4 points forming a rectangle. Keep "reasoning" to at most 6 short items.`;
+    const userPrompt = `Requested additional camera count: ${requestedCount}. Generate site structure first if the project has none, then cameras.\nSelected project and scenario context:\n${JSON.stringify(context)}`;
 
-    if (!response.ok) {
-      const responseText = await response.text();
-      let detail = '';
-      try { detail = JSON.parse(responseText)?.error?.message || ''; } catch { detail = responseText.slice(0, 240); }
-      if (response.status === 429) {
-        const retry_after_seconds = retryAfterSeconds(response);
+    async function callModel(model: string, jsonMode: boolean) {
+      return fetchOpenRouter(model, getLayoutAICompletionsURL(), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${AI_CONFIG.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+          'X-Title': 'DetVision Camera Layout Planner',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+          temperature: 0.2,
+          max_completion_tokens: Math.min(2400, 700 + requestedCount * 200),
+          ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+    }
+
+    const modelChain = getLayoutModelChain(AI_CONFIG.model);
+    let lastFailure: { status: number; detail: string; response: Response } | null = null;
+    let parsed: Record<string, unknown> | null = null;
+    let parsedCameras: unknown[] = [];
+    let parsedStructure: NormalizedStructure[] = [];
+    let responseUsage: Record<string, unknown> | null = null;
+    let modelUsed = modelChain[0];
+
+    for (const model of modelChain) {
+      modelUsed = model;
+      let response: Response;
+      try {
+        response = await callModel(model, true);
+        if (response.status === 400) response = await callModel(model, false);
+      } catch (error) {
+        if (error instanceof Error && error.name === 'TimeoutError') {
+          lastFailure = { status: 504, detail: 'timeout', response: new Response() };
+          continue;
+        }
+        lastFailure = { status: 502, detail: error instanceof Error ? error.message : 'request failed', response: new Response() };
+        continue;
+      }
+
+      if (!response.ok) {
+        const responseText = await response.text();
+        let detail = '';
+        try { detail = JSON.parse(responseText)?.error?.message || ''; } catch { detail = responseText.slice(0, 240); }
+        lastFailure = { status: response.status, detail, response };
+        if (response.status === 401 || response.status === 403) break;
+        continue;
+      }
+
+      const data = await response.json();
+      const raw = data.choices?.[0]?.message?.content;
+      if (typeof raw !== 'string' || !raw.trim()) {
+        lastFailure = { status: 502, detail: 'The model returned an empty camera layout.', response };
+        continue;
+      }
+      const candidate = extractJsonObject(raw);
+      const candidateCameras = Array.isArray(candidate?.cameras) ? candidate.cameras : [];
+      if (!candidate || candidateCameras.length === 0) {
+        lastFailure = { status: 502, detail: 'The model returned an incomplete camera layout.', response };
+        continue;
+      }
+      parsed = candidate;
+      parsedCameras = candidateCameras;
+      parsedStructure = normalizeStructure(candidate.structure);
+      responseUsage = data.usage && typeof data.usage === 'object' ? data.usage as Record<string, unknown> : null;
+      lastFailure = null;
+      break;
+    }
+
+    if (lastFailure || !parsed) {
+      const { status, detail, response } = lastFailure ?? { status: 502, detail: '', response: new Response() };
+      const retry_after_seconds = retryAfterSeconds(response);
+      if (status === 429) {
         const localGuard = detail.startsWith('Local OpenRouter layout guard');
-        const resetHeaders = {
-          requests: response.headers.get('x-ratelimit-reset-requests'),
-          tokens: response.headers.get('x-ratelimit-reset-tokens'),
-          remaining_requests: response.headers.get('x-ratelimit-remaining-requests'),
-          remaining_tokens: response.headers.get('x-ratelimit-remaining-tokens'),
-        };
         return NextResponse.json({
           error: `${localGuard ? detail : 'OpenRouter rate-limited this layout request.'} You can still use the locally generated, editable layout draft.`,
           retry_after_seconds,
-          rate_limit: resetHeaders,
+          rate_limit: {
+            requests: response.headers.get('x-ratelimit-reset-requests'),
+            tokens: response.headers.get('x-ratelimit-reset-tokens'),
+            remaining_requests: response.headers.get('x-ratelimit-remaining-requests'),
+            remaining_tokens: response.headers.get('x-ratelimit-remaining-tokens'),
+          },
           provider_detail: detail,
         }, { status: 429, headers: retry_after_seconds ? { 'Retry-After': String(retry_after_seconds) } : undefined });
       }
-      const message = response.status === 401 || response.status === 403
-        ? `OpenRouter rejected ${AI_CONFIG.keyName}. Check that the key is valid.`
-        : response.status === 404 ? `OpenRouter model "${AI_CONFIG.model}" was not found.`
-        : `OpenRouter layout generation failed (${response.status})${detail ? `: ${detail}` : '.'}`;
-      return NextResponse.json({ error: message }, { status: response.status === 401 || response.status === 403 ? 503 : 502 });
+      const message = status === 504
+        ? 'OpenRouter layout generation timed out. Try again or use the local layout suggestion.'
+        : status === 401 || status === 403
+          ? `OpenRouter rejected ${AI_CONFIG.keyName}. Check that the key is valid.`
+          : status === 404
+            ? `OpenRouter model "${modelUsed}" was not found.`
+            : `OpenRouter layout generation failed (${status})${detail ? `: ${detail}` : '.'}`;
+      return NextResponse.json({ error: message }, { status: status === 401 || status === 403 ? 503 : status === 504 ? 504 : 502 });
     }
 
-    const data = await response.json();
-    const raw = data.choices?.[0]?.message?.content;
-    if (typeof raw !== 'string') return NextResponse.json({ error: 'OpenRouter returned an empty camera layout.' }, { status: 502 });
-    const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
-    if (!Array.isArray(parsed.cameras) || parsed.cameras.length !== requestedCount) {
-      return NextResponse.json({ error: 'OpenRouter returned an incomplete camera layout. Try again.' }, { status: 502 });
-    }
-    const cameras = parsed.cameras.map((camera: Record<string, unknown>, index: number) => ({
-      id: randomUUID(),
-      name: String(camera.name || `Suggested camera ${index + 1}`).slice(0, 80),
-      status: 'planned' as const,
-      x: clamp(camera.x, 0.05, 0.95, (index + 1) / (requestedCount + 1)),
-      y: clamp(camera.y, 0.05, 0.95, index % 2 ? 0.75 : 0.25),
-      orientation_degrees: clamp(camera.orientation_degrees, 0, 359, 180),
-      horizontal_fov_degrees: clamp(camera.horizontal_fov_degrees, 30, 120, 90),
-      view_range: clamp(camera.view_range, 0.2, 0.8, 0.5),
-      resolution_width: Math.round(clamp(camera.resolution_width, 640, 7680, 1920)),
-      resolution_height: Math.round(clamp(camera.resolution_height, 480, 4320, 1080)),
-      assigned_use_case_ids: Array.isArray(camera.assigned_use_case_ids) ? camera.assigned_use_case_ids.map(String).filter((id: string) => validUseCaseIds.has(id)) : [],
-      target_area: String(camera.target_area || '').slice(0, 120),
-      rationale: String(camera.rationale || '').slice(0, 300),
-    }));
-    const usage = data.usage ? {
-      prompt_tokens: Number(data.usage.prompt_tokens) || 0,
-      completion_tokens: Number(data.usage.completion_tokens) || 0,
-      total_tokens: Number(data.usage.total_tokens) || 0,
-    } : null;
-    return NextResponse.json({ project_id: project.id, summary: String(parsed.summary || ''), cameras, model_used: data.model || AI_CONFIG.model, usage });
+    const cameras = parsedCameras.slice(0, Math.max(requestedCount, 1) + 2).map((rawCamera, index: number) => {
+      const camera = (rawCamera && typeof rawCamera === 'object' ? rawCamera : {}) as Record<string, unknown>;
+      return {
+        id: randomUUID(),
+        name: String(camera.name || `Suggested camera ${index + 1}`).slice(0, 80),
+        status: 'planned' as const,
+        x: clamp(camera.x, 0.05, 0.95, (index + 1) / (requestedCount + 1)),
+        y: clamp(camera.y, 0.05, 0.95, index % 2 ? 0.75 : 0.25),
+        orientation_degrees: clamp(camera.orientation_degrees, 0, 359, 180),
+        horizontal_fov_degrees: clamp(camera.horizontal_fov_degrees, 30, 120, 90),
+        view_range: clamp(camera.view_range, 0.2, 0.8, 0.5),
+        resolution_width: Math.round(clamp(camera.resolution_width, 640, 7680, 1920)),
+        resolution_height: Math.round(clamp(camera.resolution_height, 480, 4320, 1080)),
+        assigned_use_case_ids: Array.isArray(camera.assigned_use_case_ids) ? camera.assigned_use_case_ids.map(String).filter((id: string) => validUseCaseIds.has(id)) : [],
+        target_area: String(camera.target_area || '').slice(0, 120),
+        rationale: String(camera.rationale || '').slice(0, 300),
+      };
+    });
+    const structureElements = parsedStructure.map(item => ({ id: randomUUID(), ...item }));
+    const reasoning = Array.isArray(parsed.reasoning)
+      ? parsed.reasoning.filter((item): item is string => typeof item === 'string').slice(0, 6).map(item => item.slice(0, 240))
+      : [];
+    return NextResponse.json({
+      project_id: project.id,
+      summary: String(parsed.summary || '').slice(0, 500),
+      reasoning,
+      cameras,
+      structure: structureElements,
+      model_used: modelUsed,
+      usage: responseUsage ? {
+        prompt_tokens: Number(responseUsage.prompt_tokens) || 0,
+        completion_tokens: Number(responseUsage.completion_tokens) || 0,
+        total_tokens: Number(responseUsage.total_tokens) || 0,
+      } : null,
+    });
   } catch (error) {
     if (error instanceof Error && error.name === 'TimeoutError') return NextResponse.json({ error: 'OpenRouter layout generation timed out. Try again or use the local layout suggestion.' }, { status: 504 });
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Camera layout generation failed.' }, { status: 502 });

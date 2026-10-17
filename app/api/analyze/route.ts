@@ -11,31 +11,44 @@ async function callAI(prompt: string): Promise<string> {
   const { apiKey, model, provider, keyName } = config;
   if (!apiKey) throw new Error(`AI analysis needs a configured provider key. Add ${keyName}.`);
 
-  let response: Response;
-  try {
-    response = await fetchGroq(model, getAICompletionsURL(), {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.2,
-        max_completion_tokens: 2400,
-        response_format: { type: 'json_object' },
-      }),
-      signal: AbortSignal.timeout(45000),
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new Error('AI analysis timed out after 45 seconds. Try again later.');
+  const send = async (maxTokens: number): Promise<Response> => {
+    try {
+      return await fetchGroq(model, getAICompletionsURL(), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.2,
+          max_completion_tokens: maxTokens,
+          response_format: { type: 'json_object' },
+        }),
+        signal: AbortSignal.timeout(45000),
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        throw new Error('AI analysis timed out after 45 seconds. Try again later.');
+      }
+      throw new Error('Could not reach the AI provider. Check your network and try again.');
     }
-    throw new Error('Could not reach the AI provider. Check your network and try again.');
+  };
+
+  let response = await send(2400);
+  if (response.status === 429) {
+    // Some Groq models enforce a low output-tokens-per-minute limit; retry once
+    // with a smaller expected output instead of failing the whole analysis.
+    const limitText = await response.text();
+    if (/output tokens per minute|too large for model|OTPM/i.test(limitText)) {
+      response = await send(900);
+    } else {
+      response = new Response(limitText, { status: 429, headers: { 'content-type': 'application/json' } });
+    }
   }
 
   if (!response.ok) {

@@ -110,33 +110,46 @@ export class PlanEngine {
 
   private async callGroqOnce(prompt: string, maxTokens: number, jsonOutput = false): Promise<string> {
     if (!AI_CONFIG.apiKey) throw new Error(`Plan generation needs a configured AI provider key. Add ${AI_CONFIG.keyName}.`);
-    let response: Response;
-    try {
-      response = await fetchGroq(AI_CONFIG.model, getAICompletionsURL(), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: AI_CONFIG.model,
-          messages: [
-            { role: 'system', content: jsonOutput
-              ? 'Write concise, practical workplace safety plans. Use only supplied facts, label unknowns, and never fabricate measurements, incidents, dates, or regulations. Return only the requested JSON object.'
-              : SYSTEM_PROMPT },
-            { role: 'user', content: prompt },
-          ],
-          temperature: 0.2,
-          max_completion_tokens: Math.min(maxTokens, 1800),
-          ...(jsonOutput ? { response_format: { type: 'json_object' as const } } : {}),
-        }),
-        signal: AbortSignal.timeout(45000),
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === 'TimeoutError') {
-        throw new Error('Plan generation timed out. Your brief is saved; please try again.');
+    const send = async (outputTokens: number): Promise<Response> => {
+      try {
+        return await fetchGroq(AI_CONFIG.model, getAICompletionsURL(), {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${AI_CONFIG.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: AI_CONFIG.model,
+            messages: [
+              { role: 'system', content: jsonOutput
+                ? 'Write concise, practical workplace safety plans. Use only supplied facts, label unknowns, and never fabricate measurements, incidents, dates, or regulations. Return only the requested JSON object.'
+                : SYSTEM_PROMPT },
+              { role: 'user', content: prompt },
+            ],
+            temperature: 0.2,
+            max_completion_tokens: outputTokens,
+            ...(jsonOutput ? { response_format: { type: 'json_object' as const } } : {}),
+          }),
+          signal: AbortSignal.timeout(45000),
+        });
+      } catch (error) {
+        if (error instanceof Error && error.name === 'TimeoutError') {
+          throw new Error('Plan generation timed out. Your brief is saved; please try again.');
+        }
+        throw new Error('Could not reach the AI provider. Your brief is saved; please try again.');
       }
-      throw new Error('Could not reach the AI provider. Your brief is saved; please try again.');
+    };
+
+    let response = await send(Math.min(maxTokens, 1800));
+    if (response.status === 429) {
+      // Some Groq models enforce a low output-tokens-per-minute limit; retry the
+      // section once with a smaller expected output before reporting a limit.
+      const limitText = await response.text();
+      if (/output tokens per minute|too large for model|OTPM/i.test(limitText)) {
+        response = await send(Math.min(900, Math.max(300, maxTokens)));
+      } else {
+        response = new Response(limitText, { status: 429, headers: { 'content-type': 'application/json' } });
+      }
     }
 
     if (response.status === 429) {

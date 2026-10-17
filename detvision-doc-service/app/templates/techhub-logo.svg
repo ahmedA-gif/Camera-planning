@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 190" role="img" aria-label="TechHub logo">
+  <rect width="560" height="190" rx="18" fill="#fff"/>
+  <g fill="#52b52b" transform="translate(98 96)">
+    <path d="M-12-88h24l8 22a69 69 0 0 1 18 7l20-11 17 17-11 20a69 69 0 0 1 7 18l22 8v24l-22 8a69 69 0 0 1-7 18l11 20-17 17-20-11a69 69 0 0 1-18 7l-8 22h-24l-8-22a69 69 0 0 1-18-7l-20 11-17-17 11-20a69 69 0 0 1-7-18l-22-8v-24l22-8a69 69 0 0 1 7-18l-11-20 17-17 20 11a69 69 0 0 1 18-7z"/>
+  </g>
+  <circle cx="98" cy="96" r="53" fill="#fff" stroke="#52565a" stroke-width="5"/>
+  <text x="185" y="111" font-family="Arial, sans-serif" font-size="54" font-weight="900" font-style="italic" fill="#52b52b">TECH</text>
+  <text x="329" y="111" font-family="Arial, sans-serif" font-size="54" font-weight="900" font-style="italic" fill="#41464a">HUB</text>
+  <text x="186" y="137" font-family="Arial, sans-serif" font-size="13" letter-spacing="5" fill="#69717a">VISION PLANNING</text>
+</svg>

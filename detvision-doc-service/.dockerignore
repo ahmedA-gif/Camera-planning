@@ -1,0 +1,9 @@
+.git
+.vercel
+__pycache__
+*.py[cod]
+.pytest_cache
+tests
+*.pdf
+*.docx
+doc-service.log

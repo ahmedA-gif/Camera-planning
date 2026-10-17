@@ -1,0 +1,23 @@
+# Vercel builds this image for the standalone document service deployment.
+# Keep this aligned with Dockerfile, which includes WeasyPrint native libraries
+# and Mermaid CLI for report rendering.
+FROM python:3.11-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libc-dev libpango-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
+    libffi-dev shared-mime-info fonts-liberation fonts-dejavu-core \
+    ca-certificates curl gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @mermaid-js/mermaid-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app/ ./app/
+ENV PATH="/usr/local/lib/node_modules/@mermaid-js/mermaid-cli/node_modules/.bin:${PATH}"
+RUN ln -sf /usr/local/lib/node_modules/@mermaid-js/mermaid-cli/cli.js /usr/local/bin/mmdc
+ENV PORT=8000
+EXPOSE 8000
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

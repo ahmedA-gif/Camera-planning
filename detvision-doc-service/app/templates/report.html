@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ project.name }} - Technical Blueprint</title>
+</head>
+<body>
+    <!-- ===== COVER PAGE ===== -->
+    <div class="cover-page">
+        <div class="cover-content">
+            <div class="logo"><img src="techhub-logo.svg" alt="TechHub Plan Vision" style="width:250px;height:auto;"></div>
+            <h1 class="cover-title">{{ project.name }}</h1>
+            <p class="cover-subtitle">Technical Blueprint</p>
+            <div class="cover-meta">
+                <p>{{ project.company_name }}  |  {{ project.industry }}</p>
+                <p>Generated: {{ generated_at }}</p>
+                <p class="project-id">Project ID: {{ project.id[:8] }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== TABLE OF CONTENTS ===== -->
+    <div class="toc-page">
+        <h1>Table of Contents</h1>
+        <ul class="toc-list">
+            {% if not project.output_scope or "Executive summary" in project.output_scope %}<li><a href="#executive-summary">1. Executive Summary</a></li>{% endif %}
+            {% if not project.output_scope or "Executive summary" in project.output_scope %}<li><a href="#objectives">2. Business Objectives & Scope</a></li>{% endif %}
+            {% if not project.output_scope or "Use cases" in project.output_scope %}<li><a href="#use-cases">3. Use Case Analysis</a></li>{% endif %}
+            {% if not project.output_scope or "Use cases" in project.output_scope %}<li><a href="#techniques">4. Proposed Vision Techniques</a></li>{% endif %}
+            {% if not project.output_scope or "Camera plan" in project.output_scope %}<li><a href="#cameras">5. Camera Inventory & Assignments</a></li>{% endif %}
+            {% if not project.output_scope or "Detection coverage" in project.output_scope %}<li><a href="#zones">6. Detection Zones & Virtual Lines</a></li>{% endif %}
+            {% if not project.output_scope or "Workflow" in project.output_scope %}<li><a href="#workflow">7. Computer Vision Workflow</a></li>{% endif %}
+            {% if not project.output_scope or "Assumptions & open questions" in project.output_scope %}<li><a href="#assumptions">8. Technical Assumptions</a></li>{% endif %}
+            {% if not project.output_scope or "Assumptions & open questions" in project.output_scope %}<li><a href="#risks">9. Missing Information & Risks</a></li>{% endif %}
+            {% if not project.output_scope or "Hardware & critical components" in project.output_scope %}<li><a href="#hardware">10. Hardware & Software Categories</a></li>{% endif %}
+            {% if not project.output_scope or "Use cases" in project.output_scope %}<li><a href="#acceptance">11. Consolidated Acceptance Criteria</a></li>{% endif %}
+            {% if not project.output_scope or "Implementation roadmap" in project.output_scope %}<li><a href="#roadmap">12. Implementation Roadmap</a></li>{% endif %}
+        </ul>
+    </div>
+
+    {% if not project.output_scope or "Executive summary" in project.output_scope %}
+<!-- ===== 1. EXECUTIVE SUMMARY ===== -->
+    <section id="executive-summary" class="section">
+        <h2><span class="section-number">1</span> Executive Summary</h2>
+        <p class="lead">{{ project.business_description }}</p>
+        
+        {% if project.facility_image %}<div class="diagram-container"><h3>Site reference · {{ project.facility_image_name or "Uploaded image" }}</h3><img src="{{ project.facility_image }}" alt="Site reference" class="diagram-image">{% if project.image_observation %}<p>{{ project.image_observation }}</p>{% endif %}</div>{% endif %}
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-value">{{ project.use_cases|length }}</span>
+                <span class="kpi-label">Use Cases</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-value">{{ project.cameras|length }}</span>
+                <span class="kpi-label">Cameras</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-value">{{ project.zones|length }}</span>
+                <span class="kpi-label">Zones / Lines</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-value">{{ project.workflow.nodes|length }}</span>
+                <span class="kpi-label">Workflow Nodes</span>
+            </div>
+        </div>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Feasible Use Cases</td><td>{{ project.use_cases|selectattr('feasibility_status', 'equalto', 'feasible')|list|length }}</td></tr>
+                <tr><td>Conditional Use Cases</td><td>{{ project.use_cases|selectattr('feasibility_status', 'equalto', 'conditional')|list|length }}</td></tr>
+                <tr><td>Infeasible Use Cases</td><td>{{ project.use_cases|selectattr('feasibility_status', 'equalto', 'infeasible')|list|length }}</td></tr>
+                <tr><td>Assumptions</td><td>{{ project.assumptions|length }}</td></tr>
+                <tr><td>Missing Information Items</td><td>{{ project.missing_information|length }}</td></tr>
+            </tbody>
+        </table>
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Executive summary" in project.output_scope %}
+<!-- ===== 2. BUSINESS OBJECTIVES ===== -->
+    <section id="objectives" class="section">
+        <h2><span class="section-number">2</span> Business Objectives & Scope</h2>
+        
+        {% if project.requirements %}
+        <h3>Requirements</h3>
+        <ul class="requirements-list">
+            {% for req in project.requirements %}
+            <li>{{ req }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        <h3>Project Metadata</h3>
+        <table class="data-table">
+            <thead><tr><th>Field</th><th>Value</th></tr></thead>
+            <tbody>
+                <tr><td>Project ID</td><td>{{ project.id }}</td></tr>
+                <tr><td>Created</td><td>{{ format_date(project.created_at) }}</td></tr>
+                <tr><td>Last Updated</td><td>{{ format_date(project.updated_at) }}</td></tr>
+                <tr><td>Company</td><td>{{ project.company_name }}</td></tr>
+                <tr><td>Industry</td><td>{{ project.industry }}</td></tr>
+            </tbody>
+        </table>
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Use cases" in project.output_scope %}
+<!-- ===== 3. USE CASE ANALYSIS ===== -->
+    <section id="use-cases" class="section">
+        <h2><span class="section-number">3</span> Use Case Analysis</h2>
+        
+        {% if not project.use_cases %}
+        <p class="empty-state">No use cases generated yet. Run scenario analysis to populate.</p>
+        {% else %}
+        <!-- Summary Table -->
+        <h3>Use Case Summary</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Use Case</th>
+                    <th>Type</th>
+                    <th>Feasibility</th>
+                    <th>Cameras</th>
+                    <th>Key Techniques</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for uc in project.use_cases %}
+                <tr>
+                    <td><strong>{{ uc.name }}</strong></td>
+                    <td><span class="badge badge-type">{{ uc.task_type.value.replace('_', ' ').title() }}</span></td>
+                    <td><span class="badge {{ uc.feasibility_status.value }}">{{ uc.feasibility_status.value|title }}</span></td>
+                    <td>{{ uc.camera_ids|length }}</td>
+                    <td>{{ uc.candidate_techniques[:2]|join(', ') }}{% if uc.candidate_techniques|length > 2 %}...{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Detailed Cards -->
+        {% for uc in project.use_cases %}
+        <div class="use-case-card">
+            <div class="uc-header">
+                <h3>{{ uc.name }}</h3>
+                <span class="badge {{ uc.feasibility_status.value }}">{{ uc.feasibility_status.value|title }}</span>
+            </div>
+            <p>{{ uc.description }}</p>
+            
+            <div class="uc-grid">
+                <div>
+                    <h4>Input / Output</h4>
+                    <p><strong>Input:</strong> {{ uc.input_description }}</p>
+                    <p><strong>Output:</strong> {{ uc.output_description }}</p>
+                </div>
+                <div>
+                    <h4>Candidate Techniques</h4>
+                    <ul>
+                        {% for tech in uc.candidate_techniques %}
+                        <li>{{ tech }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+
+            {% if uc.feasibility_notes %}
+            <div class="feasibility-notes">
+                <h4>⚠ Feasibility Notes</h4>
+                <ul>
+                    {% for note in uc.feasibility_notes %}
+                    <li>{{ note }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            {% if uc.acceptance_criteria %}
+            <div class="acceptance-criteria">
+                <h4>✓ Acceptance Criteria</h4>
+                <ul>
+                    {% for criteria in uc.acceptance_criteria %}
+                    <li>{{ criteria }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Use cases" in project.output_scope %}
+<!-- ===== 4. TECHNIQUES ===== -->
+    <section id="techniques" class="section">
+        <h2><span class="section-number">4</span> Proposed Vision Techniques</h2>
+        
+        {% set all_techniques = {} %}
+        {% for uc in project.use_cases %}
+            {% for tech in uc.candidate_techniques %}
+                {% if tech not in all_techniques %}
+                    {% set _ = all_techniques.update({tech: []}) %}
+                {% endif %}
+                {% if uc.name not in all_techniques[tech] %}
+                    {% set _ = all_techniques[tech].append(uc.name) %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+
+        <table class="data-table">
+            <thead><tr><th>Technique</th><th>Applicable Use Cases</th></tr></thead>
+            <tbody>
+                {% for tech, ucs in all_techniques.items() %}
+                <tr><td>{{ tech }}</td><td>{{ ucs|join(', ') }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Camera plan" in project.output_scope %}
+<!-- ===== 5. CAMERAS ===== -->
+    <section id="cameras" class="section">
+        <h2><span class="section-number">5</span> Camera Inventory & Assignments</h2>
+        <div class="callout"><strong>Layout planning:</strong> {{ project.layout_section_count or 1 }} section(s) · target detection coverage {{ project.detection_coverage_target or 90 }}%. Coverage is a planning target; verify with a site survey and camera field-of-view review.</div>
+        {% if project.layout_sections %}<p><strong>Sections:</strong> {{ project.layout_sections|join(' · ') }}</p>{% endif %}
+        <p><strong>Camera assignment coverage:</strong> {{ coverage_percent }}% of configured detection zones have at least one assigned camera. This is an assignment check, not a measured field-of-view coverage estimate.</p>
+        {% if project.camera_specifications %}<p><strong>Camera requirements:</strong> {{ project.camera_specifications }}</p>{% endif %}
+        {% if project.camera_recommendations %}<h3>Suggested camera details</h3><ul>{% for item in project.camera_recommendations %}<li>{{ item }}</li>{% endfor %}</ul><p class="muted">Preliminary recommendations; validate lens, mounting, lighting, and pixel density on site.</p>{% endif %}
+        
+        {% if not project.cameras %}
+        <p class="empty-state">No cameras configured. Use Camera Map to add cameras.</p>
+        {% else %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Camera</th>
+                    <th>Status</th>
+                    <th>Position</th>
+                    <th>Orientation</th>
+                    <th>FOV / Range</th>
+                    <th>Resolution</th>
+                    <th>Assigned Use Cases</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cam in project.cameras %}
+                {% set assigned_ucs = [] %}
+                {% for uc_id in cam.assigned_use_case_ids %}
+                    {% for uc in project.use_cases %}
+                        {% if uc.id == uc_id %}
+                            {% set _ = assigned_ucs.append(uc.name) %}
+                        {% endif %}
+                    {% endfor %}
+                {% endfor %}
+                <tr>
+                    <td><strong>{{ cam.name }}</strong></td>
+                    <td><span class="badge badge-status-{{ cam.status.value }}">{{ cam.status.value|title }}</span></td>
+                    <td>({{ cam.x|percent }}, {{ cam.y|percent }})</td>
+                    <td>{{ cam.orientation_degrees }}°</td>
+                    <td>{{ cam.horizontal_fov_degrees }}° / {{ cam.view_range|percent }}</td>
+                    <td>{{ cam.resolution_width }}×{{ cam.resolution_height }}</td>
+                    <td>{{ assigned_ucs|join(', ') if assigned_ucs else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Camera Details -->
+        <h3>Camera Details</h3>
+        {% for cam in project.cameras %}
+        <div class="camera-card">
+            <div class="camera-header">
+                <span class="camera-icon">📷</span>
+                <div>
+                    <strong>{{ cam.name }}</strong>
+                    <span class="badge badge-status-{{ cam.status.value }}">{{ cam.status.value|title }}</span>
+                </div>
+            </div>
+            <table class="mini-table">
+                <tr><td>Position</td><td>({{ cam.x|percent }}, {{ cam.y|percent }})</td></tr>
+                <tr><td>Orientation</td><td>{{ cam.orientation_degrees }}°</td></tr>
+                <tr><td>Horizontal FOV</td><td>{{ cam.horizontal_fov_degrees }}°</td></tr>
+                <tr><td>View Range</td><td>{{ cam.view_range|percent }}</td></tr>
+                <tr><td>Resolution</td><td>{{ cam.resolution_width }} × {{ cam.resolution_height }}</td></tr>
+            </table>
+        </div>
+        {% endfor %}
+
+        <!-- Camera Map Diagram -->
+        {% if diagrams.camera_map %}
+        <div class="diagram-container">
+            <h3>Camera Layout Diagram</h3>
+            <img src="{{ diagrams.camera_map }}" alt="Camera Layout" class="diagram-image">
+        </div>
+        {% endif %}
+        {% endif %}
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Detection coverage" in project.output_scope %}
+<!-- ===== 6. ZONES ===== -->
+    <section id="zones" class="section">
+        <h2><span class="section-number">6</span> Detection Zones & Virtual Lines</h2>
+        
+        {% if not project.zones %}
+        <p class="empty-state">No zones or lines configured. Use Camera Map to add zones.</p>
+        {% else %}
+        <table class="data-table">
+            <thead><tr><th>Zone/Line</th><th>Type</th><th>Points</th><th>Assigned Cameras</th><th>Color</th></tr></thead>
+            <tbody>
+                {% for zone in project.zones %}
+                <tr>
+                    <td><strong>{{ zone.name }}</strong></td>
+                    <td><span class="badge badge-type">{{ zone.type.value.replace('_', ' ').title() }}</span></td>
+                    <td>{{ zone.points|length }}</td>
+                    <td>{{ zone.camera_ids|length }}</td>
+                    <td><span class="color-swatch" style="background: {{ zone.color }}"></span> {{ zone.color }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% for zone in project.zones %}
+        <div class="zone-card">
+            <div class="zone-header">
+                <span class="color-swatch" style="background: {{ zone.color }}"></span>
+                <strong>{{ zone.name }}</strong>
+                <span class="badge badge-type">{{ zone.type.value.replace('_', ' ').title() }}</span>
+            </div>
+            <table class="mini-table">
+                <tr><td>Type</td><td>{{ zone.type.value.replace('_', ' ').title() }}</td></tr>
+                <tr><td>Points</td><td>{{ zone.points|length }}</td></tr>
+                <tr><td>Assigned Cameras</td><td>{{ zone.camera_ids|length }}</td></tr>
+                <tr><td>Color</td><td><span class="color-swatch" style="background: {{ zone.color }}"></span> {{ zone.color }}</td></tr>
+            </table>
+        </div>
+        {% endfor %}
+        {% endif %}
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Workflow" in project.output_scope %}
+<!-- ===== 7. WORKFLOW ===== -->
+    <section id="workflow" class="section">
+        <h2><span class="section-number">7</span> Computer Vision Workflow</h2>
+        
+        {% if not project.workflow.nodes %}
+        <p class="empty-state">No workflow generated yet. Use Workflow Editor to create one.</p>
+        {% else %}
+        <table class="data-table">
+            <thead><tr><th>Node</th><th>Type</th><th>Configuration</th></tr></thead>
+            <tbody>
+                {% for node in project.workflow.nodes %}
+                {% set icon = {'camera_input':'📷','frame_sampling':'⏱️','preprocessing':'🔧','object_detection':'🎯','classification':'🏷️','segmentation':'✂️','ocr':'📝','measurement':'📏','tracking':'🔄','zone_logic':'📦','line_crossing':'📐','decision':'🤔','alert':'🚨','event_storage':'💾','manual_review':'👁️'}.get(node.type.value, '⬜') %}
+                {% set config = [] %}
+                {% for k, v in node.data.items() %}
+                    {% if k not in ['label', 'category'] %}
+                        {% set _ = config.append(k + ': ' + (v|tojson if v is mapping or v is iterable and v is not string else v|string)) %}
+                    {% endif %}
+                {% endfor %}
+                <tr>
+                    <td>{{ icon }} {{ node.data.get('label', node.type.value.replace('_', ' ').title()) }}</td>
+                    <td><span class="badge badge-type">{{ node.type.value.replace('_', ' ').title() }}</span></td>
+                    <td>{{ config|join('; ') if config else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <p class="workflow-note">Connections: {{ project.workflow.edges|length }} edges. This workflow represents a design-time artifact showing the proposed processing pipeline from camera input through detection, tracking, logic, and alerting.</p>
+
+        {% if diagrams.workflow %}
+        <div class="diagram-container">
+            <h3>Workflow Diagram</h3>
+            <img src="{{ diagrams.workflow }}" alt="Workflow Diagram" class="diagram-image">
+        </div>
+        {% endif %}
+        {% endif %}
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Assumptions & open questions" in project.output_scope %}
+<!-- ===== 8. ASSUMPTIONS ===== -->
+    <section id="assumptions" class="section">
+        <h2><span class="section-number">8</span> Technical Assumptions</h2>
+        {% if project.assumptions %}
+        <ul class="assumptions-list">
+            {% for assumption in project.assumptions %}
+            <li>{{ assumption }}</li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty-state">No assumptions documented.</p>
+        {% endif %}
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Assumptions & open questions" in project.output_scope %}
+<!-- ===== 9. RISKS ===== -->
+    <section id="risks" class="section">
+        <h2><span class="section-number">9</span> Missing Information & Risks</h2>
+        
+        <h3>Missing Information Required</h3>
+        {% if project.missing_information %}
+        <ul class="risks-list">
+            {% for item in project.missing_information %}
+            <li>{{ item }}</li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty-state success">No missing information items.</p>
+        {% endif %}
+
+        <h3>Feasibility Risks & Mitigations</h3>
+        {% set risk_ucs = project.use_cases|selectattr('feasibility_status', 'ne', 'feasible')|list %}
+        {% if risk_ucs %}
+        {% for uc in risk_ucs %}
+        <div class="risk-card">
+            <div class="risk-header">
+                <strong>{{ uc.name }}</strong>
+                <span class="badge {{ uc.feasibility_status.value }}">{{ uc.feasibility_status.value|title }}</span>
+            </div>
+            <ul>
+                {% for note in uc.feasibility_notes %}
+                <li>{{ note }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="empty-state success">✓ All use cases assessed as feasible. No major risks identified.</p>
+        {% endif %}
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Hardware & critical components" in project.output_scope %}
+<!-- ===== 10. HARDWARE ===== -->
+    <section id="hardware" class="section">
+        <h2><span class="section-number">10</span> Hardware & Software Categories</h2>
+        {% if project.available_hardware %}<h3>Available hardware / input feeds</h3><p>{{ project.available_hardware }}</p>{% endif %}{% if project.critical_components %}<h3>Critical components</h3><ul>{% for item in project.critical_components %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+        
+        <div class="two-col">
+            <div>
+                <h3>📷 Camera Hardware</h3>
+                <ul>
+                    <li>IP cameras with 1080p+ resolution, HDR support</li>
+                    <li>Wide FOV (90-110°) for overview cameras</li>
+                    <li>IR illumination for 24/7 operation</li>
+                    <li>PoE+ for simplified installation</li>
+                    <li>ONVIF Profile S/T compliance</li>
+                </ul>
+            </div>
+            <div>
+                <h3>💻 Compute & Software</h3>
+                <ul>
+                    <li>Edge AI accelerator (NVIDIA Jetson, Google Coral, or x86 GPU)</li>
+                    <li>Container orchestration (Docker/Kubernetes)</li>
+                    <li>VMS integration (Milestone, Genetec, or open-source)</li>
+                    <li>Message queue (MQTT, Kafka) for event streaming</li>
+                    <li>Time-series database for metrics (InfluxDB, TimescaleDB)</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+{% endif %}
+
+{% if not project.output_scope or "Use cases" in project.output_scope %}
+    <!-- ===== 11. ACCEPTANCE CRITERIA ===== -->
+    <section id="acceptance" class="section">
+        <h2><span class="section-number">11</span> Consolidated Acceptance Criteria</h2>
+        
+        {% set all_criteria = [] %}
+        {% for uc in project.use_cases %}
+            {% for criteria in uc.acceptance_criteria %}
+                {% if criteria not in all_criteria %}
+                    {% set _ = all_criteria.append(criteria) %}
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+
+        {% if all_criteria %}
+        <ol class="criteria-list">
+            {% for criteria in all_criteria %}
+            <li>{{ criteria }}</li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <p class="empty-state">No acceptance criteria defined yet.</p>
+        {% endif %}
+    </section>
+{% endif %}
+
+    {% if not project.output_scope or "Implementation roadmap" in project.output_scope %}
+<!-- ===== 12. ROADMAP ===== -->
+    <section id="roadmap" class="section">
+        <h2><span class="section-number">12</span> Implementation Roadmap</h2>
+        
+        <div class="roadmap">
+            <div class="phase">
+                <h3 class="phase-blue">Phase 1: Foundation (Weeks 1-4)</h3>
+                <ul>
+                    <li>Procure and install cameras per layout</li>
+                    <li>Configure network, VLANs, and VMS integration</li>
+                    <li>Establish baseline lighting and environmental conditions</li>
+                    <li>Deploy edge compute infrastructure</li>
+                </ul>
+            </div>
+            <div class="phase">
+                <h3 class="phase-green">Phase 2: Model Development (Weeks 5-10)</h3>
+                <ul>
+                    <li>Collect and annotate training data from camera feeds</li>
+                    <li>Train/finetune detection models per use case</li>
+                    <li>Validate model performance against acceptance criteria</li>
+                    <li>Implement tracking and logic modules</li>
+                </ul>
+            </div>
+            <div class="phase">
+                <h3 class="phase-amber">Phase 3: Integration & Testing (Weeks 11-16)</h3>
+                <ul>
+                    <li>End-to-end pipeline integration</li>
+                    <li>Alert routing and notification configuration</li>
+                    <li>User acceptance testing with stakeholders</li>
+                    <li>Performance optimization and tuning</li>
+                </ul>
+            </div>
+            <div class="phase">
+                <h3 class="phase-purple">Phase 4: Deployment & Operations (Weeks 17-20)</h3>
+                <ul>
+                    <li>Production rollout with monitoring</li>
+                    <li>Documentation and runbook creation</li>
+                    <li>Staff training and handover</li>
+                    <li>Ongoing model retraining schedule</li>
+                </ul>
+            </div>
+        </div>
+
+        {% if diagrams.gantt %}
+        <div class="diagram-container">
+            <h3>Roadmap Gantt Chart</h3>
+            <img src="{{ diagrams.gantt }}" alt="Gantt Chart" class="diagram-image">
+        </div>
+        {% endif %}
+    </section>
+{% endif %}
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="footer">
+        <p>TechHub Plan Vision — Computer Vision Planning</p>
+        <p>Generated from the TechHub Plan Vision project configuration.</p>
+    </footer>
+</body>
+</html>

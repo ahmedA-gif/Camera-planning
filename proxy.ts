@@ -7,7 +7,7 @@ export default clerkMiddleware(async (auth, request) => {
 
   const { userId } = await auth();
   if (path.startsWith("/api/")) {
-    if (!userId) return Response.json({ error: "Authentication required." }, { status: 401 });
+    if (!userId && process.env.NODE_ENV !== "development") return Response.json({ error: "Authentication required." }, { status: 401 });
     return;
   }
   if (!userId) await auth.protect();

@@ -287,7 +287,12 @@ def generate_camera_map_svg(project: DetVisionProject, width: int = 800, height:
                 svg.append(label)
     
     # Cameras
-    for cam in project.cameras:
+    cam_count = len(project.cameras)
+    cam_radius = "6" if cam_count > 40 else "10" if cam_count > 20 else "16"
+    dir_len = 10 if cam_count > 40 else 16 if cam_count > 20 else 22
+    stroke_w = "1.5" if cam_count > 40 else "2" if cam_count > 20 else "3"
+
+    for idx, cam in enumerate(project.cameras):
         cx = cam.x * width
         cy = cam.y * height
         color = {
@@ -297,31 +302,34 @@ def generate_camera_map_svg(project: DetVisionProject, width: int = 800, height:
         
         # Camera body
         circle = create_svg_element("circle", {
-            "cx": str(cx), "cy": str(cy), "r": "18",
-            "fill": color, "stroke": "white", "stroke-width": "3",
+            "cx": str(cx), "cy": str(cy), "r": cam_radius,
+            "fill": color, "stroke": "white", "stroke-width": stroke_w,
         })
         svg.append(circle)
         
         # Direction line
         import math
         angle = math.radians(cam.orientation_degrees)
-        dx = math.cos(angle) * 25
-        dy = math.sin(angle) * 25
+        dx = math.cos(angle) * dir_len
+        dy = math.sin(angle) * dir_len
         line = create_svg_element("line", {
             "x1": str(cx), "y1": str(cy),
             "x2": str(cx + dx), "y2": str(cy + dy),
-            "stroke": "white", "stroke-width": "3", "stroke-linecap": "round",
+            "stroke": "white", "stroke-width": stroke_w, "stroke-linecap": "round",
         })
         svg.append(line)
         
-        # Camera label
-        label = create_svg_element("text", {
-            "x": str(cx), "y": str(cy - 30),
-            "font-size": "10", "font-weight": "600",
-            "text-anchor": "middle", "fill": color,
-            "font-family": "Arial, sans-serif",
-        }, text=cam.name)
-        svg.append(label)
+        # Camera label (shortened for large plans to prevent overlap)
+        if cam_count <= 30 or (idx % 2 == 0):
+            short_name = cam.name.split('[')[0].strip() if '[' in cam.name else cam.name[:10]
+            label = create_svg_element("text", {
+                "x": str(cx), "y": str(cy - (12 if cam_count > 30 else 22)),
+                "font-size": "8" if cam_count > 30 else "10",
+                "font-weight": "600",
+                "text-anchor": "middle", "fill": color,
+                "font-family": "Arial, sans-serif",
+            }, text=short_name)
+            svg.append(label)
     
     # Legend
     legend_y = 20

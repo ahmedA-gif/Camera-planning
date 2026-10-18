@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { UserButton } from '@clerk/nextjs';
-import { Save, Download, Upload, AlertCircle, Info, FileText, FileType } from 'lucide-react';
+import { Save, Download, Upload, AlertCircle, Info, FileText, FileType, ExternalLink } from 'lucide-react';
 import type { DetVisionProject } from '@/lib/types';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 
@@ -147,6 +147,18 @@ export function ProjectHeader({
             </label>
           </>
         )}
+
+        {/* Coverage Planner Tool */}
+        <a
+          href="/camera-coverage-planner.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-3 py-1.5 text-sm font-medium bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors flex items-center gap-1 shadow-sm"
+          title="Open Large-Scale Camera Coverage Planner v3 (Supports 70+ cameras & 8 mount types)"
+        >
+          <ExternalLink className="w-4 h-4" />
+          <span>Planner v3</span>
+        </a>
 
         {/* Generate PDF Report */}
         <button

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import report
+from app.routes import report, planner_routes
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(report.router, prefix="/api/v1/report", tags=["report"])
+app.include_router(planner_routes.router, prefix="/api/v1/planner", tags=["planner"])
 
 
 @app.get("/")

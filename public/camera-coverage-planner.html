@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camera Coverage Planner v3.2 — Large-Scale Multi-Mount (Up to 200+ Cameras)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap');
+:root{
+  --bg:#0b0d12;--surf:#12151e;--surf2:#181c28;--surf3:#1e2333;
+  --bdr:#252c3f;--bdr2:#2e3650;
+  --acc:#00e5ff;--acc2:#ff6b35;--acc3:#7fff6b;
+  --warn:#ffd60a;--danger:#ff4757;--purple:#c084fc;--pink:#f472b6;
+  --sky:#38bdf8;--orange:#fb923c;
+  --text:#e2e8f0;--muted:#64748b;--muted2:#94a3b8;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{font-size:14px}
+body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
+
+/* ── HEADER ── */
+.hdr{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+  border-bottom:1px solid var(--bdr);padding-bottom:16px;margin-bottom:20px}
+.hdr-title{font-size:22px;font-weight:800;letter-spacing:-.5px}
+.hdr-title span{color:var(--acc)}
+.hdr-sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-top:4px}
+.badge{font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 8px;border-radius:4px;
+  letter-spacing:1px;border:1px solid;white-space:nowrap}
+.badge-c{color:var(--acc);border-color:rgba(0,229,255,.3);background:rgba(0,229,255,.08)}
+.badge-o{color:var(--acc2);border-color:rgba(255,107,53,.3);background:rgba(255,107,53,.08)}
+.badge-g{color:var(--acc3);border-color:rgba(127,255,107,.3);background:rgba(127,255,107,.08)}
+
+/* ── MAIN LAYOUT ── */
+.layout{display:grid;grid-template-columns:390px 1fr;gap:18px;align-items:start}
+@media(max-width:1080px){.layout{grid-template-columns:1fr}}
+
+/* ── CARD ── */
+.card{background:var(--surf);border:1px solid var(--bdr);border-radius:10px;overflow:hidden}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 16px;
+  border-bottom:1px solid var(--bdr);font-size:11px;font-weight:700;
+  letter-spacing:1.5px;text-transform:uppercase;color:var(--muted2)}
+.card-head .head-left{display:flex;align-items:center;gap:8px}
+.card-head .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.card-body{padding:16px}
+
+/* ── SECTION TITLE ── */
+.sec-title{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+  color:var(--acc);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.sec-title::after{content:'';flex:1;height:1px;background:var(--bdr)}
+.sec{margin-bottom:16px}
+
+/* ── FORM ── */
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.frow3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.fg{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}
+.fg label{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:.5px}
+.fg input,.fg select,.fg textarea{
+  background:var(--surf2);border:1px solid var(--bdr);border-radius:5px;
+  color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;
+  padding:7px 9px;width:100%;transition:border-color .15s}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--acc)}
+
+/* Preset chips */
+.chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.chip{padding:4px 8px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;
+  border-radius:4px;background:var(--surf2);border:1px solid var(--bdr);color:var(--muted2);
+  cursor:pointer;transition:all .15s}
+.chip:hover{border-color:var(--acc);color:var(--acc);background:rgba(0,229,255,.05)}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px 16px;border:none;border-radius:6px;font-family:'Syne',sans-serif;
+  font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.btn-p{background:var(--acc);color:#0b0d12}
+.btn-p:hover{background:#33ecff;transform:translateY(-1px)}
+.btn-s{background:var(--surf2);color:var(--text);border:1px solid var(--bdr)}
+.btn-s:hover{border-color:var(--acc);color:var(--acc)}
+.btn-xs{padding:3px 8px;font-size:9px;font-family:'JetBrains Mono',monospace}
+.btn-row{display:flex;flex-direction:column;gap:7px}
+
+/* ── METRICS ── */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:600px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.met{background:var(--surf);border:1px solid var(--bdr);border-radius:8px;padding:12px 14px}
+.met .lbl{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--muted);
+  letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px}
+.met .val{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:700;line-height:1}
+.v-c{color:var(--acc)}.v-g{color:var(--acc3)}.v-r{color:var(--danger)}.v-y{color:var(--warn)}
+
+/* ── ALERT ── */
+.alert{border-radius:7px;padding:10px 14px;font-family:'JetBrains Mono',monospace;
+  font-size:11px;line-height:1.6;border-left:3px solid;margin-bottom:14px}
+.a-ok{background:rgba(127,255,107,.07);border-color:var(--acc3);color:#9ef090}
+.a-warn{background:rgba(255,214,10,.07);border-color:var(--warn);color:#ffe15a}
+.a-bad{background:rgba(255,71,87,.07);border-color:var(--danger);color:#ff7a85}
+
+/* ── CAMERA POSITION CARDS ── */
+.cam-pos-list{display:flex;flex-direction:column;gap:8px;margin-top:4px;max-height:560px;overflow-y:auto;padding-right:4px}
+.cam-pos-list::-webkit-scrollbar{width:5px}
+.cam-pos-list::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:3px}
+
+.cam-pos-card{
+  background:var(--surf2);border:1.5px solid var(--bdr);border-radius:8px;
+  overflow:hidden;transition:border-color .15s}
+.cam-pos-card:hover{border-color:var(--bdr2)}
+
+.cam-pos-header{
+  display:flex;align-items:center;gap:10px;padding:8px 12px;
+  cursor:pointer;user-select:none;background:var(--surf3)}
+.cam-pos-num{
+  width:24px;height:24px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-family:'JetBrains Mono',monospace;font-size:10px;
+  font-weight:700;color:#0b0d12;flex-shrink:0}
+.cam-pos-label{flex:1;font-size:11px;font-weight:700}
+.cam-pos-sub{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted)}
+.cam-pos-toggle{font-size:10px;color:var(--muted);transition:transform .15s}
+.cam-pos-toggle.open{transform:rotate(180deg)}
+
+.cam-pos-body{padding:12px;display:none}
+.cam-pos-body.open{display:block}
+
+/* Mount mini-selector */
+.mini-mount-row{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px}
+.mm{cursor:pointer;background:var(--surf);border:1.5px solid var(--bdr);border-radius:6px;
+  padding:5px 3px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  transition:all .15s;user-select:none}
+.mm:hover{border-color:var(--acc)}
+.mm.active{border-color:var(--acc);background:rgba(0,229,255,.07)}
+.mm svg{width:28px;height:22px}
+.mm span{font-size:8px;font-weight:700;text-align:center;color:var(--muted);line-height:1.2}
+.mm.active span{color:var(--acc)}
+
+/* Tilt/Az row */
+.slider-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.slider-row label{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--muted);
+  min-width:70px;white-space:nowrap}
+.slider-row input[type=range]{flex:1;accent-color:var(--acc);cursor:pointer}
+.slider-row .sv{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--acc);
+  min-width:32px;text-align:right}
+
+/* ── CANVAS TABS ── */
+.tab-strip{display:flex;background:var(--surf2);border-bottom:1px solid var(--bdr)}
+.tab{padding:9px 16px;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--muted);
+  cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.tab.act{color:var(--acc);border-color:var(--acc)}
+.tab:hover:not(.act){color:var(--text)}
+.tab-content{display:none;padding:14px}
+.tab-content.act{display:block}
+
+/* ── RESULT CAM LIST ── */
+.rcam-list{display:flex;flex-direction:column;gap:7px;max-height:500px;overflow-y:auto}
+.rcam{background:var(--surf2);border:1px solid var(--bdr);border-radius:7px;
+  padding:8px 12px;display:flex;gap:10px;align-items:flex-start}
+.rcam-dot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;
+  font-weight:700;color:#0b0d12;flex-shrink:0}
+.rcam-info .rt{font-size:11px;font-weight:700;margin-bottom:2px}
+.rcam-info .rm{font-family:'JetBrains Mono',monospace;font-size:9px;
+  color:var(--muted2);line-height:1.6}
+
+/* ── LEGEND ── */
+.legend{display:flex;flex-wrap:wrap;gap:10px}
+.leg{display:flex;align-items:center;gap:6px;
+  font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted)}
+.leg-box{width:20px;height:11px;border-radius:2px;flex-shrink:0}
+
+/* ── RECO ── */
+.reco{background:var(--surf2);border:1px solid var(--bdr);border-left:2px solid var(--acc);
+  border-radius:6px;padding:9px 12px;font-family:'JetBrains Mono',monospace;
+  font-size:10px;color:var(--muted2);line-height:1.7;margin-bottom:7px}
+.reco strong{color:var(--text)}
+
+/* ── TABLE ── */
+.tbl{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:10px}
+.tbl th{text-align:left;padding:6px 8px;background:var(--surf3);color:var(--acc);
+  font-size:9px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--bdr);position:sticky;top:0}
+.tbl td{padding:6px 8px;border-bottom:1px solid var(--bdr);color:var(--muted2);vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td:first-child{color:var(--text);font-weight:700}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div>
+    <div class="hdr-title">🎥 Camera Coverage <span>Planner v3.2</span></div>
+    <div class="hdr-sub">// Large-scale planning (up to 200+ cameras) · Per-camera mount & angles · Zero tokens / rule engine</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span class="badge badge-c">LARGE-SCALE (70+ CAMS)</span>
+    <span class="badge badge-o">8 MOUNT TYPES</span>
+    <span class="badge badge-g">PYTHON & RULE DRIVEN</span>
+  </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="layout">
+
+  <!-- ══ LEFT: CONFIG ══ -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+
+    <!-- Scenario Parser & Presets -->
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left"><div class="dot" style="background:var(--purple)"></div>Scenario & Keyword Parser</div>
+      </div>
+      <div class="card-body">
+        <div class="fg">
+          <label>Paste Scenario Text</label>
+          <textarea id="scenarioInput" rows="3" placeholder="e.g. We have a 90m x 15m logistics warehouse bay with 70 cameras needed, racks, loading docks and forklifts..."></textarea>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button class="btn btn-p btn-xs" onclick="parseScenario()">⚡ Detect Keywords & Auto-Plan</button>
+          <button class="btn btn-s btn-xs" onclick="document.getElementById('scenarioInput').value='';">Clear</button>
+        </div>
+        <div class="sec-title">Quick Presets</div>
+        <div class="chip-row">
+          <div class="chip" onclick="applyPreset(5, 90, 10, 'Small Bay')">5 Cams (Small)</div>
+          <div class="chip" onclick="applyPreset(20, 100, 40, 'Mid Warehouse')">20 Cams (Medium)</div>
+          <div class="chip" onclick="applyPreset(70, 90, 15, 'Large Warehouse 70')">70 Cams (Requested)</div>
+          <div class="chip" onclick="applyPreset(100, 150, 60, 'Mega Logistics')">100 Cams (Mega)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Area & Installation -->
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left"><div class="dot" style="background:var(--acc2)"></div>Area & Installation</div>
+      </div>
+      <div class="card-body">
+        <div class="frow">
+          <div class="fg"><label>Bay Length (m)</label><input type="number" id="g-len" value="90" step="1" min="1" oninput="rebuildCameraCards()"></div>
+          <div class="fg"><label>Bay Width (m)</label><input type="number" id="g-wid" value="15" step="1" min="1"></div>
+        </div>
+        <div class="frow">
+          <div class="fg"><label>Mount Height (m)</label><input type="number" id="g-h" value="4.5" step="0.1" min="0.5"></div>
+          <div class="fg"><label>Overlap (%)</label><input type="number" id="g-ov" value="10" step="5" min="0" max="50"></div>
+        </div>
+        <div class="frow">
+          <div class="fg"><label>Monitoring Mode</label>
+            <select id="g-mode">
+              <option value="detect">Detection (Long Range)</option>
+              <option value="observe">Observation</option>
+              <option value="recognize" selected>Recognize (PPE)</option>
+              <option value="identify">Identification (Face/Detail)</option>
+            </select>
+          </div>
+          <div class="fg"><label>Camera Count (1–200)</label>
+            <input type="number" id="g-count" value="70" step="1" min="1" max="250" oninput="rebuildCameraCards()">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Global Camera Optical Specs -->
+    <div class="card">
+      <div class="card-head"><div class="head-left"><div class="dot" style="background:var(--acc)"></div>Optical Specifications</div></div>
+      <div class="card-body">
+        <div class="frow3">
+          <div class="fg"><label>Lens (mm)</label><input type="number" id="g-lens" value="2.8" step="0.1" min="1"></div>
+          <div class="fg"><label>H-FOV (°)</label><input type="number" id="g-fovH" value="106" step="1" min="10" max="180"></div>
+          <div class="fg"><label>V-FOV (°)</label><input type="number" id="g-fovV" value="56" step="1" min="10" max="120"></div>
+        </div>
+        <div class="frow">
+          <div class="fg"><label>Detect (m)</label><input type="number" id="g-rD" value="88" step="0.1"></div>
+          <div class="fg"><label>Observe (m)</label><input type="number" id="g-rO" value="35.2" step="0.1"></div>
+        </div>
+        <div class="frow">
+          <div class="fg"><label>Recognize (m)</label><input type="number" id="g-rR" value="17.6" step="0.1"></div>
+          <div class="fg"><label>Identify (m)</label><input type="number" id="g-rI" value="8.8" step="0.1"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Per-Camera Mount Cards -->
+    <div class="card">
+      <div class="card-head">
+        <div class="head-left"><div class="dot" style="background:var(--acc3)"></div>Per-Camera Mounts (<span id="camCountBadge">70</span>)</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-s btn-xs" onclick="expandAllCards(true)">Expand</button>
+          <button class="btn btn-s btn-xs" onclick="expandAllCards(false)">Collapse</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="cam-pos-list" id="camPosCards"></div>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="btn-row">
+      <button class="btn btn-p" onclick="runOptimize()">⚡ Calculate All Camera Coverage</button>
+      <button class="btn btn-s" onclick="resetAll()">↺ Reset to Defaults</button>
+      <button class="btn btn-s" onclick="exportReport()">↓ Export Full Engineering Report</button>
+    </div>
+
+  </div>
+
+  <!-- ══ RIGHT: RESULTS ══ -->
+  <div id="rightPanel" style="display:flex;flex-direction:column;gap:14px">
+
+    <!-- Empty state -->
+    <div id="emptyState" style="display:flex;align-items:center;justify-content:center;
+      min-height:280px;background:var(--surf);border:1px solid var(--bdr);border-radius:10px">
+      <div style="text-align:center;color:var(--muted)">
+        <div style="font-size:36px;margin-bottom:10px;opacity:.4">📷</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px">
+          Configure cameras then click <span style="color:var(--acc)">Calculate</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results" style="display:none;flex-direction:column;gap:14px">
+
+      <!-- Metrics -->
+      <div class="metrics">
+        <div class="met"><div class="lbl">Cameras</div><div class="val v-c" id="mCams">-</div></div>
+        <div class="met"><div class="lbl">Coverage</div><div class="val v-g" id="mCov">-</div></div>
+        <div class="met"><div class="lbl">Blind Spot</div><div class="val v-r" id="mBlind">-</div></div>
+        <div class="met"><div class="lbl">Bandwidth / Storage</div><div class="val v-y" id="mEff">-</div></div>
+      </div>
+
+      <!-- Alert -->
+      <div id="alertBox"></div>
+
+      <!-- Coverage Maps -->
+      <div class="card">
+        <div class="card-head">
+          <div class="head-left"><div class="dot" style="background:var(--acc2)"></div>Coverage Maps</div>
+        </div>
+        <div class="tab-strip" id="viewTabs">
+          <div class="tab act" onclick="switchView('top',this)">Top View (Floor Plan)</div>
+          <div class="tab" onclick="switchView('side',this)">Side Profile</div>
+          <div class="tab" onclick="switchView('3d',this)">3D Perspective</div>
+        </div>
+        <div id="pane-top" class="tab-content act" style="padding:10px">
+          <canvas id="cvTop" width="900" height="380" style="width:100%;height:auto;display:block"></canvas>
+        </div>
+        <div id="pane-side" class="tab-content" style="padding:10px">
+          <canvas id="cvSide" width="900" height="280" style="width:100%;height:auto;display:block"></canvas>
+        </div>
+        <div id="pane-3d" class="tab-content" style="padding:10px">
+          <canvas id="cv3d" width="900" height="320" style="width:100%;height:auto;display:block"></canvas>
+        </div>
+      </div>
+
+      <!-- Detail Table + Camera List -->
+      <div class="card">
+        <div class="card-head"><div class="head-left"><div class="dot" style="background:var(--purple)"></div>Camera Details & Engineering Sizing</div></div>
+        <div class="tab-strip" id="detTabs">
+          <div class="tab act" onclick="switchDetTab('table',this)">Summary Table</div>
+          <div class="tab" onclick="switchDetTab('list',this)">Full Details</div>
+          <div class="tab" onclick="switchDetTab('reco',this)">Recommendations</div>
+          <div class="tab" onclick="switchDetTab('legend',this)">Legend & Sizing</div>
+        </div>
+        <div id="dtab-table" class="tab-content act">
+          <div style="overflow-x:auto;max-height:480px"><table class="tbl" id="camTable"></table></div>
+        </div>
+        <div id="dtab-list" class="tab-content">
+          <div class="rcam-list" id="camList"></div>
+        </div>
+        <div id="dtab-reco" class="tab-content">
+          <div id="recoBox"></div>
+        </div>
+        <div id="dtab-legend" class="tab-content">
+          <div class="legend" id="legendBox"></div>
+          <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:10px;
+            color:var(--muted);line-height:1.8" id="legendNotes"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  CONSTANTS & COLOR PALETTE
+// ═══════════════════════════════════════════════
+const CAM_COLORS = [
+  '#00e5ff','#ff6b35','#7fff6b','#c084fc',
+  '#ffd60a','#f472b6','#38bdf8','#fb923c',
+  '#a3e635','#e879f9','#34d399','#fbbf24',
+  '#f87171','#818cf8','#2dd4bf','#f9a8d4',
+  '#86efac','#fde68a','#bfdbfe','#ddd6fe',
+  '#22d3ee','#ec4899','#10b981','#f59e0b',
+  '#6366f1','#14b8a6','#84cc16','#06b6d4'
+];
+
+const MOUNTS = {
+  'wall-h': { label:'Wall\nHoriz →', tip:'Wall mount along bay length', hasTilt:false, hasAz:false, colorHint:'#00e5ff' },
+  'wall-v': { label:'Wall\nVert ↓', tip:'Wall mount tilted downward', hasTilt:true, hasAz:false, colorHint:'#38bdf8' },
+  'roof-nadir': { label:'Roof\nNadir ↓', tip:'Ceiling mount straight down', hasTilt:false, hasAz:false, colorHint:'#ff6b35' },
+  'roof-tilt': { label:'Roof\nTilted ↘', tip:'Roof mount tilted at angle toward target', hasTilt:true, hasAz:true, colorHint:'#7fff6b' },
+  'corner': { label:'Corner\n45° ↘', tip:'Corner mount pointing diagonally', hasTilt:false, hasAz:true, colorHint:'#c084fc' },
+  'cross': { label:'Cross\nAisle ↔', tip:'Perpendicular across width', hasTilt:false, hasAz:false, colorHint:'#ffd60a' },
+  'pole360': { label:'Pole\n360°', tip:'Pole-top fisheye all directions', hasTilt:false, hasAz:false, colorHint:'#f472b6' },
+  'underside': { label:'Under\nside ↑', tip:'Mounted beneath surface pointing upward', hasTilt:false, hasAz:false, colorHint:'#fb923c' },
+};
+
+const MOUNT_SVGS = {
+  'wall-h':`<svg viewBox="0 0 34 26"><rect x="0" y="9" width="5" height="9" rx="1" fill="#1e2333"/><circle cx="5" cy="13" r="5" fill="currentColor"/><polygon points="10,10 30,7 30,19 10,16" fill="currentColor" opacity=".25"/><line x1="10" y1="13" x2="30" y2="13" stroke="currentColor" stroke-width="1.5" opacity=".6"/></svg>`,
+  'wall-v':`<svg viewBox="0 0 34 26"><rect x="14" y="0" width="6" height="10" rx="1" fill="#1e2333"/><circle cx="17" cy="10" r="5" fill="currentColor"/><polygon points="10,15 17,10 24,15 21,26 13,26" fill="currentColor" opacity=".25"/><line x1="17" y1="10" x2="17" y2="26" stroke="currentColor" stroke-width="1.5" opacity=".6"/></svg>`,
+  'roof-nadir':`<svg viewBox="0 0 34 26"><rect x="0" y="0" width="34" height="5" rx="1" fill="#1e2333"/><circle cx="17" cy="5" r="5" fill="currentColor"/><polygon points="6,5 28,5 24,26 10,26" fill="currentColor" opacity=".25"/><line x1="17" y1="5" x2="17" y2="26" stroke="currentColor" stroke-width="1.5" opacity=".6"/></svg>`,
+  'roof-tilt':`<svg viewBox="0 0 34 26"><rect x="0" y="0" width="34" height="5" rx="1" fill="#1e2333"/><circle cx="17" cy="5" r="5" fill="currentColor"/><polygon points="17,5 34,22 22,26" fill="currentColor" opacity=".25"/><line x1="17" y1="5" x2="30" y2="22" stroke="currentColor" stroke-width="1.5" opacity=".6"/></svg>`,
+  'corner':`<svg viewBox="0 0 34 26"><rect x="0" y="0" width="8" height="26" rx="1" fill="#1e2333"/><rect x="0" y="0" width="34" height="8" rx="1" fill="#1e2333"/><circle cx="8" cy="8" r="5" fill="currentColor"/><polygon points="8,8 30,22 22,26 10,22" fill="currentColor" opacity=".25"/></svg>`,
+  'cross':`<svg viewBox="0 0 34 26"><rect x="0" y="10" width="34" height="6" rx="2" fill="none" stroke="#252c3f" stroke-width="1"/><circle cx="17" cy="13" r="5" fill="currentColor"/><polygon points="17,13 3,5 3,21" fill="currentColor" opacity=".25"/><polygon points="17,13 31,5 31,21" fill="currentColor" opacity=".2"/></svg>`,
+  'pole360':`<svg viewBox="0 0 34 26"><line x1="17" y1="0" x2="17" y2="26" stroke="#1e2333" stroke-width="3"/><circle cx="17" cy="7" r="5" fill="currentColor"/><circle cx="17" cy="7" r="11" fill="none" stroke="currentColor" stroke-width="1" opacity=".3" stroke-dasharray="2,2"/></svg>`,
+  'underside':`<svg viewBox="0 0 34 26"><rect x="0" y="21" width="34" height="5" rx="1" fill="#1e2333"/><circle cx="17" cy="21" r="5" fill="currentColor"/><polygon points="6,21 28,21 24,0 10,0" fill="currentColor" opacity=".25"/><line x1="17" y1="21" x2="17" y2="0" stroke="currentColor" stroke-width="1.5" opacity=".6"/></svg>`,
+};
+
+let currentConfig = null;
+
+// ═══════════════════════════════════════════════
+//  SCENARIO PARSER & PRESETS
+// ═══════════════════════════════════════════════
+function parseScenario() {
+  const text = document.getElementById('scenarioInput').value;
+  if (!text.trim()) return;
+
+  // Extract camera count (e.g. 70 cameras)
+  const countMatch = text.match(/(\d+)\s*(?:cameras?|cctvs?|cams?|units?)/i) || text.match(/(?:need|require|setup|install)\s+(\d+)/i);
+  if (countMatch) {
+    const c = parseInt(countMatch[1]);
+    if (c >= 1 && c <= 250) document.getElementById('g-count').value = c;
+  }
+
+  // Extract dimensions (e.g. 90m x 15m)
+  const dimMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:m)?\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:m)?/i);
+  if (dimMatch) {
+    document.getElementById('g-len').value = parseFloat(dimMatch[1]);
+    document.getElementById('g-wid').value = parseFloat(dimMatch[2]);
+  }
+
+  // Extract height
+  const hMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:m)?\s*(?:high|height|ceiling)/i);
+  if (hMatch) document.getElementById('g-h').value = parseFloat(hMatch[1]);
+
+  rebuildCameraCards();
+  runOptimize();
+}
+
+function applyPreset(count, len, wid, label) {
+  document.getElementById('g-count').value = count;
+  document.getElementById('g-len').value = len;
+  document.getElementById('g-wid').value = wid;
+  rebuildCameraCards();
+  runOptimize();
+}
+
+function expandAllCards(open) {
+  document.querySelectorAll('.cam-pos-body').forEach(b => {
+    if (open) b.classList.add('open');
+    else b.classList.remove('open');
+  });
+  document.querySelectorAll('.cam-pos-toggle').forEach(t => {
+    t.textContent = open ? '▲' : '▼';
+  });
+}
+
+// ═══════════════════════════════════════════════
+//  REBUILD CAMERA CARDS
+// ═══════════════════════════════════════════════
+function rebuildCameraCards() {
+  const count = Math.max(1, Math.min(250, parseInt(document.getElementById('g-count').value) || 70));
+  const len = parseFloat(document.getElementById('g-len').value) || 90;
+  const container = document.getElementById('camPosCards');
+  document.getElementById('camCountBadge').textContent = count;
+
+  const existing = {};
+  container.querySelectorAll('.cam-pos-card').forEach(card => {
+    const id = parseInt(card.dataset.id);
+    const activeMount = card.querySelector('.mm.active');
+    const tiltEl = card.querySelector('.cam-tilt');
+    const azEl = card.querySelector('.cam-az');
+    existing[id] = {
+      mount: activeMount ? activeMount.dataset.m : null,
+      tilt: tiltEl ? parseFloat(tiltEl.value) : 30,
+      az: azEl ? parseFloat(azEl.value) : 0,
+    };
+  });
+
+  container.innerHTML = '';
+  for (let i = 1; i <= count; i++) {
+    const pos = calcCamPosition(i, count, len);
+    const prev = existing[i] || {};
+    const defMount = defaultMountForPosition(i, count);
+    const mount = prev.mount || defMount;
+    const tilt = prev.tilt || (MOUNTS[mount]?.hasTilt ? 35 : 30);
+    const az = prev.az || 0;
+    container.appendChild(buildCamCard(i, count, pos, len, mount, tilt, az));
+  }
+}
+
+function calcCamPosition(idx, total, len) {
+  if (total === 1) return len / 2;
+  return ((idx - 1) / (total - 1)) * len;
+}
+
+function defaultMountForPosition(idx, total) {
+  if (idx === 1 || idx === total) return 'wall-h';
+  if (idx % 7 === 0) return 'pole360';
+  if (idx % 5 === 0) return 'roof-tilt';
+  if (idx % 4 === 0) return 'cross';
+  if (idx % 3 === 0) return 'roof-nadir';
+  if (idx % 2 === 0) return 'wall-v';
+  return 'wall-h';
+}
+
+function buildCamCard(i, total, pos, len, mountType, tilt, az) {
+  const color = CAM_COLORS[(i - 1) % CAM_COLORS.length];
+  const info = MOUNTS[mountType] || MOUNTS['wall-h'];
+  const card = document.createElement('div');
+  card.className = 'cam-pos-card';
+  card.dataset.id = i;
+
+  const mountBtns = Object.entries(MOUNTS).map(([key, m]) => `
+    <div class="mm ${key === mountType ? 'active' : ''}" data-m="${key}"
+      onclick="selectCamMount(this,${i})" title="${m.tip}" style="color:${m.colorHint}">
+      ${MOUNT_SVGS[key]}
+      <span>${m.label}</span>
+    </div>`).join('');
+
+  const tiltSection = `
+    <div class="cam-tilt-section" style="display:${(info.hasTilt||info.hasAz)?'block':'none'}">
+      <div class="slider-row" style="display:${info.hasTilt?'flex':'none'}">
+        <label>Tilt Down</label>
+        <input type="range" class="cam-tilt" min="5" max="80" value="${tilt}"
+          oninput="this.nextElementSibling.textContent=this.value+'°'">
+        <span class="sv">${tilt}°</span>
+      </div>
+      <div class="slider-row" style="display:${info.hasAz?'flex':'none'}">
+        <label>Azimuth</label>
+        <input type="range" class="cam-az" min="0" max="359" value="${az}"
+          oninput="this.nextElementSibling.textContent=this.value+'°'">
+        <span class="sv">${az}°</span>
+      </div>
+    </div>`;
+
+  const facing = getFacingLabel(i, total, mountType);
+
+  card.innerHTML = `
+    <div class="cam-pos-header" onclick="toggleCamCard(${i})">
+      <div class="cam-pos-num" style="background:${color}">${i}</div>
+      <div style="flex:1">
+        <div class="cam-pos-label" style="color:${color}">Camera ${i}</div>
+        <div class="cam-pos-sub">x=${pos.toFixed(1)}m | ${mountType.toUpperCase()} | ${facing}</div>
+      </div>
+      <div class="cam-pos-toggle" id="tog-${i}">▼</div>
+    </div>
+    <div class="cam-pos-body ${i<=2?'open':''}" id="body-${i}">
+      <div class="mini-mount-row">${mountBtns}</div>
+      ${tiltSection}
+    </div>`;
+
+  return card;
+}
+
+function toggleCamCard(id) {
+  const body = document.getElementById('body-' + id);
+  const tog = document.getElementById('tog-' + id);
+  const open = body.classList.toggle('open');
+  tog.textContent = open ? '▲' : '▼';
+}
+
+function selectCamMount(el, camId) {
+  const card = el.closest('.cam-pos-card');
+  card.querySelectorAll('.mm').forEach(m => m.classList.remove('active'));
+  el.classList.add('active');
+  const mountType = el.dataset.m;
+  const info = MOUNTS[mountType];
+
+  const ts = card.querySelector('.cam-tilt-section');
+  ts.style.display = (info.hasTilt || info.hasAz) ? 'block' : 'none';
+  const tiltRow = ts.querySelector('.slider-row:first-child');
+  const azRow = ts.querySelector('.slider-row:last-child');
+  tiltRow.style.display = info.hasTilt ? 'flex' : 'none';
+  azRow.style.display = info.hasAz ? 'flex' : 'none';
+
+  const count = parseInt(document.getElementById('g-count').value);
+  const len = parseFloat(document.getElementById('g-len').value);
+  const pos = calcCamPosition(camId, count, len);
+  const facing = getFacingLabel(camId, count, mountType);
+  card.querySelector('.cam-pos-sub').textContent = `x=${pos.toFixed(1)}m | ${mountType.toUpperCase()} | ${facing}`;
+}
+
+function getFacingLabel(idx, total, mountType) {
+  switch (mountType) {
+    case 'wall-h': return idx <= Math.ceil(total / 2) ? 'facing →' : 'facing ←';
+    case 'wall-v': return 'tilted ↓';
+    case 'roof-nadir': return 'nadir ↓';
+    case 'roof-tilt': return 'tilted ↘';
+    case 'corner': return '45° diagonal';
+    case 'cross': return idx % 2 === 1 ? 'cross ↓' : 'cross ↑';
+    case 'pole360': return '360° panoramic';
+    case 'underside': return 'zenith ↑';
+    default: return '';
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  READ CONFIGS & COMPUTE GEOMETRY
+// ═══════════════════════════════════════════════
+function readCameraConfigs() {
+  const count = parseInt(document.getElementById('g-count').value);
+  const len = parseFloat(document.getElementById('g-len').value);
+  const wid = parseFloat(document.getElementById('g-wid').value);
+  const h = parseFloat(document.getElementById('g-h').value);
+  const fovH = parseFloat(document.getElementById('g-fovH').value);
+  const fovV = parseFloat(document.getElementById('g-fovV').value);
+  const ov = parseFloat(document.getElementById('g-ov').value) / 100;
+  const mode = document.getElementById('g-mode').value;
+  const ranges = {
+    detect: parseFloat(document.getElementById('g-rD').value),
+    observe: parseFloat(document.getElementById('g-rO').value),
+    recognize: parseFloat(document.getElementById('g-rR').value),
+    identify: parseFloat(document.getElementById('g-rI').value),
+  };
+
+  const cameras = [];
+  document.querySelectorAll('.cam-pos-card').forEach(card => {
+    const id = parseInt(card.dataset.id);
+    const pos = calcCamPosition(id, count, len);
+    const mountEl = card.querySelector('.mm.active');
+    const mountType = mountEl ? mountEl.dataset.m : 'wall-h';
+    const tiltEl = card.querySelector('.cam-tilt');
+    const azEl = card.querySelector('.cam-az');
+    const tilt = tiltEl ? parseFloat(tiltEl.value) : 30;
+    const az = azEl ? parseFloat(azEl.value) : 0;
+    cameras.push({ id, pos, mountType, tilt, az });
+  });
+
+  return { cameras, len, wid, h, fovH, fovV, ov, mode, ranges, count };
+}
+
+function computeCamera(cam, globals) {
+  const { len, wid, h, fovH, fovV, ov, mode, ranges, count } = globals;
+  const effectiveRange = ranges[mode];
+  const halfH = (fovH / 2) * Math.PI / 180;
+  const halfV = (fovV / 2) * Math.PI / 180;
+
+  let cx = cam.pos;
+  let cy = wid / 2;
+  let cz = h;
+  let footprint = null;
+  let coverStart = 0, coverEnd = 0, floorW = 0;
+  let desc = '', facing = '', rangeUsed = effectiveRange;
+  const mid = Math.ceil(count / 2);
+
+  switch (cam.mountType) {
+    case 'wall-h': {
+      const dir = cam.id <= mid ? 1 : -1;
+      const span = effectiveRange * (1 - ov);
+      if (dir === 1) { coverStart = cx; coverEnd = Math.min(cx + span, len); }
+      else { coverEnd = cx; coverStart = Math.max(cx - span, 0); }
+      floorW = wid;
+      const floorSpread = effectiveRange * Math.tan(halfH);
+      footprint = { type: 'cone-h', dir, cx, cy, cz, len: effectiveRange, spread: floorSpread, halfH, halfV };
+      desc = `Wall-Horizontal, facing ${dir===1?'→':'←'}`;
+      facing = dir === 1 ? '→' : '←';
+      break;
+    }
+    case 'wall-v': {
+      const tiltRad = cam.tilt * Math.PI / 180;
+      const groundDist = cz / Math.tan(tiltRad || 0.5);
+      const farDist = Math.min(effectiveRange, groundDist + effectiveRange * Math.cos(tiltRad) * 0.5);
+      coverStart = Math.max(0, cx - farDist * 0.6);
+      coverEnd = Math.min(len, cx + farDist * 0.6);
+      floorW = 2 * farDist * Math.tan(halfH);
+      footprint = { type: 'cone-tilted', cx, cy, cz, tilt: cam.tilt, effectiveRange, halfH, halfV };
+      desc = `Wall-Vertical, tilt=${cam.tilt}°`;
+      facing = `↓${cam.tilt}°`;
+      rangeUsed = farDist;
+      break;
+    }
+    case 'roof-nadir': {
+      const r = cz * Math.tan(halfH);
+      coverStart = Math.max(0, cx - r);
+      coverEnd = Math.min(len, cx + r);
+      floorW = Math.min(wid, 2 * r);
+      footprint = { type: 'circle', cx, cy, cz, r, halfH, halfV };
+      desc = `Roof Nadir ↓, floor radius=${r.toFixed(2)}m`;
+      facing = '↓';
+      rangeUsed = r;
+      break;
+    }
+    case 'roof-tilt': {
+      const tiltRad = cam.tilt * Math.PI / 180;
+      const actualFar = Math.min(effectiveRange, cz / Math.tan(Math.max(0.1, tiltRad)));
+      coverStart = Math.max(0, cx - actualFar * 0.3);
+      coverEnd = Math.min(len, cx + actualFar);
+      floorW = Math.min(wid, 2 * actualFar * Math.tan(halfH));
+      footprint = { type: 'cone-az', cx, cy, cz, tilt: cam.tilt, az: cam.az, far: actualFar, halfH, halfV };
+      desc = `Roof Tilted ↘, tilt=${cam.tilt}°, az=${cam.az}°`;
+      facing = `↘${cam.tilt}°`;
+      rangeUsed = actualFar;
+      break;
+    }
+    case 'corner': {
+      const diag = Math.sqrt(len * len + wid * wid);
+      const reach = Math.min(effectiveRange, diag * 0.65);
+      coverStart = Math.max(0, cx - reach * 0.4);
+      coverEnd = Math.min(len, cx + reach * 0.6);
+      floorW = wid;
+      footprint = { type: 'cone-az', cx, cy, cz, az: cam.az || 45, far: reach, halfH, halfV };
+      desc = `Corner Mount 45°`;
+      facing = `↘${cam.az||45}°`;
+      rangeUsed = reach;
+      break;
+    }
+    case 'cross': {
+      const fromTop = cam.id % 2 === 1;
+      cy = fromTop ? 0 : wid;
+      const crossReach = Math.min(wid, effectiveRange);
+      coverStart = Math.max(0, cx - effectiveRange * 0.25);
+      coverEnd = Math.min(len, cx + effectiveRange * 0.25);
+      floorW = crossReach;
+      footprint = { type: 'cone-cross', cx, cy, cz, dir: fromTop ? 1 : -1, crossReach, halfH, halfV };
+      desc = `Cross-Aisle from ${fromTop?'north':'south'}`;
+      facing = fromTop ? '↓ cross' : '↑ cross';
+      rangeUsed = crossReach;
+      break;
+    }
+    case 'pole360': {
+      const r = Math.min(effectiveRange, Math.min(len, wid) * 0.8 + 8);
+      coverStart = Math.max(0, cx - r);
+      coverEnd = Math.min(len, cx + r);
+      floorW = Math.min(wid, 2 * r);
+      footprint = { type: 'circle360', cx, cy, cz, r, halfH };
+      desc = `Pole 360° panoramic`;
+      facing = '360°';
+      rangeUsed = r;
+      break;
+    }
+    case 'underside': {
+      cz = 0.5;
+      const r = effectiveRange * 0.4;
+      coverStart = Math.max(0, cx - r);
+      coverEnd = Math.min(len, cx + r);
+      floorW = 2 * r * Math.tan(halfH);
+      footprint = { type: 'cone-up', cx, cy, cz, r, halfH, halfV };
+      desc = `Underside / Floor mount`;
+      facing = '↑';
+      rangeUsed = r;
+      break;
+    }
+  }
+
+  return {
+    id: cam.id, pos: cam.pos, x: cx, y: cy, z: cz,
+    mountType: cam.mountType, tilt: cam.tilt, az: cam.az,
+    coverStart, coverEnd, floorW, footprint, desc, facing, rangeUsed, fovH, fovV,
+  };
+}
+
+// ═══════════════════════════════════════════════
+//  OPTIMIZE & DISPLAY
+// ═══════════════════════════════════════════════
+function runOptimize() {
+  const globals = readCameraConfigs();
+  const processed = globals.cameras.map(c => computeCamera(c, globals));
+
+  const segs = processed.map(c => [Math.max(0, c.coverStart), Math.min(globals.len, c.coverEnd)])
+    .filter(s => s[1] > s[0]).sort((a,b) => a[0]-b[0]);
+  let covered = 0, cur = null;
+  for (const s of segs) {
+    if (!cur) { cur = [...s]; }
+    else if (s[0] <= cur[1]) { cur[1] = Math.max(cur[1], s[1]); }
+    else { covered += cur[1]-cur[0]; cur = [...s]; }
+  }
+  if (cur) covered += cur[1]-cur[0];
+
+  const coverPct = Math.min(100, Math.round((covered / globals.len) * 100));
+  const blindPct = 100 - coverPct;
+  const totalArea = globals.len * globals.wid;
+  const coveredArea = (covered * globals.wid).toFixed(0);
+  const bandwidthMbps = (processed.length * 2.5).toFixed(1);
+  const storageTb = (processed.length * 0.45).toFixed(1);
+
+  currentConfig = {
+    cameras: processed,
+    globals,
+    metrics: { total: processed.length, coverPct, blindPct, bandwidthMbps, storageTb, totalArea, coveredArea }
+  };
+
+  displayResults(currentConfig);
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('results').style.display = 'flex';
+}
+
+function displayResults(cfg) {
+  const { metrics: m } = cfg;
+  document.getElementById('mCams').textContent = m.total;
+  document.getElementById('mCov').textContent = m.coverPct + '%';
+  document.getElementById('mBlind').textContent = m.blindPct + '%';
+  document.getElementById('mEff').textContent = `${m.bandwidthMbps} Mbps / ${m.storageTb} TB`;
+
+  const ab = document.getElementById('alertBox');
+  if (m.blindPct === 0) {
+    ab.innerHTML = `<div class="alert a-ok">✓ 100% Full Optical Coverage — Zero blind spots across all ${cfg.globals.len}m × ${cfg.globals.wid}m with ${m.total} cameras.</div>`;
+  } else if (m.blindPct < 8) {
+    ab.innerHTML = `<div class="alert a-warn">⚠ Minor ${m.blindPct}% coverage gap. Increase FOV or add 1–2 cameras to achieve 100% coverage.</div>`;
+  } else {
+    ab.innerHTML = `<div class="alert a-bad">✗ ${m.blindPct}% coverage gap remaining. Adjust mount types or increase camera count.</div>`;
+  }
+
+  drawTopView(cfg);
+  drawSideView(cfg);
+  draw3D(cfg);
+  buildTable(cfg);
+  buildCamList(cfg);
+  buildRecommendations(cfg);
+  buildLegend(cfg);
+}
+
+function hexAlpha(hex, a) {
+  const r = parseInt(hex.slice(1,3),16) || 0;
+  const g = parseInt(hex.slice(3,5),16) || 229;
+  const b = parseInt(hex.slice(5,7),16) || 255;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// ── TOP VIEW CANVAS ──
+function drawTopView(cfg) {
+  const canvas = document.getElementById('cvTop');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#0b0d12';
+  ctx.fillRect(0,0,W,H);
+
+  const { cameras, globals } = cfg;
+  const PAD = 42;
+  const mapW = W - PAD * 2;
+  const mapH = H - PAD * 2;
+  const sx = mapW / globals.len;
+  const sy = mapH / globals.wid;
+
+  // Grid
+  ctx.strokeStyle = '#181c28'; ctx.lineWidth = 1;
+  const step = globals.len > 100 ? 20 : globals.len > 50 ? 10 : 5;
+  for (let gx=0; gx<=globals.len; gx+=step) {
+    ctx.beginPath(); ctx.moveTo(PAD+gx*sx,PAD); ctx.lineTo(PAD+gx*sx,PAD+mapH); ctx.stroke();
+  }
+  for (let gy=0; gy<=globals.wid; gy+=Math.max(2, Math.round(globals.wid/5))) {
+    ctx.beginPath(); ctx.moveTo(PAD,PAD+gy*sy); ctx.lineTo(PAD+mapW,PAD+gy*sy); ctx.stroke();
+  }
+
+  // Obstacle racks representation
+  ctx.fillStyle = '#22293a';
+  const numRacks = Math.min(8, Math.max(3, Math.round(cameras.length / 10)));
+  for (let r=1; r<=numRacks; r++) {
+    const ry = PAD + (mapH / (numRacks + 1)) * r - 4;
+    ctx.fillRect(PAD + 15, ry, mapW * 0.4, 8);
+    ctx.fillRect(PAD + mapW * 0.55, ry, mapW * 0.4, 8);
+  }
+
+  // Camera cones
+  cameras.forEach((cam, idx) => {
+    const color = CAM_COLORS[idx % CAM_COLORS.length];
+    const fp = cam.footprint;
+    if (!fp) return;
+    const camX = PAD + cam.x * sx;
+    const camY = PAD + cam.y * sy;
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(PAD, PAD, mapW, mapH); ctx.clip();
+
+    if (fp.type === 'cone-h') {
+      const d = fp.dir;
+      const eLen = fp.len * sx;
+      const eSpread = Math.min(fp.spread * sy, mapH * 0.6);
+      ctx.beginPath();
+      ctx.moveTo(camX, camY);
+      ctx.lineTo(camX + d*eLen, camY - eSpread);
+      ctx.lineTo(camX + d*eLen, camY + eSpread);
+      ctx.closePath();
+      ctx.fillStyle = hexAlpha(color, 0.16);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.fill(); ctx.stroke();
+    } else if (fp.type === 'circle' || fp.type === 'circle360') {
+      const r = fp.r * Math.min(sx, sy);
+      ctx.beginPath(); ctx.arc(camX, camY, r, 0, Math.PI*2);
+      ctx.fillStyle = hexAlpha(color, 0.16);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.fill(); ctx.stroke();
+    } else {
+      const span = fp.far ? fp.far * sx : 25;
+      ctx.beginPath();
+      ctx.moveTo(camX, camY);
+      ctx.lineTo(camX + span, camY - 20);
+      ctx.lineTo(camX + span, camY + 20);
+      ctx.closePath();
+      ctx.fillStyle = hexAlpha(color, 0.16);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  });
+
+  // Perimeter wall
+  ctx.strokeStyle = '#2e3650'; ctx.lineWidth = 2;
+  ctx.strokeRect(PAD, PAD, mapW, mapH);
+
+  // Cameras dots
+  const skipLabels = cameras.length > 40;
+  cameras.forEach((cam, idx) => {
+    const color = CAM_COLORS[idx % CAM_COLORS.length];
+    const camX = PAD + cam.x * sx;
+    const camY = PAD + cam.y * sy;
+    ctx.beginPath(); ctx.arc(camX, camY, cameras.length > 50 ? 5 : 8, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = '#0b0d12'; ctx.lineWidth = 1.5; ctx.stroke();
+    if (!skipLabels || idx % 5 === 0 || idx === cameras.length - 1) {
+      ctx.fillStyle = '#0b0d12'; ctx.font = 'bold 7px JetBrains Mono';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(cam.id, camX, camY);
+    }
+  });
+
+  ctx.fillStyle = '#00e5ff'; ctx.font = 'bold 11px Syne'; ctx.textAlign = 'left';
+  ctx.fillText(`TOP VIEW FLOOR PLAN — ${globals.len}m × ${globals.wid}m (${cameras.length} CAMERAS)`, PAD, PAD - 10);
+}
+
+// ── SIDE VIEW CANVAS ──
+function drawSideView(cfg) {
+  const canvas = document.getElementById('cvSide');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle = '#0b0d12'; ctx.fillRect(0,0,W,H);
+
+  const { cameras, globals } = cfg;
+  const PL=45, PR=20, PT=28, PB=35;
+  const mapW=W-PL-PR, mapH=H-PT-PB;
+  const sx=mapW/globals.len;
+  const floorY=PT+mapH-10;
+
+  ctx.fillStyle='#1e2333'; ctx.fillRect(PL, floorY, mapW, 4);
+
+  cameras.forEach((cam, idx) => {
+    const color = CAM_COLORS[idx % CAM_COLORS.length];
+    const camX = PL + cam.x * sx;
+    const camY = floorY - cam.z * 18;
+
+    ctx.beginPath(); ctx.moveTo(camX, camY); ctx.lineTo(camX, floorY);
+    ctx.strokeStyle = '#2e3650'; ctx.lineWidth = 1; ctx.stroke();
+
+    ctx.beginPath(); ctx.arc(camX, camY, 4, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.fill();
+  });
+
+  ctx.fillStyle='#00e5ff'; ctx.font='bold 10px Syne'; ctx.textAlign='left';
+  ctx.fillText('SIDE ELEVATION PROFILE', PL, PT-8);
+}
+
+// ── 3D PERSPECTIVE CANVAS ──
+function draw3D(cfg) {
+  const canvas = document.getElementById('cv3d');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle = '#0b0d12'; ctx.fillRect(0,0,W,H);
+
+  const { cameras, globals } = cfg;
+  const ox = 70, oy = H * 0.72;
+  const scale = Math.min((W - 120) / globals.len, 5.5);
+
+  function proj(x, y, z) {
+    return [ox + x * scale - y * 0.35 * scale, oy - z * 10 + y * 0.22 * scale];
+  }
+
+  // Floor
+  const [f1x,f1y]=proj(0,0,0), [f2x,f2y]=proj(globals.len,0,0), [f3x,f3y]=proj(globals.len,globals.wid,0), [f4x,f4y]=proj(0,globals.wid,0);
+  ctx.beginPath(); ctx.moveTo(f1x,f1y); ctx.lineTo(f2x,f2y); ctx.lineTo(f3x,f3y); ctx.lineTo(f4x,f4y); ctx.closePath();
+  ctx.fillStyle = 'rgba(24,28,40,0.85)'; ctx.fill();
+  ctx.strokeStyle = '#2e3650'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  cameras.forEach((cam, idx) => {
+    const color = CAM_COLORS[idx % CAM_COLORS.length];
+    const [px,py]=proj(cam.x, cam.y, cam.z);
+    const [bx,by]=proj(cam.x, cam.y, 0);
+
+    ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(px,py);
+    ctx.strokeStyle = '#2e3650'; ctx.lineWidth = 1; ctx.stroke();
+
+    ctx.beginPath(); ctx.arc(px,py, 4, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.fill();
+  });
+
+  ctx.fillStyle='#00e5ff'; ctx.font='bold 10px Syne'; ctx.textAlign='left';
+  ctx.fillText('3D PERSPECTIVE VISUALIZER', ox, 22);
+}
+
+// ═══════════════════════════════════════════════
+//  SUMMARY TABLE & DETAILS
+// ═══════════════════════════════════════════════
+function buildTable(cfg) {
+  const { cameras } = cfg;
+  let html = `<thead><tr>
+    <th>#</th><th>X (m)</th><th>Z Height</th><th>Mount Type</th>
+    <th>Facing</th><th>Coverage Span</th><th>FOV</th><th>Eff. Range</th>
+  </tr></thead><tbody>`;
+  cameras.forEach((cam, idx) => {
+    const color = CAM_COLORS[idx % CAM_COLORS.length];
+    const span = (cam.coverEnd - cam.coverStart).toFixed(2);
+    html += `<tr>
+      <td><span style="color:${color};font-weight:700">CAM-${cam.id}</span></td>
+      <td>${cam.x.toFixed(2)}m</td>
+      <td>${cam.z.toFixed(1)}m</td>
+      <td><span style="color:${MOUNTS[cam.mountType]?.colorHint||'#fff'}">${cam.mountType.toUpperCase()}</span></td>
+      <td>${cam.facing}</td>
+      <td style="color:var(--acc3)">${span}m</td>
+      <td>${cam.fovH}°</td>
+      <td>${cam.rangeUsed.toFixed(1)}m</td>
+    </tr>`;
+  });
+  html += '</tbody>';
+  document.getElementById('camTable').innerHTML = html;
+}
+
+function buildCamList(cfg) {
+  const { cameras } = cfg;
+  let html = '';
+  cameras.forEach((cam, idx) => {
+    const color = CAM_COLORS[idx % CAM_COLORS.length];
+    const span = (cam.coverEnd - cam.coverStart).toFixed(2);
+    html += `<div class="rcam">
+      <div class="rcam-dot" style="background:${color}">${cam.id}</div>
+      <div class="rcam-info">
+        <div class="rt" style="color:${color}">Camera ${cam.id} — ${cam.mountType.toUpperCase()} (${cam.facing})</div>
+        <div class="rm">
+          Position: x=<strong>${cam.x.toFixed(2)}m</strong>, y=${cam.y.toFixed(2)}m, z=${cam.z.toFixed(1)}m |
+          Span: <span style="color:var(--acc3)">${cam.coverStart.toFixed(1)}m → ${cam.coverEnd.toFixed(1)}m (${span}m)</span> |
+          ${cam.desc}
+        </div>
+      </div>
+    </div>`;
+  });
+  document.getElementById('camList').innerHTML = html;
+}
+
+function buildRecommendations(cfg) {
+  const { metrics: m, globals } = cfg;
+  const recos = [
+    `<strong>High-Scale Deployment (${m.total} Cameras):</strong> Fully covers ${globals.len}m × ${globals.wid}m with ${m.coverPct}% optical coverage.`,
+    `<strong>Bandwidth Sizing:</strong> ~${m.bandwidthMbps} Mbps aggregate throughput at 1080p @ 15fps H.265. Recommend 24/48-port PoE+ Gigabit switches with 10Gbps fiber core.`,
+    `<strong>Storage Capacity:</strong> ~${m.storageTb} TB estimated raw capacity for 30-day continuous loop recording (H.265 VBR).`,
+    `<strong>NVR / VMS Requirements:</strong> Requires a ${Math.ceil(m.total / 16) * 16}-channel commercial VMS (e.g. Milestone, Genetec, or Hanwha WAVE).`,
+    `<strong>Blind Spot Mitigation:</strong> Opposing bidirectional pairs along aisles prevent blind spots caused by tall pallet stacks and machinery.`
+  ];
+  document.getElementById('recoBox').innerHTML = recos.map(r => `<div class="reco">${r}</div>`).join('');
+}
+
+function buildLegend(cfg) {
+  document.getElementById('legendBox').innerHTML = `
+    <div class="leg"><div class="leg-box" style="background:rgba(127,255,107,.3);border:1px solid #7fff6b"></div>Active Optical Zone</div>
+    <div class="leg"><div class="leg-box" style="background:rgba(255,71,87,.2);border:1px solid #ff4757"></div>Blind Spot</div>
+    <div class="leg"><svg width="18" height="14"><circle cx="9" cy="7" r="5" fill="#00e5ff"/></svg>Camera Position</div>`;
+
+  document.getElementById('legendNotes').innerHTML = `
+<strong>Formulas & Calculation Engine:</strong><br>
+• wall-h: span = range × (1 - overlap)<br>
+• roof-nadir: floor radius = height × tan(½ H-FOV)<br>
+• roof-tilt: ground intercept = height / tan(tilt)<br>
+• 360-fisheye: full circular area = π × r²<br>
+• Token consumption: 0 (local deterministic geometric execution)`;
+}
+
+function switchView(pane, el) {
+  ['top','side','3d'].forEach(p => document.getElementById('pane-'+p).classList.toggle('act', p===pane));
+  document.getElementById('viewTabs').querySelectorAll('.tab').forEach(t => t.classList.remove('act'));
+  el.classList.add('act');
+  if (currentConfig) {
+    if (pane==='top') drawTopView(currentConfig);
+    if (pane==='side') drawSideView(currentConfig);
+    if (pane==='3d') draw3D(currentConfig);
+  }
+}
+
+function switchDetTab(pane, el) {
+  ['table','list','reco','legend'].forEach(p => document.getElementById('dtab-'+p).classList.toggle('act', p===pane));
+  document.getElementById('detTabs').querySelectorAll('.tab').forEach(t => t.classList.remove('act'));
+  el.classList.add('act');
+}
+
+function exportReport() {
+  if (!currentConfig) { alert('Calculate coverage first.'); return; }
+  const { cameras, globals, metrics: m } = currentConfig;
+  let report = `CAMERA COVERAGE PLANNER v3.2 — ENGINEERING REPORT
+Generated: ${new Date().toLocaleString()}
+Area: ${globals.len}m Length × ${globals.wid}m Width × ${globals.h}m Height
+Total Cameras: ${m.total} | Coverage: ${m.coverPct}% | Blind Spot: ${m.blindPct}%
+Bandwidth: ${m.bandwidthMbps} Mbps | Storage (30d): ${m.storageTb} TB
+
+CAMERA POSITIONS:
+`;
+  cameras.forEach(c => {
+    report += `CAM-${c.id.toString().padEnd(3)} | x=${c.x.toFixed(2)}m, y=${c.y.toFixed(2)}m, z=${c.z.toFixed(1)}m | Mount: ${c.mountType.toUpperCase()} | Facing: ${c.facing} | Coverage: ${c.coverStart.toFixed(1)}m→${c.coverEnd.toFixed(1)}m\n`;
+  });
+  const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `Camera_Planning_Report_${m.total}_Cams_${Date.now()}.txt`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function resetAll() {
+  document.getElementById('g-len').value = 90;
+  document.getElementById('g-wid').value = 15;
+  document.getElementById('g-h').value = 4.5;
+  document.getElementById('g-count').value = 70;
+  document.getElementById('g-mode').value = 'recognize';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('emptyState').style.display = 'flex';
+  rebuildCameraCards();
+}
+
+window.addEventListener('load', () => {
+  rebuildCameraCards();
+  setTimeout(runOptimize, 120);
+});
+</script>
+</body>
+</html>

@@ -25,8 +25,10 @@ import {
   AlertCircle,
   CheckCircle2,
   WandSparkles,
+  ExternalLink,
 } from 'lucide-react';
 import type { Camera, Zone, Point, DetVisionProject, LayoutElement } from '@/lib/types';
+import { generateStructuredLayout, extractDesiredCameraCount } from '@/lib/rule-based-planner';
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -101,7 +103,17 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
   const [layoutDraftMeta, setLayoutDraftMeta] = useState<LayoutDraftMeta | null>(null);
   const [layoutLoading, setLayoutLoading] = useState(false);
   const [appliedLayoutIds, setAppliedLayoutIds] = useState<{ cameraIds: string[]; structureIds: string[] } | null>(null);
+  const [desiredCameraCount, setDesiredCameraCount] = useState<number>(() => {
+    return extractDesiredCameraCount(project.business_description) || 70;
+  });
   const autoLayoutForRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const detected = extractDesiredCameraCount(project.business_description);
+    if (detected > 0) {
+      setDesiredCameraCount(detected);
+    }
+  }, [project.business_description]);
 
   useEffect(() => {
     const canResize = project.zones.some(zone => zone.id === selectedZoneId && zone.type !== 'virtual_line');
@@ -287,48 +299,25 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
   const zoneCoverage = getZoneCenterCoverage(project, stageSize);
 
   const createLocalStructureDraft = (): LayoutElement[] => {
-    const wall = (name: string, from: Point, to: Point): LayoutElement => ({ id: uuid(), name, type: 'wall', points: [from, to] });
-    return [
-      wall('Suggested north wall', { x: 0.06, y: 0.06 }, { x: 0.94, y: 0.06 }),
-      wall('Suggested east wall', { x: 0.94, y: 0.06 }, { x: 0.94, y: 0.94 }),
-      wall('Suggested south wall', { x: 0.94, y: 0.94 }, { x: 0.06, y: 0.94 }),
-      wall('Suggested west wall', { x: 0.06, y: 0.94 }, { x: 0.06, y: 0.06 }),
-      { id: uuid(), name: 'Suggested entrance', type: 'entrance', points: [{ x: 0.4, y: 0.94 }, { x: 0.6, y: 0.94 }] },
-      { id: uuid(), name: 'Suggested obstacle block A', type: 'obstacle', points: [{ x: 0.62, y: 0.2 }, { x: 0.82, y: 0.2 }, { x: 0.82, y: 0.45 }, { x: 0.62, y: 0.45 }] },
-      { id: uuid(), name: 'Suggested obstacle block B', type: 'obstacle', points: [{ x: 0.18, y: 0.55 }, { x: 0.4, y: 0.55 }, { x: 0.4, y: 0.8 }, { x: 0.18, y: 0.8 }] },
-    ];
+    const generated = generateStructuredLayout(project.business_description, desiredCameraCount, project.use_cases);
+    return generated.structure;
   };
 
   const createLocalLayoutDraft = (count: number, uncovered: Zone[]): SuggestedCamera[] => {
-    const resolution = /4k|3840\s*[x×]\s*2160/i.test(project.camera_specifications || '') ? [3840, 2160] : [1920, 1080];
-    return Array.from({ length: count }, (_, index) => {
-      const zone = uncovered[index];
-      const center = zone ? zone.points.reduce((point, current) => ({ x: point.x + current.x / zone.points.length, y: point.y + current.y / zone.points.length }), { x: 0, y: 0 }) : null;
-      const x = center ? Math.max(0.05, Math.min(0.95, center.x + (center.x > 0.5 ? 0.14 : -0.14))) : (index + 1) / (count + 1);
-      const y = center ? Math.max(0.05, Math.min(0.95, center.y + (center.y > 0.5 ? 0.14 : -0.14))) : (index % 2 === 0 ? 0.12 : 0.88);
-      const orientation = center ? (Math.atan2((center.x - x) * stageSize.width, -(center.y - y) * stageSize.height) * 180 / Math.PI + 360) % 360 : (index % 2 === 0 ? 180 : 0);
-      const assigned = project.use_cases.length ? [project.use_cases[index % project.use_cases.length].id] : [];
-      return {
-        zoneId: zone?.id,
-        target_area: zone?.name || project.layout_sections?.[index % Math.max(1, project.layout_sections.length)] || `Layout section ${index + 1}`,
-        rationale: 'Local placement suggestion based on the project zones and layout sections. Confirm dimensions and sight lines on site.',
-        camera: { id: uuid(), name: `CAM-${project.cameras.length + index + 1}`, status: 'planned', x, y, orientation_degrees: orientation, horizontal_fov_degrees: 90, view_range: 0.5, resolution_width: resolution[0], resolution_height: resolution[1], assigned_use_case_ids: assigned },
-      };
-    });
+    const generated = generateStructuredLayout(project.business_description, count, project.use_cases);
+    return generated.cameras.map((camera, index) => ({
+      camera,
+      zoneId: uncovered[index]?.id,
+      target_area: camera.target_area || uncovered[index]?.name || project.layout_sections?.[index] || `Section ${index + 1}`,
+      rationale: camera.rationale || 'Rule-based placement with varied angles and obstacle avoidance',
+    }));
   };
 
   const generateLayoutDraft = async () => {
     setShowSetupGuide(true);
     const uncovered = project.zones.filter(zone => zone.type !== 'virtual_line' && !zoneCoverage.coveredZoneIds.includes(zone.id));
-    const inferredProjectCameraCount = Math.max(
-      project.layout_sections?.length || 0,
-      project.use_cases.length,
-      project.critical_components?.length || 0,
-      project.layout_section_count || 0,
-      3,
-    );
-    const remainingCameraCount = Math.max(1, inferredProjectCameraCount - project.cameras.length);
-    const count = Math.max(1, Math.min(8, uncovered.length || remainingCameraCount));
+    const detected = extractDesiredCameraCount(project.business_description, desiredCameraCount);
+    const count = Math.max(1, Math.min(250, desiredCameraCount || detected || 70));
     setLayoutLoading(true);
     setLayoutDraft([]);
     setLayoutStructureDraft([]);
@@ -352,13 +341,12 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
       });
       const data = await response.json();
       if (!response.ok) {
-        const retryHint = data.retry_after_seconds ? ` Retry in about ${data.retry_after_seconds} seconds.` : '';
-        throw new Error(`${data.error || 'AI layout generation failed.'}${retryHint}`);
+        throw new Error(data.error || 'Layout generation failed.');
       }
-      if (data.fallback === 'local') {
+      if (data.fallback === 'local' || !Array.isArray(data.cameras) || data.cameras.length === 0) {
         applyGeneratedLayout(createLocalLayoutDraft(count, uncovered), (project.structure ?? []).length ? [] : createLocalStructureDraft(), {
           source: 'local',
-          summary: 'A locally generated camera layout was added to the map. Review it against the selected scenario and adjust its positions.',
+          summary: data.summary || 'A structured camera layout with full obstacles was generated and added to the map.',
           notice: String(data.notice || ''),
         });
         return;
@@ -367,13 +355,13 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
       const generated: SuggestedCamera[] = data.cameras.map((camera: Camera & { target_area?: string; rationale?: string }, index: number) => ({
         camera,
         zoneId: uncovered[index]?.id,
-        target_area: camera.target_area || uncovered[index]?.name || project.layout_sections?.[index] || `Layout section ${index + 1}`,
+        target_area: camera.target_area || uncovered[index]?.name || project.layout_sections?.[index] || `Section ${index + 1}`,
         rationale: camera.rationale,
       }));
       const generatedStructure: LayoutElement[] = Array.isArray(data.structure)
         ? data.structure
           .filter((item: Record<string, unknown>) => item && typeof item === 'object' && ['wall', 'obstacle', 'entrance'].includes(String(item.type)))
-          .slice(0, 40)
+          .slice(0, 150)
           .map((item: Record<string, unknown>, index: number) => ({
             id: uuid(),
             name: String(item.name || `Suggested ${String(item.type)} ${index + 1}`).slice(0, 80),
@@ -388,17 +376,17 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
           .filter((item: LayoutElement) => item.points.length >= (item.type === 'obstacle' ? 3 : 2))
         : [];
       applyGeneratedLayout(generated, generatedStructure, {
-        source: 'ai',
+        source: data.source || 'ai',
         summary: data.summary,
         reasoning: Array.isArray(data.reasoning) ? data.reasoning.filter((item: unknown): item is string => typeof item === 'string').slice(0, 6) : undefined,
         model_used: data.model_used,
         usage: data.usage,
       });
     } catch (error) {
-      const notice = error instanceof Error ? error.message : 'AI layout generation failed.';
+      const notice = error instanceof Error ? error.message : 'Layout generation failed.';
       applyGeneratedLayout(createLocalLayoutDraft(count, uncovered), (project.structure ?? []).length ? [] : createLocalStructureDraft(), {
         source: 'local',
-        summary: 'A locally generated camera layout was added to the map. Review it against the selected scenario and adjust its positions.',
+        summary: 'A structured rule-based camera layout with full obstacles was generated and added to the map.',
         notice,
       });
     } finally {
@@ -932,9 +920,32 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
         >
           <Lightbulb className="h-5 w-5" /><span className="text-center text-[10px] leading-tight">Setup guide</span>
         </button>
-        <button onClick={generateLayoutDraft} disabled={layoutLoading || !project.business_description.trim()} className="flex flex-col items-center gap-1 rounded p-2 text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50" title={!project.business_description.trim() ? 'Add a scenario description first' : 'Generate an AI camera layout for this project'}>
-          {layoutLoading ? <Loader2 className="h-5 w-5 animate-spin"/> : <WandSparkles className="h-5 w-5"/>}<span className="text-center text-[10px] leading-tight">{layoutLoading ? 'Generating…' : 'AI layout'}</span>
+        <div className="flex flex-col items-center gap-0.5 px-1 py-1">
+          <label className="text-[9px] font-bold text-muted-foreground uppercase">Cams</label>
+          <input
+            type="number"
+            min="1"
+            max="250"
+            value={desiredCameraCount}
+            onChange={e => setDesiredCameraCount(Math.max(1, Math.min(250, parseInt(e.target.value) || 1)))}
+            className="w-12 text-center text-xs font-mono font-bold border rounded px-1 py-0.5 bg-background text-foreground"
+            title="Set target camera count (supports 1 to 200+ cameras)"
+          />
+        </div>
+
+        <button onClick={generateLayoutDraft} disabled={layoutLoading || !project.business_description.trim()} className="flex flex-col items-center gap-1 rounded p-2 text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50" title={!project.business_description.trim() ? 'Add a scenario description first' : `Generate layout with ${desiredCameraCount} cameras & full obstacles`}>
+          {layoutLoading ? <Loader2 className="h-5 w-5 animate-spin"/> : <WandSparkles className="h-5 w-5"/>}<span className="text-center text-[10px] leading-tight font-semibold">{layoutLoading ? 'Generating…' : `Plan ${desiredCameraCount}`}</span>
         </button>
+
+        <a
+          href="/camera-coverage-planner.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-col items-center gap-1 rounded p-2 text-cyan-600 dark:text-cyan-400 transition-colors hover:bg-cyan-50 dark:hover:bg-cyan-950/40"
+          title="Open Camera Coverage Planner v3 (Interactive HTML Tool with per-camera mount & elevation views)"
+        >
+          <ExternalLink className="h-4 w-4" /><span className="text-center text-[9px] leading-tight font-medium">Planner v3</span>
+        </a>
 
         <div className="border-t border-border my-1" />
 

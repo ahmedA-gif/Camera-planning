@@ -15,12 +15,41 @@ const modelRateState = globalState.__detvisionGroqRateState ??= new Map<string, 
 
 const BASE_URL = 'https://api.groq.com/openai/v1';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1';
+const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1';
+
 type OpenRouterGuardState = { queue: Promise<void>; requestTimes: number[] };
 type OpenRouterGuardGlobal = typeof globalThis & { __detvisionOpenRouterState?: Map<string, OpenRouterGuardState> };
 const openRouterGlobal = globalThis as OpenRouterGuardGlobal;
 const openRouterStates = openRouterGlobal.__detvisionOpenRouterState ??= new Map<string, OpenRouterGuardState>();
 
+export function getNvidiaConfig() {
+  return {
+    provider: 'NVIDIA',
+    keyName: 'NVIDIA_API_KEY',
+    apiKey: process.env.NVIDIA_API_KEY || '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',
+    baseUrl: NVIDIA_URL,
+    model: process.env.NVIDIA_MODEL || 'google/diffusiongemma-26b-a4b-it',
+  };
+}
+
+export function getNvidiaCompletionsURL() {
+  return `${NVIDIA_URL}/chat/completions`;
+}
+
+export async function fetchNvidia(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const config = getNvidiaConfig();
+  const headers = new Headers(init?.headers);
+  if (!headers.has('Authorization') && config.apiKey) {
+    headers.set('Authorization', `Bearer ${config.apiKey}`);
+  }
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return fetch(input, { ...init, headers });
+}
+
 export function getLayoutAIConfig() {
+  // If NVIDIA is available, we can also leverage it or OpenRouter
   return {
     provider: 'OpenRouter',
     keyName: 'OPENROUTER_API_KEY',

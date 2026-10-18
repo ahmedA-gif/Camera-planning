@@ -102,6 +102,13 @@ class Zone(BaseModel):
     color: str
 
 
+class StructureElement(BaseModel):
+    id: str
+    name: str
+    type: str
+    points: List[Point] = Field(default_factory=list)
+
+
 class WorkflowNode(BaseModel):
     id: str
     type: NodeCategory
@@ -132,6 +139,7 @@ class DetVisionProject(BaseModel):
     use_cases: List[UseCase]
     cameras: List[Camera]
     zones: List[Zone]
+    structure: List[StructureElement] = Field(default_factory=list)
     workflow: Workflow
     assumptions: List[str]
     missing_information: List[str]

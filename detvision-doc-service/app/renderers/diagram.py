@@ -233,6 +233,24 @@ def generate_camera_map_svg(project: DetVisionProject, width: int = 800, height:
             "stroke": "#e2e8f0", "stroke-width": "0.5",
         }))
     
+    # Structure (walls, obstacles, entrances)
+    structure_colors = {"wall": "#475569", "obstacle": "#F59E0B", "entrance": "#10B981"}
+    for element in project.structure:
+        if len(element.points) < 2:
+            continue
+        kind = element.type if element.type in structure_colors else "wall"
+        color = structure_colors[kind]
+        points = " ".join(f"{p.x * width},{p.y * height}" for p in element.points)
+        if kind == "obstacle" and len(element.points) >= 3:
+            svg.append(create_svg_element("polygon", {
+                "points": points, "fill": color + "40", "stroke": color, "stroke-width": "2",
+            }))
+        else:
+            attrs = {"points": points, "fill": "none", "stroke": color, "stroke-width": "4" if kind == "wall" else "3", "stroke-linecap": "round"}
+            if kind == "entrance":
+                attrs["stroke-dasharray"] = "8,5"
+            svg.append(create_svg_element("polyline", attrs))
+
     # Zones
     for zone in project.zones:
         if len(zone.points) >= 2:
@@ -312,6 +330,13 @@ def generate_camera_map_svg(project: DetVisionProject, width: int = 800, height:
         ("📍 Zone", "#EF4444"),
         ("📏 Virtual Line", "#3B82F6"),
     ]
+    structure_kinds = {element.type for element in project.structure}
+    if "wall" in structure_kinds:
+        legend_items.append(("🧱 Wall", "#475569"))
+    if "obstacle" in structure_kinds:
+        legend_items.append(("⚠️ Obstacle", "#F59E0B"))
+    if "entrance" in structure_kinds:
+        legend_items.append(("🚪 Entrance", "#10B981"))
     for i, (label, clr) in enumerate(legend_items):
         lx = width - 180
         ly = legend_y + i * 25

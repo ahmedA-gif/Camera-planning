@@ -42,7 +42,7 @@ function callAI(model: string, apiKey: string, content: Array<Record<string, unk
         { role: 'user', content },
       ],
       temperature: 0.2,
-      max_completion_tokens: 900,
+      max_completion_tokens: 2000,
       response_format: {
         type: 'json_schema',
         json_schema: { name: 'camera_setup_review', strict: true, schema: CAMERA_REVIEW_SCHEMA },
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    const prompt = `Review this proposed camera layout as a computer-vision system designer. Assess camera placement, FOV, range, resolution fit, sight lines, use-case assignments, and missing information. Coordinates are normalized from 0 to 1; orientations are degrees clockwise from north. The attached diagram is the complete current map: its visible labels identify cameras, walls, obstacles, entrances, zones, and counting lines. Cross-check the diagram against the structured geometry below; use the structured geometry as authoritative if visual interpretation differs. Do not discuss workflow design or invent dimensions. Return at most 6 important findings and at most 5 next steps. Keep each finding detail to one concise sentence. The response must follow the supplied JSON schema exactly.\n\nLabeled camera setup diagram and layout data:\n${JSON.stringify(reviewInput)}`;
+    const prompt = `Review this proposed camera layout as a computer-vision system designer. Assess camera placement, FOV, range, resolution fit, sight lines, use-case assignments, and missing information. Coordinates are normalized from 0 to 1; orientations are degrees clockwise from north. The attached diagram is the complete current map: its visible labels identify cameras, walls, obstacles, entrances, zones, and counting lines. Cross-check the diagram against the structured geometry below; use the structured geometry as authoritative if visual interpretation differs. Do not discuss workflow design or invent dimensions. Return at most 4 important findings and at most 4 next steps. Keep each finding title short and each detail to at most two concise sentences so the JSON document always fits the token budget. The response must follow the supplied JSON schema exactly.\n\nLabeled camera setup diagram and layout data:\n${JSON.stringify(reviewInput)}`;
 
     const userContent: Array<Record<string, unknown>> = [{ type: 'text', text: prompt }];
     const attachedDiagram = typeof diagram_image === 'string' && diagram_image.startsWith('data:image/') && diagram_image.length < 8_000_000

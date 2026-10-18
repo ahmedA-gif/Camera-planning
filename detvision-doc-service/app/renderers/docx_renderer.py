@@ -423,7 +423,21 @@ def render_docx(project: DetVisionProject) -> bytes:
                 doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
             except:
                 pass
-    
+
+        # Site layout elements (buildings, obstacles, entrances)
+        if project.structure:
+            doc.add_paragraph()
+            add_styled_paragraph(doc, "Site layout elements", bold=True, size=12)
+            structure_rows = [
+                [
+                    element.name,
+                    element.type.title(),
+                    " · ".join(f"({point.x:.2f}, {point.y:.2f})" for point in element.points[:8]),
+                ]
+                for element in project.structure
+            ]
+            add_table_with_style(doc, ["Element", "Type", "Points (normalized 0–1)"], structure_rows, [2, 1.2, 4])
+
         doc.add_page_break()
     
     if not project.output_scope or "Detection coverage" in project.output_scope:

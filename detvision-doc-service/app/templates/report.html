@@ -300,6 +300,30 @@
         </div>
         {% endif %}
         {% endif %}
+
+        {% if project.structure %}
+        <!-- Site Layout Elements -->
+        <h3>Site layout elements</h3>
+        <p class="muted">Buildings, obstacles, and entrances used when planning this camera layout.</p>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Element</th>
+                    <th>Type</th>
+                    <th>Points (normalized 0–1)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for element in project.structure %}
+                <tr>
+                    <td><strong>{{ element.name }}</strong></td>
+                    <td><span class="badge">{{ element.type|title }}</span></td>
+                    <td>{% for point in element.points %}({{ point.x|round(2) }}, {{ point.y|round(2) }}){% if not loop.last %} · {% endif %}{% endfor %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
     </section>
 {% endif %}
 

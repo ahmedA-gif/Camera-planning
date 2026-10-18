@@ -53,6 +53,8 @@ interface LayoutDraftMeta {
   model_used?: string;
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
   notice?: string;
+  applied?: boolean;
+  appliedCounts?: { cameras: number; structure: number };
 }
 
 const CAMERA_COLORS = {
@@ -98,6 +100,7 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
   const [layoutStructureDraft, setLayoutStructureDraft] = useState<LayoutElement[]>([]);
   const [layoutDraftMeta, setLayoutDraftMeta] = useState<LayoutDraftMeta | null>(null);
   const [layoutLoading, setLayoutLoading] = useState(false);
+  const [appliedLayoutIds, setAppliedLayoutIds] = useState<{ cameraIds: string[]; structureIds: string[] } | null>(null);
   const autoLayoutForRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -353,10 +356,11 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
         throw new Error(`${data.error || 'AI layout generation failed.'}${retryHint}`);
       }
       if (data.fallback === 'local') {
-        setLayoutDraft(createLocalLayoutDraft(count, uncovered));
-        setLayoutStructureDraft((project.structure ?? []).length ? [] : createLocalStructureDraft());
-        setLayoutDraftMeta({ source: 'local', summary: 'A locally generated camera draft is ready. Review it against the selected scenario and adjust its positions before applying.', notice: String(data.notice || '') });
-        setSelectedCameraId(null);
+        applyGeneratedLayout(createLocalLayoutDraft(count, uncovered), (project.structure ?? []).length ? [] : createLocalStructureDraft(), {
+          source: 'local',
+          summary: 'A locally generated camera layout was added to the map. Review it against the selected scenario and adjust its positions.',
+          notice: String(data.notice || ''),
+        });
         return;
       }
       if (data.project_id !== project.id) throw new Error('The selected project changed while the layout was generating. Please try again.');
@@ -383,41 +387,56 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
           }))
           .filter((item: LayoutElement) => item.points.length >= (item.type === 'obstacle' ? 3 : 2))
         : [];
-      setLayoutDraft(generated);
-      setLayoutStructureDraft(generatedStructure);
-      setLayoutDraftMeta({
+      applyGeneratedLayout(generated, generatedStructure, {
         source: 'ai',
         summary: data.summary,
         reasoning: Array.isArray(data.reasoning) ? data.reasoning.filter((item: unknown): item is string => typeof item === 'string').slice(0, 6) : undefined,
         model_used: data.model_used,
         usage: data.usage,
       });
-      setSelectedCameraId(generated[0]?.camera.id ?? null);
     } catch (error) {
       const notice = error instanceof Error ? error.message : 'AI layout generation failed.';
-      setLayoutDraft(createLocalLayoutDraft(count, uncovered));
-      setLayoutStructureDraft((project.structure ?? []).length ? [] : createLocalStructureDraft());
-      setLayoutDraftMeta({ source: 'local', summary: 'A locally generated camera draft is ready. Review it against the selected scenario and adjust its positions before applying.', notice });
-      setSelectedCameraId(null);
+      applyGeneratedLayout(createLocalLayoutDraft(count, uncovered), (project.structure ?? []).length ? [] : createLocalStructureDraft(), {
+        source: 'local',
+        summary: 'A locally generated camera layout was added to the map. Review it against the selected scenario and adjust its positions.',
+        notice,
+      });
     } finally {
       setLayoutLoading(false);
     }
   };
 
-  const applyLayoutDraft = () => {
-    if (!layoutDraft.length && !layoutStructureDraft.length) return;
-    const cameras = [...project.cameras, ...layoutDraft.map(item => item.camera)];
+  /** Merge a generated layout into the project immediately so reports always include it. */
+  const applyGeneratedLayout = (draft: SuggestedCamera[], structureDraft: LayoutElement[], meta: LayoutDraftMeta) => {
+    if (!draft.length && !structureDraft.length) return;
+    const cameras = [...project.cameras, ...draft.map(item => item.camera)];
     const zones = project.zones.map(zone => {
-      const assigned = layoutDraft.filter(item => item.zoneId === zone.id).map(item => item.camera.id);
+      const assigned = draft.filter(item => item.zoneId === zone.id).map(item => item.camera.id);
       return assigned.length ? { ...zone, camera_ids: [...new Set([...zone.camera_ids, ...assigned])] } : zone;
     });
-    const use_cases = project.use_cases.map(useCase => ({ ...useCase, camera_ids: [...new Set([...useCase.camera_ids, ...layoutDraft.filter(item => item.camera.assigned_use_case_ids.includes(useCase.id)).map(item => item.camera.id)])] }));
-    const structure = [...(project.structure ?? []), ...layoutStructureDraft];
+    const use_cases = project.use_cases.map(useCase => ({ ...useCase, camera_ids: [...new Set([...useCase.camera_ids, ...draft.filter(item => item.camera.assigned_use_case_ids.includes(useCase.id)).map(item => item.camera.id)])] }));
+    const structure = [...(project.structure ?? []), ...structureDraft];
     onUpdate({ cameras, zones, use_cases, structure });
-    setSelectedCameraId(null);
+    setLayoutDraftMeta({ ...meta, applied: true, appliedCounts: { cameras: draft.length, structure: structureDraft.length } });
+    setAppliedLayoutIds({ cameraIds: draft.map(item => item.camera.id), structureIds: structureDraft.map(item => item.id) });
     setLayoutDraft([]);
     setLayoutStructureDraft([]);
+    setSelectedCameraId(draft[0]?.camera.id ?? null);
+  };
+
+  const undoAppliedLayout = () => {
+    if (!appliedLayoutIds) return;
+    const cameraIds = new Set(appliedLayoutIds.cameraIds);
+    const structureIds = new Set(appliedLayoutIds.structureIds);
+    onUpdate({
+      cameras: project.cameras.filter(item => !cameraIds.has(item.id)),
+      zones: project.zones.map(zone => ({ ...zone, camera_ids: zone.camera_ids.filter(id => !cameraIds.has(id)) })),
+      use_cases: project.use_cases.map(useCase => ({ ...useCase, camera_ids: useCase.camera_ids.filter(id => !cameraIds.has(id)) })),
+      structure: (project.structure ?? []).filter(item => !structureIds.has(item.id)),
+    });
+    setAppliedLayoutIds(null);
     setLayoutDraftMeta(null);
+    setSelectedCameraId(null);
   };
 
   // If the user has not placed any cameras yet, generate a possible camera layout
@@ -427,7 +446,7 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
     if (typeof window === 'undefined' || autoLayoutForRef.current === project.id) return;
     if (!project.business_description.trim()) return;
     if (project.cameras.length > 0 || layoutDraft.length > 0 || layoutLoading) return;
-    const storageKey = `detvision_auto_layout:${project.id}`;
+    const storageKey = `detvision_auto_layout_v2:${project.id}`;
     if (window.sessionStorage.getItem(storageKey)) return;
     window.sessionStorage.setItem(storageKey, '1');
     autoLayoutForRef.current = project.id;
@@ -1049,16 +1068,15 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
             </div>
             <div className="mb-3 rounded-lg border border-border bg-muted p-3 text-foreground">
               <div className="mb-3 rounded-lg border border-primary/20 bg-primary/5 p-3"><div className="flex items-center justify-between text-xs font-semibold"><span>Estimated zone-center coverage</span><span>{zoneCoverage.percent === null ? '—' : `${zoneCoverage.percent}%`}</span></div><p className="mt-1 text-[10px] text-muted-foreground">{zoneCoverage.percent === null ? 'Draw a detection zone to estimate camera view coverage.' : `${zoneCoverage.covered}/${zoneCoverage.total} detection-zone centers fall inside an estimated camera cone. Target: ${project.detection_coverage_target ?? 90}%. This is a map estimate, not a measured site result.`}</p>{zoneCoverage.percent !== null && zoneCoverage.percent < (project.detection_coverage_target ?? 90) && <p className="mt-2 text-[11px] font-medium text-amber-700">Add or reposition a camera to reach the target; generate a layout suggestion.</p>}</div>
-              {(layoutDraft.length > 0 || layoutStructureDraft.length > 0) && <div className="mb-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950">
-                <p className="font-semibold">{layoutDraftMeta?.source === 'ai' ? 'AI camera layout draft' : 'Camera layout draft'} · {layoutDraft.length} camera{layoutDraft.length === 1 ? '' : 's'}{layoutStructureDraft.length > 0 ? ` · ${layoutStructureDraft.length} site element${layoutStructureDraft.length === 1 ? '' : 's'}` : ''}</p>
-                <p className="mt-1">{layoutDraftMeta?.summary || 'Review the suggested positions and specifications before applying.'}</p>
-                {layoutDraftMeta?.model_used && <p className="mt-1 text-[10px]">Model: {layoutDraftMeta.model_used}{layoutDraftMeta.usage ? ` · Tokens: ${layoutDraftMeta.usage.prompt_tokens} input + ${layoutDraftMeta.usage.completion_tokens} output = ${layoutDraftMeta.usage.total_tokens} total` : ''}</p>}
-                {layoutDraftMeta?.reasoning?.length ? <div className="mt-1"><p className="font-medium">Model reasoning</p><ul className="mt-0.5 list-inside list-disc space-y-0.5 text-[10px]">{layoutDraftMeta.reasoning.map((line, index) => <li key={index}>{line}</li>)}</ul></div> : null}
-                {layoutStructureDraft.length > 0 && <p className="mt-1 text-[10px]">Draft walls, obstacles, and entrances (purple dashed) will be added to the map when you apply this layout.</p>}
-                {layoutDraftMeta?.notice && <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">{layoutDraftMeta.notice} A local suggestion is shown so you can keep working.</p>}
-                <ul className="mt-2 max-h-28 space-y-1 overflow-y-auto">{layoutDraft.map(item => <li key={item.camera.id}><b>{item.camera.name}</b> · {item.target_area || 'General coverage'}{item.rationale ? ` — ${item.rationale}` : ''}</li>)}</ul>
-                <p className="mt-2">Drag a purple draft camera or select it to edit its properties. Changes stay as a draft until applied.</p>
-                <div className="mt-2 flex gap-2"><button onClick={applyLayoutDraft} className="rounded-md bg-violet-700 px-2.5 py-1.5 font-medium text-white">Apply layout to {project.name}</button><button onClick={() => { setLayoutDraft([]); setLayoutStructureDraft([]); setLayoutDraftMeta(null); setSelectedCameraId(null); }} className="rounded-md border border-violet-300 px-2.5 py-1.5">Discard</button></div>
+              {layoutDraftMeta && <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
+                <p className="font-semibold">{layoutDraftMeta.source === 'ai' ? 'AI camera layout applied' : 'Camera layout applied'} · {layoutDraftMeta.appliedCounts?.cameras ?? 0} camera{(layoutDraftMeta.appliedCounts?.cameras ?? 0) === 1 ? '' : 's'}{layoutDraftMeta.appliedCounts?.structure ? ` · ${layoutDraftMeta.appliedCounts.structure} site element${layoutDraftMeta.appliedCounts.structure === 1 ? '' : 's'}` : ''} added to the map</p>
+                <p className="mt-1">{layoutDraftMeta.summary || 'Review the new cameras on the map or in the camera list.'}</p>
+                {layoutDraftMeta.model_used && <p className="mt-1 text-[10px]">Model: {layoutDraftMeta.model_used}{layoutDraftMeta.usage ? ` · Tokens: ${layoutDraftMeta.usage.prompt_tokens} input + ${layoutDraftMeta.usage.completion_tokens} output = ${layoutDraftMeta.usage.total_tokens} total` : ''}</p>}
+                {layoutDraftMeta.reasoning?.length ? <div className="mt-1"><p className="font-medium">Model reasoning</p><ul className="mt-0.5 list-inside list-disc space-y-0.5 text-[10px]">{layoutDraftMeta.reasoning.map((line, index) => <li key={index}>{line}</li>)}</ul></div> : null}
+                {layoutDraftMeta.appliedCounts?.structure ? <p className="mt-1 text-[10px]">Walls, obstacles, and entrances were added to the site elements list and are included in the PDF and DOCX reports.</p> : null}
+                {layoutDraftMeta.notice && <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">{layoutDraftMeta.notice} A local layout was applied so you can keep working.</p>}
+                <p className="mt-2">The new cameras are editable: drag them on the map, select one to change its properties, or remove any you do not need. They are already included in the PDF and DOCX reports.</p>
+                <div className="mt-2 flex gap-2"><button onClick={undoAppliedLayout} className="rounded-md border border-emerald-400 px-2.5 py-1.5 font-medium">Undo applied layout</button><button onClick={() => { setLayoutDraftMeta(null); setAppliedLayoutIds(null); }} className="rounded-md border border-emerald-300 px-2.5 py-1.5">Dismiss</button></div>
               </div>}
               <h3 className="text-xs font-semibold">Layout review</h3>
               <p className="mt-1 text-[11px] text-muted-foreground">Rule-based checks from your drawing and camera assignments. Confirm dimensions and sight lines on site.</p>

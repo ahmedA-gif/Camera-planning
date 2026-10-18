@@ -303,28 +303,31 @@ Then produce ${requestedCount} additional camera suggestion(s) for the selected 
     if (!parsed) {
       const { status, detail, response } = failure ?? { status: 502, detail: '', response: new Response() };
       const retry_after_seconds = retryAfterSeconds(response);
-      if (status === 429) {
-        const localGuard = detail.startsWith('Local OpenRouter layout guard');
-        return NextResponse.json({
-          error: `${localGuard ? detail : 'OpenRouter rate-limited this layout request.'} You can still use the locally generated, editable layout draft.`,
-          retry_after_seconds,
-          rate_limit: {
-            requests: response.headers.get('x-ratelimit-reset-requests'),
-            tokens: response.headers.get('x-ratelimit-reset-tokens'),
-            remaining_requests: response.headers.get('x-ratelimit-remaining-requests'),
-            remaining_tokens: response.headers.get('x-ratelimit-remaining-tokens'),
-          },
-          provider_detail: detail,
-        }, { status: 429, headers: retry_after_seconds ? { 'Retry-After': String(retry_after_seconds) } : undefined });
-      }
-      const message = status === 504
-        ? 'OpenRouter layout generation timed out. Try again or use the local layout suggestion.'
-        : status === 401 || status === 403
-          ? `OpenRouter rejected ${AI_CONFIG.keyName}. Check that the key is valid.`
-          : status === 404
-            ? `OpenRouter model "${modelUsed}" was not found.`
-            : `OpenRouter layout generation failed (${status})${detail ? `: ${detail}` : '.'}`;
-      return NextResponse.json({ error: message }, { status: status === 401 || status === 403 ? 503 : status === 504 ? 504 : 502 });
+      const localGuard = detail.startsWith('Local OpenRouter layout guard');
+      const message = status === 429
+        ? `${localGuard ? detail : 'OpenRouter rate-limited this layout request.'} You can still use the locally generated, editable layout draft.`
+        : status === 504
+          ? 'OpenRouter layout generation timed out. Try again or use the local layout suggestion.'
+          : status === 401 || status === 403
+            ? `OpenRouter rejected ${AI_CONFIG.keyName}. Check that the key is valid.`
+            : status === 404
+              ? `OpenRouter model "${modelUsed}" was not found.`
+              : `OpenRouter layout generation failed (${status})${detail ? `: ${detail}` : '.'}`;
+      // Answer 200 with a notice instead of an error status: the client simply
+      // shows its local, editable draft, and the browser console stays clean.
+      return NextResponse.json({
+        project_id: project.id,
+        cameras: [],
+        structure: [],
+        reasoning: [],
+        summary: '',
+        model_used: null,
+        usage: null,
+        fallback: 'local',
+        notice: `${message} A local suggestion is shown so you can keep working.`,
+        retry_after_seconds,
+        provider_detail: detail,
+      });
     }
 
     const cameras = parsedCameras.slice(0, Math.max(requestedCount, 1) + 2).map((rawCamera, index: number) => {

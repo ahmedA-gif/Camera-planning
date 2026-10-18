@@ -352,6 +352,13 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
         const retryHint = data.retry_after_seconds ? ` Retry in about ${data.retry_after_seconds} seconds.` : '';
         throw new Error(`${data.error || 'AI layout generation failed.'}${retryHint}`);
       }
+      if (data.fallback === 'local') {
+        setLayoutDraft(createLocalLayoutDraft(count, uncovered));
+        setLayoutStructureDraft((project.structure ?? []).length ? [] : createLocalStructureDraft());
+        setLayoutDraftMeta({ source: 'local', summary: 'A locally generated camera draft is ready. Review it against the selected scenario and adjust its positions before applying.', notice: String(data.notice || '') });
+        setSelectedCameraId(null);
+        return;
+      }
       if (data.project_id !== project.id) throw new Error('The selected project changed while the layout was generating. Please try again.');
       const generated: SuggestedCamera[] = data.cameras.map((camera: Camera & { target_area?: string; rationale?: string }, index: number) => ({
         camera,

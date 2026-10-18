@@ -7,11 +7,12 @@ export const maxDuration = 60;
 
 const AI_CONFIG = getLayoutAIConfig();
 
-/** Known-good free models used when the configured router/model returns unusable JSON. */
+/** Known free models used when the configured router/model returns unusable JSON. */
 function getLayoutModelChain(primary: string): string[] {
   const fallbacks = [
-    process.env.OPENROUTER_LAYOUT_FALLBACK_MODEL_1 || 'nvidia/nemotron-3-super-120b-a12b:free',
+    process.env.OPENROUTER_LAYOUT_FALLBACK_MODEL_1 || 'openrouter/free',
     process.env.OPENROUTER_LAYOUT_FALLBACK_MODEL_2 || 'google/gemma-4-31b-it:free',
+    process.env.OPENROUTER_LAYOUT_FALLBACK_MODEL_3 || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   ];
   return [...new Set([primary, ...fallbacks].filter((model): model is string => typeof model === 'string' && model.trim().length > 0))];
 }
@@ -156,15 +157,18 @@ export async function POST(request: NextRequest) {
       : `The project already has drawn site structure; do NOT duplicate it. You may return an empty "structure" array.`;
     const systemPrompt = `You are a computer-vision site and camera-layout planner with reasoning. Work from the supplied scenario, requirements, use cases, and existing drawing.
 ${structureInstruction}
-Then produce ${requestedCount} additional camera suggestion(s) for the selected project (produce exactly ${requestedCount}, or as close as possible). Use normalized map coordinates from 0 to 1. Position cameras to cover the supplied zones, critical components, entrances, and use cases; account for existing camera positions, walls, and obstacles to avoid duplicates or blocked sight lines. Treat coordinates and view ranges as editable conceptual suggestions, never as measured placements. Keep positions within 0.05-0.95, orientation between 0-359 degrees, horizontal FOV between 30-120 degrees, and view range between 0.2-0.8. Assign only supplied use-case IDs. Explain the reasoning behind the overall plan and each camera briefly. Return compact single-line JSON only (no code fences, no pretty printing), with this shape: {"summary":"...","reasoning":["..."],"structure":[{"name":"...","type":"wall|obstacle|entrance","points":[{"x":0.1,"y":0.1},{"x":0.9,"y":0.1}],"rationale":"..."}],"cameras":[{"name":"...","x":0.5,"y":0.5,"orientation_degrees":180,"horizontal_fov_degrees":90,"view_range":0.5,"resolution_width":1920,"resolution_height":1080,"assigned_use_case_ids":[],"target_area":"...","rationale":"..."}]}. For "wall" and "entrance" use 2 points per segment; for "obstacle" use 4 points forming a rectangle. Keep "reasoning" to at most 6 short items.`;
+Then produce ${requestedCount} additional camera suggestion(s) for the selected project (produce exactly ${requestedCount}, or as close as possible). Use normalized map coordinates from 0 to 1. Position cameras to cover the supplied zones, critical components, entrances, and use cases; account for existing camera positions, walls, and obstacles to avoid duplicates or blocked sight lines. Treat coordinates and view ranges as editable conceptual suggestions, never as measured placements. Keep positions within 0.05-0.95, orientation between 0-359 degrees, horizontal FOV between 30-120 degrees, and view range between 0.2-0.8. Assign only supplied use-case IDs. Explain the reasoning behind the overall plan and each camera briefly. Return compact single-line JSON only (no code fences, no pretty printing), with this shape: {"summary":"...","reasoning":["..."],"structure":[{"name":"...","type":"wall|obstacle|entrance","points":[{"x":0.1,"y":0.1},{"x":0.9,"y":0.1}],"rationale":"..."}],"cameras":[{"name":"...","x":0.5,"y":0.5,"orientation_degrees":180,"horizontal_fov_degrees":90,"view_range":0.5,"resolution_width":1920,"resolution_height":1080,"assigned_use_case_ids":[],"target_area":"...","rationale":"..."}]}. For "wall" and "entrance" use 2 points per segment; for "obstacle" use 4 points forming a rectangle. Keep "reasoning" to at most 6 short items. Think briefly, do not narrate your analysis, and answer with the JSON object immediately.`;
     const userPrompt = `Requested additional camera count: ${requestedCount}. Generate site structure first if the project has none, then cameras.\nSelected project and scenario context:\n${JSON.stringify(context)}`;
 
     // OpenRouter free models queue unpredictably, so race the whole model chain
     // concurrently and keep the first valid layout. This keeps the total request
     // comfortably inside Vercel's 60s function budget.
-    const ATTEMPT_TIMEOUT_MS = 45_000;
+    const ATTEMPT_TIMEOUT_MS = 50_000;
+    const raceDeadline = Date.now() + ATTEMPT_TIMEOUT_MS + 3_000;
 
     async function callModel(model: string, jsonMode: boolean, signal: AbortSignal) {
+      // Every call shares the same race deadline, so a retry cannot overrun it.
+      const remaining = Math.max(8_000, raceDeadline - Date.now());
       return fetchOpenRouter(model, getLayoutAICompletionsURL(), {
         method: 'POST',
         headers: {
@@ -177,10 +181,10 @@ Then produce ${requestedCount} additional camera suggestion(s) for the selected 
           model,
           messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
           temperature: 0.2,
-          max_completion_tokens: Math.min(2400, 700 + requestedCount * 200),
+          max_completion_tokens: Math.min(4096, 1200 + requestedCount * 300),
           ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
         }),
-        signal: AbortSignal.any([AbortSignal.timeout(ATTEMPT_TIMEOUT_MS), signal]),
+        signal: AbortSignal.any([AbortSignal.timeout(remaining), signal]),
       });
     }
 
@@ -191,42 +195,52 @@ Then produce ${requestedCount} additional camera suggestion(s) for the selected 
 
     async function attemptModel(model: string, signal: AbortSignal): Promise<AttemptSuccess | AttemptFailure> {
       try {
-        let response: Response;
-        try {
-          response = await callModel(model, true, signal);
-          if (response.status === 400) response = await callModel(model, false, signal);
-        } catch (error) {
-          if (error instanceof Error && error.name === 'TimeoutError') return { ok: false, model, status: 504, detail: 'timeout', response: new Response() };
-          return { ok: false, model, status: 502, detail: error instanceof Error ? error.message : 'request failed', response: new Response() };
-        }
+        const request = async (jsonMode: boolean): Promise<AttemptSuccess | AttemptFailure> => {
+          let response: Response;
+          try {
+            response = await callModel(model, jsonMode, signal);
+          } catch (error) {
+            if (error instanceof Error && error.name === 'TimeoutError') return { ok: false, model, status: 504, detail: 'timeout', response: new Response() };
+            return { ok: false, model, status: 502, detail: error instanceof Error ? error.message : 'request failed', response: new Response() };
+          }
 
-        if (!response.ok) {
-          const responseText = await response.text();
-          let detail = '';
-          try { detail = JSON.parse(responseText)?.error?.message || ''; } catch { detail = responseText.slice(0, 240); }
-          return { ok: false, model, status: response.status, detail, response };
-        }
+          if (!response.ok) {
+            const responseText = await response.text();
+            let detail = '';
+            try { detail = JSON.parse(responseText)?.error?.message || ''; } catch { detail = responseText.slice(0, 240); }
+            return { ok: false, model, status: response.status, detail, response };
+          }
 
-        const data = await response.json();
-        // Some routers answer HTTP 200 with an error payload (e.g. an unavailable
-        // free model); treat that as a failed attempt.
-        if (data && typeof data === 'object' && data.error) {
-          const message = typeof data.error === 'object' ? data.error.message || JSON.stringify(data.error) : String(data.error);
-          return { ok: false, model, status: 502, detail: String(message).slice(0, 240), response };
-        }
-        const raw = data.choices?.[0]?.message?.content;
-        if (typeof raw !== 'string' || !raw.trim()) return { ok: false, model, status: 502, detail: 'The model returned an empty camera layout.', response };
-        const candidate = extractJsonObject(raw);
-        const candidateCameras = Array.isArray(candidate?.cameras) ? candidate.cameras : [];
-        if (!candidate || candidateCameras.length === 0) return { ok: false, model, status: 502, detail: 'The model returned an incomplete camera layout.', response };
-        return {
-          ok: true,
-          model,
-          parsed: candidate,
-          cameras: candidateCameras,
-          structure: normalizeStructure(candidate.structure),
-          usage: data.usage && typeof data.usage === 'object' ? data.usage as Record<string, unknown> : null,
+          const data = await response.json();
+          // Some routers answer HTTP 200 with an error payload (e.g. an unavailable
+          // free model); treat that as a failed attempt.
+          if (data && typeof data === 'object' && data.error) {
+            const message = typeof data.error === 'object' ? data.error.message || JSON.stringify(data.error) : String(data.error);
+            return { ok: false, model, status: 502, detail: String(message).slice(0, 240), response };
+          }
+          const raw = data.choices?.[0]?.message?.content;
+          if (typeof raw !== 'string' || !raw.trim()) return { ok: false, model, status: 502, detail: 'The model returned an empty camera layout.', response };
+          const candidate = extractJsonObject(raw);
+          const candidateCameras = Array.isArray(candidate?.cameras) ? candidate.cameras : [];
+          if (!candidate || candidateCameras.length === 0) return { ok: false, model, status: 502, detail: 'The model returned an incomplete camera layout.', response };
+          return {
+            ok: true,
+            model,
+            parsed: candidate,
+            cameras: candidateCameras,
+            structure: normalizeStructure(candidate.structure),
+            usage: data.usage && typeof data.usage === 'object' ? data.usage as Record<string, unknown> : null,
+          };
         };
+
+        let outcome = await request(false);
+        // Most free models honor the compact-JSON prompt; when one returns an
+        // unusable message, retry once with JSON mode if time still allows.
+        if (!outcome.ok && !signal.aborted && ['502'].includes(String(outcome.status)) && raceDeadline - Date.now() > 12_000) {
+          const jsonMode = await request(true);
+          if (jsonMode.ok || outcome.status === 400) outcome = jsonMode;
+        }
+        return outcome;
       } catch (error) {
         // Never let an attempt reject: a rejected attempt would otherwise leave
         // the race without a winner and the caller waiting until the deadline.
@@ -251,7 +265,7 @@ Then produce ${requestedCount} additional camera suggestion(s) for the selected 
         clearTimeout(hardDeadline);
         resolve();
       };
-      const hardDeadline = setTimeout(finish, ATTEMPT_TIMEOUT_MS + 3_000);
+      const hardDeadline = setTimeout(finish, Math.max(1_000, raceDeadline - Date.now()));
       hardDeadline.unref?.();
       modelChain.forEach((model, index) => {
         void attemptModel(model, controllers[index].signal).then(outcome => {
@@ -276,6 +290,9 @@ Then produce ${requestedCount} additional camera suggestion(s) for the selected 
     const failure = settledOutcomes
       .filter((entry): entry is AttemptFailure => !entry.ok)
       .sort((a, b) => failureRank(b.status) - failureRank(a.status))[0] ?? null;
+    if (!success) {
+      console.error('Camera layout attempt outcomes:', settledOutcomes.map(entry => entry.ok ? `${entry.model}:ok` : `${entry.model}:${entry.status}${entry.detail ? ` (${entry.detail.slice(0, 90)})` : ''}`).join(' | '));
+    }
 
     const parsed = success?.parsed ?? null;
     const parsedCameras = success?.cameras ?? [];

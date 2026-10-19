@@ -12,10 +12,10 @@ export const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1';
 
 // Verified active models on this NVIDIA NIM account:
 export const NVIDIA_MODELS = {
-  primary: 'meta/llama-3.2-90b-vision-instruct', // State-of-the-art 90B multimodal vision + reasoning
-  vision: 'meta/llama-3.2-90b-vision-instruct',  // Floor plan & camera image understanding
-  fast: 'deepseek-ai/deepseek-v4.1-flash',       // Ultra-fast text reasoning
-  lightVision: 'meta/llama-3.2-11b-vision-instruct',
+  primary: 'meta/llama-3.2-11b-vision-instruct', // Ultra-responsive multimodal vision + reasoning (~1s response time)
+  vision: 'meta/llama-3.2-11b-vision-instruct',  // Floor plan & camera image understanding
+  heavy: 'meta/llama-3.2-90b-vision-instruct',   // Deep 90B parameter vision
+  fast: 'deepseek-ai/deepseek-v4.1-flash',       // Text completion
 };
 
 export const DEFAULT_NVIDIA_API_KEY = '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';

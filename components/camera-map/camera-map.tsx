@@ -26,9 +26,11 @@ import {
   CheckCircle2,
   WandSparkles,
   ExternalLink,
+  Layers,
 } from 'lucide-react';
 import type { Camera, Zone, Point, DetVisionProject, LayoutElement } from '@/lib/types';
 import { generateStructuredLayout, extractDesiredCameraCount } from '@/lib/rule-based-planner';
+import { CameraCoveragePlanner } from './camera-coverage-planner';
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -106,6 +108,7 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
   const [desiredCameraCount, setDesiredCameraCount] = useState<number>(() => {
     return extractDesiredCameraCount(project.business_description) || 70;
   });
+  const [activeMapView, setActiveMapView] = useState<'canvas' | 'planner'>('canvas');
   const autoLayoutForRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -859,8 +862,48 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
         }} className="max-w-xs rounded-md border border-input bg-background px-3 py-1.5 text-sm">
           {(projects.some(item => item.id === project.id) ? projects : [project, ...projects]).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
-        <span className="truncate text-xs text-muted-foreground">AI layout suggestions use this project’s scenario and use cases.</span>
+        <span className="hidden md:inline truncate text-xs text-muted-foreground">AI layout suggestions use this project’s scenario and use cases.</span>
+
+        <div className="ml-auto flex items-center bg-muted/60 p-0.5 rounded-lg border border-border">
+          <button
+            type="button"
+            onClick={() => setActiveMapView('canvas')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+              activeMapView === 'canvas'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <MousePointer2 className="w-3.5 h-3.5" />
+            <span>Interactive Map</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveMapView('planner')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+              activeMapView === 'planner'
+                ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Coverage Planner v3</span>
+          </button>
+        </div>
       </div>
+
+      {activeMapView === 'planner' ? (
+        <div className="flex-1 min-h-0">
+          <CameraCoveragePlanner
+            project={project}
+            onApplyToProject={(cams) => {
+              onUpdate({ cameras: cams });
+              setActiveMapView('canvas');
+            }}
+            onClose={() => setActiveMapView('canvas')}
+          />
+        </div>
+      ) : (
       <div className="flex flex-1 min-h-0">
       {/* Toolbar */}
       <div className="w-24 shrink-0 bg-white border-r border-border flex flex-col p-2 gap-1">
@@ -937,15 +980,14 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
           {layoutLoading ? <Loader2 className="h-5 w-5 animate-spin"/> : <WandSparkles className="h-5 w-5"/>}<span className="text-center text-[10px] leading-tight font-semibold">{layoutLoading ? 'Generating…' : `Plan ${desiredCameraCount}`}</span>
         </button>
 
-        <a
-          href="/camera-coverage-planner.html"
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={() => setActiveMapView('planner')}
           className="flex flex-col items-center gap-1 rounded p-2 text-cyan-600 dark:text-cyan-400 transition-colors hover:bg-cyan-50 dark:hover:bg-cyan-950/40"
-          title="Open Camera Coverage Planner v3 (Interactive HTML Tool with per-camera mount & elevation views)"
+          title="Switch to Camera Coverage Planner v3 (Top View, Elevation, 3D Perspective)"
         >
-          <ExternalLink className="h-4 w-4" /><span className="text-center text-[9px] leading-tight font-medium">Planner v3</span>
-        </a>
+          <Layers className="h-4 w-4" /><span className="text-center text-[9px] leading-tight font-medium">Planner v3</span>
+        </button>
 
         <div className="border-t border-border my-1" />
 
@@ -1200,6 +1242,7 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
         </div>
       )}
       </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateAnalysisRequest } from '@/lib/validation';
 import { createEmptyProject } from '@/lib/project-factory';
 import type { TaskType, FeasibilityStatus } from '@/lib/types';
-import { fetchGroq, getAIConfig, getAICompletionsURL } from '@/lib/ai-provider';
+import { fetchGroq, getAIConfig, getAICompletionsURL, getNvidiaConfig, fetchNvidia, getNvidiaCompletionsURL } from '@/lib/ai-provider';
 
 // Allow slow AI providers room to answer on Vercel (Hobby plan caps at 60s).
 export const maxDuration = 60;
@@ -10,9 +10,35 @@ export const maxDuration = 60;
 const SYSTEM_PROMPT = `You are a computer vision architect. Return only a JSON object with these keys: use_cases, assumptions, missing_information, camera_recommendations. Create 1–4 concise use cases based on the supplied facility and requirements. Each use case must include name, description, task_type (object_detection|classification|segmentation|ocr|measurement|tracking|counting|anomaly_detection|pose_estimation|other), candidate_techniques (array), input_description, output_description, feasibility_status (feasible|conditional|infeasible|unknown), feasibility_notes (array), acceptance_criteria (array with at least one item), and assumptions (array). camera_recommendations must be a short array of practical camera specification and placement suggestions (resolution, lens/FOV, frame rate, lighting/environment rating) guided by the supplied inputs. Treat coverage as a target, not a measured result. Use practical techniques where relevant. Do not create IDs, cameras, zones, or workflow data. Never claim unknown site facts are confirmed.`;
 
 async function callAI(prompt: string): Promise<string> {
+  const nvidia = getNvidiaConfig();
+  if (nvidia.apiKey) {
+    try {
+      const resp = await fetchNvidia(getNvidiaCompletionsURL(), {
+        method: 'POST',
+        body: JSON.stringify({
+          model: nvidia.model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 1800,
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) return content;
+      }
+    } catch {
+      // Fallback to Groq
+    }
+  }
+
   const config = getAIConfig();
   const { apiKey, model, provider, keyName } = config;
-  if (!apiKey) throw new Error(`AI analysis needs a configured provider key. Add ${keyName}.`);
+  if (!apiKey && !nvidia.apiKey) throw new Error(`AI analysis needs a configured provider key. Add NVIDIA_API_KEY or ${keyName}.`);
 
   const send = async (maxTokens: number): Promise<Response> => {
     try {
@@ -104,8 +130,8 @@ export async function POST(request: NextRequest) {
     };
     const now = new Date().toISOString();
 
-    if (use_ai && !getAIConfig().apiKey) {
-      return NextResponse.json({ error: `AI analysis is selected, but no Groq key is configured. Add GROQ_API_KEY to .env.local and restart the dev server.` }, { status: 503 });
+    if (use_ai && !getAIConfig().apiKey && !getNvidiaConfig().apiKey) {
+      return NextResponse.json({ error: `AI analysis is selected, but no AI key is configured. Add NVIDIA_API_KEY or GROQ_API_KEY to .env.local and restart the dev server.` }, { status: 503 });
     }
 
     if (!use_ai) {
@@ -206,7 +232,7 @@ Suggest computer-vision use cases, practical techniques, camera placement/specif
 
       return NextResponse.json({
         project,
-        model_used: getAIConfig().model,
+        model_used: getNvidiaConfig().apiKey ? `NVIDIA (${getNvidiaConfig().model})` : getAIConfig().model,
       });
     } catch (llmError) {
       console.error('AI analysis failed:', llmError);

@@ -122,7 +122,15 @@ interface BaseProps {
 
 export function TopView({
   result, poses, site, mode, selectedId, onSelect, onMove, heatMode,
-}: BaseProps & { onMove: (id: number, x: number, y: number) => void; heatMode: 'dori' | 'overlap' }) {
+  selectedObstacleId, onSelectObstacle, isAnimated = true, animSpeed = 1,
+}: BaseProps & {
+  onMove: (id: number, x: number, y: number) => void;
+  heatMode: 'dori' | 'overlap';
+  selectedObstacleId?: string | null;
+  onSelectObstacle?: (id: string | null) => void;
+  isAnimated?: boolean;
+  animSpeed?: number;
+}) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const width = useElementWidth(wrapRef);
@@ -164,21 +172,66 @@ export function TopView({
 
     // obstacles
     site.obstacles.forEach(o => {
-      ctx.fillStyle = 'rgba(30,41,59,0.92)';
-      ctx.fillRect(X(o.x), Y(o.y), o.w * sx, o.d * sy);
-      ctx.strokeStyle = 'rgba(148,163,184,0.55)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(X(o.x), Y(o.y), o.w * sx, o.d * sy);
+      const isSelObs = o.id === selectedObstacleId;
+      const ox = X(o.x), oy = Y(o.y), ow = Math.max(2, o.w * sx), od = Math.max(2, o.d * sy);
+
+      // Distinct fill and accent depending on obstacle type
+      let fillCol = 'rgba(30,41,59,0.92)';
+      let borderCol = 'rgba(148,163,184,0.55)';
+      let hatchCol = 'rgba(148,163,184,0.18)';
+
+      if (o.type === 'rack') {
+        fillCol = 'rgba(30,41,59,0.95)';
+        borderCol = isSelObs ? '#f59e0b' : 'rgba(245,158,11,0.6)';
+        hatchCol = 'rgba(245,158,11,0.15)';
+      } else if (o.type === 'machine') {
+        fillCol = 'rgba(23,37,84,0.95)';
+        borderCol = isSelObs ? '#0284c7' : 'rgba(14,165,233,0.6)';
+        hatchCol = 'rgba(14,165,233,0.18)';
+      } else if (o.type === 'column') {
+        fillCol = 'rgba(51,65,85,0.96)';
+        borderCol = isSelObs ? '#a855f7' : 'rgba(168,85,247,0.6)';
+        hatchCol = 'rgba(168,85,247,0.22)';
+      } else if (o.type === 'wall') {
+        fillCol = 'rgba(15,23,42,0.98)';
+        borderCol = isSelObs ? '#ef4444' : 'rgba(239,68,68,0.6)';
+        hatchCol = 'rgba(239,68,68,0.12)';
+      } else if (o.type === 'partition') {
+        fillCol = 'rgba(30,41,59,0.75)';
+        borderCol = isSelObs ? '#10b981' : 'rgba(16,185,129,0.6)';
+        hatchCol = 'rgba(16,185,129,0.12)';
+      }
+
+      ctx.fillStyle = fillCol;
+      ctx.fillRect(ox, oy, ow, od);
+      ctx.strokeStyle = isSelObs ? '#2563eb' : borderCol;
+      ctx.lineWidth = isSelObs ? 2.5 : 1;
+      ctx.strokeRect(ox, oy, ow, od);
+
+      // Hatching
       ctx.save();
-      ctx.beginPath(); ctx.rect(X(o.x), Y(o.y), o.w * sx, o.d * sy); ctx.clip();
-      ctx.strokeStyle = 'rgba(148,163,184,0.18)';
-      for (let k = -o.d * sy; k < o.w * sx; k += 7) { ctx.beginPath(); ctx.moveTo(X(o.x) + k, Y(o.y) + o.d * sy); ctx.lineTo(X(o.x) + k + o.d * sy, Y(o.y)); ctx.stroke(); }
+      ctx.beginPath();
+      ctx.rect(ox, oy, ow, od);
+      ctx.clip();
+      ctx.strokeStyle = hatchCol;
+      ctx.lineWidth = 1;
+      for (let k = -od; k < ow; k += 8) {
+        ctx.beginPath();
+        ctx.moveTo(ox + k, oy + od);
+        ctx.lineTo(ox + k + od, oy);
+        ctx.stroke();
+      }
       ctx.restore();
-      if (o.w * sx > 40) {
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '9px ui-monospace, monospace';
+
+      // Label
+      if (ow > 36 && od > 12) {
+        ctx.fillStyle = isSelObs ? '#60a5fa' : '#cbd5e1';
+        ctx.font = '700 9px ui-monospace, monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(`${o.name} · ${o.h}m`, X(o.x + o.w / 2), Y(o.y + o.d / 2) + 3);
+        ctx.textBaseline = 'middle';
+        const labelText = o.name.length > 22 && ow < 110 ? o.name.slice(0, 20) + '…' : o.name;
+        ctx.fillText(labelText, ox + ow / 2, oy + od / 2);
+        ctx.textBaseline = 'alphabetic';
       }
     });
 
@@ -192,7 +245,7 @@ export function TopView({
       if (det.length > 2) {
         trace(det);
         ctx.setLineDash([3, 4]);
-        ctx.strokeStyle = hexA(col, sel ? 0.5 : 0.22);
+        ctx.strokeStyle = hexA(col, sel ? 0.6 : 0.28);
         ctx.lineWidth = 1;
         ctx.stroke();
       }
@@ -200,19 +253,39 @@ export function TopView({
       if (idf.length > 2 && sel) {
         trace(idf);
         ctx.setLineDash([2, 3]);
-        ctx.strokeStyle = 'rgba(34,211,238,0.9)';
+        ctx.strokeStyle = 'rgba(14,165,233,0.95)';
         ctx.stroke();
       }
       if (st.footprint.length > 2) {
         trace(st.footprint);
-        ctx.fillStyle = hexA(col, sel ? 0.18 : 0.06);
+        ctx.fillStyle = hexA(col, sel ? 0.22 : 0.08);
         ctx.fill();
-        ctx.setLineDash(sel ? [7, 4] : []);
-        ctx.lineDashOffset = -dash;
-        ctx.strokeStyle = hexA(col, sel ? 1 : 0.85);
-        ctx.lineWidth = sel ? 2 : 1.3;
+        ctx.setLineDash([8, 6]);
+        ctx.lineDashOffset = -dash * 1.5;
+        ctx.strokeStyle = hexA(col, sel ? 1 : 0.75);
+        ctx.lineWidth = sel ? 2.2 : 1.4;
         ctx.stroke();
         ctx.lineDashOffset = 0;
+
+        // Multi-ring animated optical wave propagating from camera
+        if (isAnimated !== false) {
+          const cx = X(p.x), cy = Y(p.y);
+          ctx.save();
+          ctx.beginPath();
+          trace(st.footprint);
+          ctx.clip();
+
+          for (let wIdx = 0; wIdx < 3; wIdx++) {
+            const wavePhase = (dash * 0.035 * (animSpeed || 1) + i * 0.28 + wIdx * 0.33) % 1;
+            const waveRadius = 8 + wavePhase * Math.max(60, (st.farReach || 20) * sx);
+            ctx.beginPath();
+            ctx.arc(cx, cy, waveRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = hexA(col, (1 - wavePhase) * (sel ? 0.8 : 0.4));
+            ctx.lineWidth = sel ? 2 : 1.2;
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
       }
       ctx.setLineDash([]);
     });
@@ -273,16 +346,15 @@ export function TopView({
     ctx.fillText(`← Bay length ${L} m →`, PL + (L * sx) / 2, height - 6);
     const exag = sy / sx;
     title(ctx, 'TOP VIEW — FLOOR PLAN', `target plane h=${site.targetHeight}m${exag > 1.05 ? ` · width shown ×${exag.toFixed(1)}` : ''}`, PL, 18);
-  }, [width, height, heat, poses, result, selectedId, site, sx, sy, L, W]);
+  }, [width, height, heat, poses, result, selectedId, selectedObstacleId, site, sx, sy, L, W, isAnimated, animSpeed]);
 
   useEffect(() => {
     if (!width) return;
     let raf = 0, dash = 0;
-    if (selectedId == null) { draw(0); return; }
-    const loop = () => { dash = (dash + 0.5) % 1000; draw(dash); raf = requestAnimationFrame(loop); };
+    const loop = () => { dash = (dash + 0.6) % 1000; draw(dash); raf = requestAnimationFrame(loop); };
     loop();
     return () => cancelAnimationFrame(raf);
-  }, [draw, width, selectedId]);
+  }, [draw, width]);
 
   const toWorld = (e: React.PointerEvent) => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -300,8 +372,19 @@ export function TopView({
     if (hit != null) {
       drag.current = hit;
       onSelect(hit);
+      onSelectObstacle?.(null);
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    } else if (w.x >= 0 && w.x <= L && w.y >= 0 && w.y <= W) onSelect(null);
+    } else {
+      // Check if clicking inside an obstacle
+      const hitObs = site.obstacles.find(o => w.x >= o.x && w.x <= o.x + o.w && w.y >= o.y && w.y <= o.y + o.d);
+      if (hitObs) {
+        onSelectObstacle?.(hitObs.id);
+        onSelect(null);
+      } else if (w.x >= 0 && w.x <= L && w.y >= 0 && w.y <= W) {
+        onSelect(null);
+        onSelectObstacle?.(null);
+      }
+    }
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const w = toWorld(e);
@@ -312,24 +395,47 @@ export function TopView({
 
   let tip: React.ReactNode = null;
   if (hover) {
-    const i = clamp(Math.floor(hover.x / result.cellW), 0, result.cols - 1);
-    const j = clamp(Math.floor(hover.y / result.cellH), 0, result.rows - 1);
-    const idx = j * result.cols + i;
-    const b = result.best[idx];
-    tip = (
-      <div
-        className="pointer-events-none absolute z-10 rounded-md border border-border bg-white px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-800 shadow-xl"
-        style={{ left: Math.min(hover.mx + 14, width - 170), top: Math.max(4, hover.my - 64) }}
-      >
-        <div className="text-muted-foreground">x {hover.x.toFixed(2)} m · y {hover.y.toFixed(2)} m</div>
-        {b === 255 ? <div className="text-slate-500 font-medium">Inside obstacle</div> : (
-          <>
-            <div className="font-bold" style={{ color: rgba(LEVEL_RGB[b], 1) }}>{LEVEL_NAMES[b]}{b > 0 ? ` · ${Math.round(result.bestPpm[idx])} px/m` : ''}</div>
-            <div className="text-slate-600 font-medium">{result.count[idx]} camera{result.count[idx] === 1 ? '' : 's'} at {mode}</div>
-          </>
-        )}
-      </div>
-    );
+    const hitObs = site.obstacles.find(o => hover.x >= o.x && hover.x <= o.x + o.w && hover.y >= o.y && hover.y <= o.y + o.d);
+    if (hitObs) {
+      tip = (
+        <div
+          className="pointer-events-none absolute z-10 rounded-lg border border-slate-700 bg-slate-900/95 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-100 shadow-xl backdrop-blur-xs"
+          style={{ left: Math.min(hover.mx + 14, width - 210), top: Math.max(4, hover.my - 68) }}
+        >
+          <div className="text-amber-400 font-bold flex items-center gap-1.5">
+            <span>🏗️ {hitObs.name}</span>
+            <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-sans">
+              {hitObs.type || 'obstacle'}
+            </span>
+          </div>
+          <div className="text-slate-300 text-[10px]">
+            Size: {hitObs.w.toFixed(1)}m × {hitObs.d.toFixed(1)}m · Height: {hitObs.h.toFixed(1)}m
+          </div>
+          <div className="text-slate-400 text-[10px]">
+            Position: ({hitObs.x.toFixed(1)}m, {hitObs.y.toFixed(1)}m) · Occludes Cameras
+          </div>
+        </div>
+      );
+    } else {
+      const i = clamp(Math.floor(hover.x / result.cellW), 0, result.cols - 1);
+      const j = clamp(Math.floor(hover.y / result.cellH), 0, result.rows - 1);
+      const idx = j * result.cols + i;
+      const b = result.best[idx];
+      tip = (
+        <div
+          className="pointer-events-none absolute z-10 rounded-md border border-border bg-white px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-800 shadow-xl"
+          style={{ left: Math.min(hover.mx + 14, width - 170), top: Math.max(4, hover.my - 64) }}
+        >
+          <div className="text-muted-foreground">x {hover.x.toFixed(2)} m · y {hover.y.toFixed(2)} m</div>
+          {b === 255 ? <div className="text-slate-500 font-medium">Inside obstacle</div> : (
+            <>
+              <div className="font-bold" style={{ color: rgba(LEVEL_RGB[b], 1) }}>{LEVEL_NAMES[b]}{b > 0 ? ` · ${Math.round(result.bestPpm[idx])} px/m` : ''}</div>
+              <div className="text-slate-600 font-medium">{result.count[idx]} camera{result.count[idx] === 1 ? '' : 's'} at {mode}</div>
+            </>
+          )}
+        </div>
+      );
+    }
   }
 
   return (

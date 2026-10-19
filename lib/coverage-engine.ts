@@ -50,6 +50,8 @@ export interface LensSpec {
   ranges: Record<DoriMode, number>;
 }
 
+export type ObstacleType = 'rack' | 'machine' | 'column' | 'wall' | 'partition';
+
 export interface Obstacle {
   id: string;
   name: string;
@@ -61,7 +63,103 @@ export interface Obstacle {
   d: number;
   /** Height (m). */
   h: number;
+  type?: ObstacleType;
 }
+
+/** IEC 62676-4:2025 (OODPCVS) 7-Level Standard Definition */
+export interface Iec2025Level {
+  level: number;
+  name: string;
+  code: string;
+  ppm: number;
+  purpose: string;
+  doriEquivalent: DoriMode;
+}
+
+export const IEC_2025_LEVELS: Iec2025Level[] = [
+  { level: 1, name: 'Overview', code: 'O1', ppm: 20, purpose: 'General spatial orientation & crowd flow', doriEquivalent: 'detect' },
+  { level: 2, name: 'Outline', code: 'O2', ppm: 40, purpose: 'Human silhouette shape & direction of movement', doriEquivalent: 'detect' },
+  { level: 3, name: 'Discern', code: 'D3', ppm: 80, purpose: 'Vehicle classification & gross human posture', doriEquivalent: 'observe' },
+  { level: 4, name: 'Perceive', code: 'P4', ppm: 125, purpose: 'PPE clothing & personal equipment verification', doriEquivalent: 'recognize' },
+  { level: 5, name: 'Characterize', code: 'C5', ppm: 250, purpose: 'Forensic attire details & legible license plates', doriEquivalent: 'identify' },
+  { level: 6, name: 'Validate', code: 'V6', ppm: 500, purpose: 'Automated Facial Recognition (AFR) & Biometrics', doriEquivalent: 'identify' },
+  { level: 7, name: 'Scrutinize', code: 'S7', ppm: 1500, purpose: 'Passport-grade micro-inspection & high-security forensics', doriEquivalent: 'identify' },
+];
+
+/** AI Computer Vision Tasks and required resolution thresholds */
+export interface AiVisionTask {
+  id: string;
+  name: string;
+  category: string;
+  minPpm: number;
+  doriEquivalent: DoriMode;
+  iecLevel: string;
+  description: string;
+  recommendedSensor: string;
+}
+
+export const AI_VISION_TASKS: AiVisionTask[] = [
+  {
+    id: 'ppe_safety',
+    name: 'PPE & Safety Equipment',
+    category: 'EHS & Industrial Safety',
+    minPpm: 125,
+    doriEquivalent: 'recognize',
+    iecLevel: 'Perceive (125 px/m)',
+    description: 'Real-time detection of safety helmets, hi-vis reflective vests, safety glasses, and gloves.',
+    recommendedSensor: '4MP / 8MP at 2.8mm–4mm',
+  },
+  {
+    id: 'face_recognition',
+    name: 'Facial Recognition (AFR)',
+    category: 'Access & Biometrics',
+    minPpm: 500,
+    doriEquivalent: 'identify',
+    iecLevel: 'Validate (500 px/m)',
+    description: 'High-confidence 1:N biometric face matching against employee/visitor databases under video compression.',
+    recommendedSensor: '8MP 4K at 6mm–12mm telephoto',
+  },
+  {
+    id: 'anpr_lpr',
+    name: 'License Plate (ANPR / LPR)',
+    category: 'Logistics & Gate Control',
+    minPpm: 250,
+    doriEquivalent: 'identify',
+    iecLevel: 'Characterize (250 px/m)',
+    description: 'Optical character recognition (OCR) of vehicle license plates at entry gates, weighbridges, and loading docks.',
+    recommendedSensor: '4MP Global Shutter / 6mm–12mm',
+  },
+  {
+    id: 'forklift_agv',
+    name: 'Forklift & AGV Collision Alert',
+    category: 'Intralogistics Safety',
+    minPpm: 62.5,
+    doriEquivalent: 'observe',
+    iecLevel: 'Discern (80 px/m) / Observe',
+    description: 'Tracking mobile robots, reach trucks, and pedestrian workers to prevent blind-spot collisions in shared aisles.',
+    recommendedSensor: '4MP Ultra-wide 2.8mm',
+  },
+  {
+    id: 'perimeter_intrusion',
+    name: 'Perimeter Intrusion (PID)',
+    category: 'Facility Security',
+    minPpm: 25,
+    doriEquivalent: 'detect',
+    iecLevel: 'Detect (25 px/m)',
+    description: 'Fence line tripwires, boundary breach alerts, and classification of humans vs. wildlife/vegetation.',
+    recommendedSensor: '4MP / 8MP Starlight IR',
+  },
+  {
+    id: 'barcode_reading',
+    name: 'Pallet Barcode / QR Scanning',
+    category: 'Warehouse Automation',
+    minPpm: 1000,
+    doriEquivalent: 'identify',
+    iecLevel: 'Scrutinize (1000+ px/m)',
+    description: 'Overhead optical scanning of 1D and 2D DataMatrix barcodes on conveyor pallet wraps without manual hand scanning.',
+    recommendedSensor: '12MP C-Mount Machine Vision',
+  },
+];
 
 export interface SiteSpec {
   length: number;
@@ -741,3 +839,178 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
     .map((c, i) => ({ ...c, id: i + 1, x: +c.x.toFixed(2), y: +c.y.toFixed(2) }));
   return { poses, achievedPct: (covered / U) * 100, candidates: cand.length };
 }
+
+/* ------------------------------------------------------------------ */
+/* Procedural Virtual Map & Obstacle Synthesis Engine                   */
+/* ------------------------------------------------------------------ */
+
+export type FacilityPresetType = 'logistics_warehouse' | 'manufacturing_plant' | 'retail_supermarket' | 'data_center';
+
+export interface ProceduralFacilityConfig {
+  type: FacilityPresetType;
+  length: number;
+  width: number;
+  mountHeight: number;
+  rackHeight?: number;
+  numAisles?: number;
+  hasColumns?: boolean;
+}
+
+/** Generate realistic obstacles (racks, machinery, columns) based on facility archetype */
+export function generateProceduralObstacles(config: ProceduralFacilityConfig): Obstacle[] {
+  const { type, length: L, width: W, mountHeight: H } = config;
+  const obstacles: Obstacle[] = [];
+  let obsId = 1;
+
+  if (type === 'logistics_warehouse') {
+    // Generate dual-bank parallel pallet racking aisles with forklift turning lane
+    const numAisles = config.numAisles || Math.max(3, Math.min(8, Math.round(W / 12)));
+    const aisleMarginY = Math.max(3, W * 0.12);
+    const availableY = W - 2 * aisleMarginY;
+    const yPitch = availableY / Math.max(1, numAisles);
+    const rackDepth = Math.max(1.2, Math.min(2.4, yPitch * 0.38));
+    const rackHeight = config.rackHeight || Math.min(H - 0.5, 4.5);
+
+    for (let i = 0; i < numAisles; i++) {
+      const y = aisleMarginY + i * yPitch;
+      // West racking bank
+      obstacles.push({
+        id: `rack-w-${obsId++}`,
+        name: `Racking Aisle ${i + 1} West`,
+        x: Math.max(2, L * 0.12),
+        y,
+        w: Math.max(5, L * 0.34),
+        d: rackDepth,
+        h: rackHeight,
+        type: 'rack',
+      });
+      // East racking bank
+      obstacles.push({
+        id: `rack-e-${obsId++}`,
+        name: `Racking Aisle ${i + 1} East`,
+        x: Math.max(5, L * 0.54),
+        y,
+        w: Math.max(5, L * 0.34),
+        d: rackDepth,
+        h: rackHeight,
+        type: 'rack',
+      });
+    }
+
+    // Structural columns on a 18m x 12m grid
+    if (config.hasColumns !== false && L > 30) {
+      for (let cx = 15; cx < L - 10; cx += 18) {
+        for (let cy = 10; cy < W - 8; cy += 12) {
+          obstacles.push({
+            id: `col-${obsId++}`,
+            name: `Column (${cx}m, ${cy}m)`,
+            x: cx - 0.3,
+            y: cy - 0.3,
+            w: 0.6,
+            d: 0.6,
+            h: H,
+            type: 'column',
+          });
+        }
+      }
+    }
+  } else if (type === 'manufacturing_plant') {
+    // Conveyor lines and CNC / robotic workstations
+    const numLines = Math.max(2, Math.min(4, Math.round(W / 15)));
+    const yPitch = (W * 0.75) / numLines;
+    for (let i = 0; i < numLines; i++) {
+      const y = W * 0.15 + i * yPitch;
+      // Main linear assembly conveyor
+      obstacles.push({
+        id: `conveyor-${obsId++}`,
+        name: `Assembly Line #${i + 1}`,
+        x: L * 0.15,
+        y,
+        w: L * 0.68,
+        d: 1.8,
+        h: 1.4,
+        type: 'machine',
+      });
+      // Robotic cells along line
+      obstacles.push({
+        id: `robot-${obsId++}`,
+        name: `Robotic Workcell #${i + 1}A`,
+        x: L * 0.32,
+        y: Math.max(1, y - 2.8),
+        w: 3.5,
+        d: 2.4,
+        h: 2.8,
+        type: 'machine',
+      });
+      obstacles.push({
+        id: `robot-${obsId++}`,
+        name: `Inspection Station #${i + 1}B`,
+        x: L * 0.62,
+        y: Math.min(W - 3, y + 2.2),
+        w: 3.2,
+        d: 2.2,
+        h: 2.4,
+        type: 'machine',
+      });
+    }
+  } else if (type === 'retail_supermarket') {
+    // Gondola shelving runs and checkout registers
+    const numGondolas = Math.max(4, Math.min(10, Math.round(W / 6)));
+    const yPitch = (W * 0.7) / numGondolas;
+    for (let i = 0; i < numGondolas; i++) {
+      const y = W * 0.18 + i * yPitch;
+      obstacles.push({
+        id: `gondola-${obsId++}`,
+        name: `Shelving Gondola Aisle ${i + 1}`,
+        x: L * 0.18,
+        y,
+        w: L * 0.62,
+        d: 1.2,
+        h: 2.1,
+        type: 'rack',
+      });
+    }
+    // Checkout counter lane near entrance
+    obstacles.push({
+      id: `pos-counter-${obsId++}`,
+      name: `Point-of-Sale Register Bank`,
+      x: L * 0.04,
+      y: W * 0.25,
+      w: 1.6,
+      d: W * 0.5,
+      h: 1.1,
+      type: 'partition',
+    });
+  } else if (type === 'data_center') {
+    // High-density server rack rows with hot/cold aisle containment
+    const numRows = Math.max(3, Math.min(8, Math.round(W / 8)));
+    const yPitch = (W * 0.76) / numRows;
+    for (let i = 0; i < numRows; i++) {
+      const y = W * 0.12 + i * yPitch;
+      obstacles.push({
+        id: `server-row-${obsId++}`,
+        name: `Server Rack Row ${i + 1} (Cold Aisle)`,
+        x: L * 0.12,
+        y,
+        w: L * 0.76,
+        d: 1.4,
+        h: 2.4,
+        type: 'rack',
+      });
+    }
+    // Power distribution & CRAC units
+    obstacles.push({
+      id: `crac-1-${obsId++}`,
+      name: `CRAC Cooling Unit 1`,
+      x: L * 0.02,
+      y: W * 0.1,
+      w: 2.2,
+      d: 1.5,
+      h: 2.8,
+      type: 'machine',
+    });
+  }
+
+  return obstacles;
+}
+

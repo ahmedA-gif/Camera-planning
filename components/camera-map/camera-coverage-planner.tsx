@@ -22,7 +22,17 @@ import {
   Crosshair,
   Building2,
   SlidersHorizontal,
-  Info
+  Info,
+  Play,
+  Pause,
+  Box,
+  Boxes,
+  Activity,
+  Warehouse,
+  Factory,
+  ShoppingCart,
+  Server,
+  HelpCircle
 } from 'lucide-react';
 import type { Camera as ProjectCamera, DetVisionProject } from '@/lib/types';
 import {
@@ -37,6 +47,13 @@ import {
   type LensSpec,
   type SiteSpec,
   type CoverageResult,
+  type Obstacle,
+  type ObstacleType,
+  type FacilityPresetType,
+  type AiVisionTask,
+  generateProceduralObstacles,
+  AI_VISION_TASKS,
+  IEC_2025_LEVELS,
   DORI_PPM,
   LEVEL_NAMES,
   refocusLens,
@@ -97,6 +114,74 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const [mode, setMode] = useState<DoriMode>(initialFacility.mode);
   const [cameraCount, setCameraCount] = useState(initialFacility.count);
 
+  // Editable Obstacles state (procedural or from project)
+  const [obstacles, setObstacles] = useState<Obstacle[]>(() => {
+    if (project?.structure && project.structure.length > 0) {
+      const fromProject = project.structure
+        .filter(s => s.type === 'obstacle' && s.points.length >= 2)
+        .map((s, idx) => {
+          const xs = s.points.map(p => p.x * initialFacility.length);
+          const ys = s.points.map(p => p.y * initialFacility.width);
+          const minX = Math.min(...xs);
+          const maxX = Math.max(...xs);
+          const minY = Math.min(...ys);
+          const maxY = Math.max(...ys);
+          return {
+            id: s.id || `obs-${idx + 1}`,
+            name: s.name || `Obstacle ${idx + 1}`,
+            x: +minX.toFixed(2),
+            y: +minY.toFixed(2),
+            w: +Math.max(0.5, maxX - minX).toFixed(2),
+            d: +Math.max(0.5, maxY - minY).toFixed(2),
+            h: +Math.min(initialFacility.height, 3.5).toFixed(2),
+            type: 'rack' as ObstacleType,
+          };
+        });
+      if (fromProject.length > 0) return fromProject;
+    }
+
+    // Default procedural layout for facility archetype
+    const facType = (initialFacility.facilityType as FacilityPresetType) || 'logistics_warehouse';
+    return generateProceduralObstacles({
+      type: ['logistics_warehouse', 'manufacturing_plant', 'retail_supermarket', 'data_center'].includes(facType)
+        ? facType
+        : 'logistics_warehouse',
+      length: initialFacility.length,
+      width: initialFacility.width,
+      mountHeight: initialFacility.height,
+    });
+  });
+
+  const [selectedObstacleId, setSelectedObstacleId] = useState<string | null>(null);
+  const [activeFacilityPreset, setActiveFacilityPreset] = useState<FacilityPresetType | 'custom'>(
+    (['logistics_warehouse', 'manufacturing_plant', 'retail_supermarket', 'data_center'].includes(initialFacility.facilityType as any)
+      ? (initialFacility.facilityType as FacilityPresetType)
+      : 'logistics_warehouse')
+  );
+
+  // New obstacle form
+  const [newObsName, setNewObsName] = useState('Storage Racking Row');
+  const [newObsType, setNewObsType] = useState<ObstacleType>('rack');
+  const [newObsW, setNewObsW] = useState(12);
+  const [newObsD, setNewObsD] = useState(2.2);
+  const [newObsH, setNewObsH] = useState(3.8);
+  const [isAddingObstacle, setIsAddingObstacle] = useState(false);
+
+  // Animation controls
+  const [isAnimated, setIsAnimated] = useState(true);
+  const [animSpeed, setAnimSpeed] = useState<number>(1);
+
+  // AI Task preset
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => {
+    if (initialFacility.mode === 'recognize') return 'ppe_safety';
+    if (initialFacility.mode === 'identify') return 'face_recognition';
+    if (initialFacility.mode === 'observe') return 'forklift_agv';
+    return 'perimeter_intrusion';
+  });
+
+  // Standard resolution mode: 'dori' | 'iec_2025'
+  const [standardView, setStandardView] = useState<'dori' | 'iec_2025'>('dori');
+
   // Camera lens specifications
   const [lens, setLens] = useState<LensSpec>({
     focalMm: 2.8,
@@ -110,35 +195,15 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     },
   });
 
-  // Site definition
+  // Site definition with live dynamic obstacles
   const site: SiteSpec = useMemo(() => ({
     length: bayLength,
     width: bayWidth,
     mountHeight,
     targetHeight,
     marginPct,
-    obstacles: project?.structure
-      ? project.structure
-          .filter(s => s.type === 'obstacle' && s.points.length >= 2)
-          .map((s, idx) => {
-            const xs = s.points.map(p => p.x * bayLength);
-            const ys = s.points.map(p => p.y * bayWidth);
-            const minX = Math.min(...xs);
-            const maxX = Math.max(...xs);
-            const minY = Math.min(...ys);
-            const maxY = Math.max(...ys);
-            return {
-              id: s.id || `obs-${idx}`,
-              name: s.name || `Obstacle ${idx + 1}`,
-              x: minX,
-              y: minY,
-              w: Math.max(0.5, maxX - minX),
-              d: Math.max(0.5, maxY - minY),
-              h: Math.min(mountHeight, 3.5),
-            };
-          })
-      : [],
-  }), [bayLength, bayWidth, mountHeight, targetHeight, marginPct, project?.structure]);
+    obstacles,
+  }), [bayLength, bayWidth, mountHeight, targetHeight, marginPct, obstacles]);
 
   // Initialize camera poses: dynamically from project.cameras if present, else mathematically sound distribution
   const [poses, setPoses] = useState<CameraPose[]>(() => {
@@ -179,7 +244,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   // UI state
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [activeViewTab, setActiveViewTab] = useState<'top' | 'side' | '3d'>('top');
-  const [activeDetTab, setActiveDetTab] = useState<'table' | 'list' | 'reco' | 'legend'>('table');
+  const [activeDetTab, setActiveDetTab] = useState<'table' | 'list' | 'obstacles' | 'reco' | 'legend'>('table');
   const [heatMode, setHeatMode] = useState<'dori' | 'overlap'>('dori');
   const [isOptimizing, setIsOptimizing] = useState(false);
 
@@ -213,6 +278,60 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const handleMoveCamera = useCallback((id: number, x: number, y: number) => {
     setPoses(prev => prev.map(p => p.id === id ? { ...p, x, y } : p));
   }, []);
+
+  // Facility preset generator
+  const handleApplyPreset = (preset: FacilityPresetType) => {
+    setActiveFacilityPreset(preset);
+    const newObs = generateProceduralObstacles({
+      type: preset,
+      length: bayLength,
+      width: bayWidth,
+      mountHeight,
+    });
+    setObstacles(newObs);
+    setSelectedObstacleId(null);
+  };
+
+  // Add custom obstacle
+  const handleAddObstacle = () => {
+    const newId = `obs-${Date.now()}`;
+    const cx = Math.max(0.5, Math.min(bayLength - newObsW - 0.5, (bayLength - newObsW) / 2));
+    const cy = Math.max(0.5, Math.min(bayWidth - newObsD - 0.5, (bayWidth - newObsD) / 2));
+    const obs: Obstacle = {
+      id: newId,
+      name: newObsName || `Structure ${obstacles.length + 1}`,
+      type: newObsType,
+      x: +cx.toFixed(2),
+      y: +cy.toFixed(2),
+      w: +newObsW.toFixed(2),
+      d: +newObsD.toFixed(2),
+      h: +newObsH.toFixed(2),
+    };
+    setObstacles(prev => [...prev, obs]);
+    setSelectedObstacleId(newId);
+    setActiveFacilityPreset('custom');
+    setIsAddingObstacle(false);
+  };
+
+  // Delete obstacle
+  const handleDeleteObstacle = (id: string) => {
+    setObstacles(prev => prev.filter(o => o.id !== id));
+    if (selectedObstacleId === id) setSelectedObstacleId(null);
+    setActiveFacilityPreset('custom');
+  };
+
+  // Clear all obstacles
+  const handleClearObstacles = () => {
+    setObstacles([]);
+    setSelectedObstacleId(null);
+    setActiveFacilityPreset('custom');
+  };
+
+  // Select AI vision task preset
+  const handleSelectAiTask = (task: AiVisionTask) => {
+    setSelectedTaskId(task.id);
+    setMode(task.doriEquivalent);
+  };
 
   // Run deterministic greedy set-cover optimizer (0 LLM tokens, optimal >= 95% coverage)
   const handleOptimize = () => {
@@ -316,6 +435,17 @@ CAMERA INVENTORY & GEOMETRIC SCHEDULE
   Covered Area:   ${st ? st.coveredArea.toFixed(1) : '0'} m² (${st ? st.uniqueArea.toFixed(1) : '0'} m² unique)
 ${'─'.repeat(78)}\n`;
     });
+
+    if (obstacles.length > 0) {
+      r += `\nFACILITY PHYSICAL OBSTACLES & OCCLUSION SCHEDULE (${obstacles.length} items)
+${'═'.repeat(78)}\n`;
+      obstacles.forEach(o => {
+        r += `[${(o.type || 'OBSTACLE').toUpperCase()}] ${o.name.padEnd(28)} | Dimensions: ${o.w.toFixed(1)}m × ${o.d.toFixed(1)}m × ${o.h.toFixed(1)}m (Area: ${(o.w * o.d).toFixed(1)} m²)
+  Coordinates:    x=[${o.x.toFixed(2)}m … ${(o.x + o.w).toFixed(2)}m], y=[${o.y.toFixed(2)}m … ${(o.y + o.d).toFixed(2)}m], height=${o.h.toFixed(2)}m
+  Occlusion:      3D Ray-Box Slab Intersect active · Shadows cast onto target plane ${targetHeight}m
+${'─'.repeat(78)}\n`;
+      });
+    }
 
     const blob = new Blob([r], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -498,6 +628,307 @@ ${'─'.repeat(78)}\n`;
                     className="w-full bg-slate-50 border border-input rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   />
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* AI Vision Tasks & DORI Resolution Standard */}
+          <div className="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-slate-50/50 text-xs font-semibold text-slate-700">
+              <div className="flex items-center gap-2">
+                <Crosshair className="w-4 h-4 text-primary" />
+                AI Task & DORI Standards
+              </div>
+              <div className="flex bg-slate-200/60 rounded p-0.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => setStandardView('dori')}
+                  className={`px-2 py-0.5 rounded transition-colors ${standardView === 'dori' ? 'bg-white text-slate-900 font-bold shadow-xs' : 'text-slate-600'}`}
+                >
+                  Classic DORI
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStandardView('iec_2025')}
+                  className={`px-2 py-0.5 rounded transition-colors ${standardView === 'iec_2025' ? 'bg-white text-slate-900 font-bold shadow-xs' : 'text-slate-600'}`}
+                >
+                  IEC 2025 (7-Level)
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-4 space-y-3">
+              <div className="text-[11px] font-medium text-slate-600">
+                AI Neural Network Tasks (Click to auto-apply PPM criteria):
+              </div>
+              
+              {/* AI Task Presets Grid */}
+              <div className="grid grid-cols-2 gap-2">
+                {AI_VISION_TASKS.map(task => {
+                  const isActive = selectedTaskId === task.id;
+                  return (
+                    <button
+                      key={task.id}
+                      type="button"
+                      onClick={() => handleSelectAiTask(task)}
+                      className={`text-left p-2.5 rounded-lg border transition-all ${
+                        isActive
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary/20 shadow-xs'
+                          : 'border-border bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-bold text-slate-900 truncate">
+                          {task.name}
+                        </span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-slate-100 text-primary">
+                          {task.minPpm} px/m
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {task.iecLevel} · {task.doriEquivalent.toUpperCase()}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Active Standard Explanation */}
+              {standardView === 'iec_2025' ? (
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-border text-[11px] space-y-1 text-slate-600 font-mono">
+                  <div className="font-bold text-slate-900 text-xs">IEC 62676-4:2025 OODPCVS Matrix:</div>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px]">
+                    <div>O1 Overview: 20 px/m</div>
+                    <div>O2 Outline: 40 px/m</div>
+                    <div>D3 Discern: 80 px/m</div>
+                    <div className="text-emerald-700 font-bold">P4 Perceive: 125 px/m</div>
+                    <div className="text-cyan-700 font-bold">C5 Characterize: 250 px/m</div>
+                    <div className="text-indigo-700 font-bold">V6 Validate: 500 px/m</div>
+                    <div className="text-purple-700 font-bold col-span-2">S7 Scrutinize: 1500 px/m (Forensic)</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-border text-[11px] text-slate-600 leading-snug">
+                  Target density <strong className="text-slate-900">{DORI_PPM[mode]} px/m</strong> ({mode.toUpperCase()}) guarantees deep learning models (YOLOv8, RT-DETR) receive &ge;32&times;32px bounding crops for target objects at {targetHeight}m height plane.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Virtual Facility Blueprint & Obstacles Studio */}
+          <div className="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-slate-50/50 text-xs font-semibold text-slate-700">
+              <div className="flex items-center gap-2">
+                <Boxes className="w-4 h-4 text-primary" />
+                Facility Blueprint & Obstacles
+              </div>
+              <span className="text-[11px] font-mono text-muted-foreground">
+                {obstacles.length} {obstacles.length === 1 ? 'structure' : 'structures'}
+              </span>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {/* Fast Procedural Archetype Selector */}
+              <div>
+                <label className="block text-[11px] font-medium text-slate-600 mb-1.5">
+                  Procedural Blueprint Archetypes:
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('logistics_warehouse')}
+                    className={`flex items-center gap-1.5 p-2 rounded-lg border text-[11px] font-medium transition-all ${
+                      activeFacilityPreset === 'logistics_warehouse'
+                        ? 'border-primary bg-primary text-primary-foreground font-bold'
+                        : 'border-border bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Warehouse className="w-3.5 h-3.5 shrink-0" />
+                    <span>Warehouse Racks</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('manufacturing_plant')}
+                    className={`flex items-center gap-1.5 p-2 rounded-lg border text-[11px] font-medium transition-all ${
+                      activeFacilityPreset === 'manufacturing_plant'
+                        ? 'border-primary bg-primary text-primary-foreground font-bold'
+                        : 'border-border bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Factory className="w-3.5 h-3.5 shrink-0" />
+                    <span>Factory Lines</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('retail_supermarket')}
+                    className={`flex items-center gap-1.5 p-2 rounded-lg border text-[11px] font-medium transition-all ${
+                      activeFacilityPreset === 'retail_supermarket'
+                        ? 'border-primary bg-primary text-primary-foreground font-bold'
+                        : 'border-border bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+                    <span>Retail Gondolas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('data_center')}
+                    className={`flex items-center gap-1.5 p-2 rounded-lg border text-[11px] font-medium transition-all ${
+                      activeFacilityPreset === 'data_center'
+                        ? 'border-primary bg-primary text-primary-foreground font-bold'
+                        : 'border-border bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Server className="w-3.5 h-3.5 shrink-0" />
+                    <span>Data Center</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Add Obstacle Expander Button */}
+              <div className="pt-2 border-t border-border flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setIsAddingObstacle(!isAddingObstacle)}
+                  className="text-xs text-primary font-semibold flex items-center gap-1.5 hover:text-primary/80"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isAddingObstacle ? 'Cancel New Structure' : '+ Add Custom Structure / Rack'}</span>
+                </button>
+                {obstacles.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearObstacles}
+                    className="text-[11px] text-muted-foreground hover:text-rose-600 transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              {/* Add Obstacle Form */}
+              {isAddingObstacle && (
+                <div className="p-3 bg-slate-50 rounded-lg border border-border space-y-2.5">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-600 mb-0.5">Name</label>
+                      <input
+                        type="text"
+                        value={newObsName}
+                        onChange={e => setNewObsName(e.target.value)}
+                        className="w-full bg-white border border-input rounded px-2 py-1 text-xs text-slate-900 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-600 mb-0.5">Type</label>
+                      <select
+                        value={newObsType}
+                        onChange={e => setNewObsType(e.target.value as ObstacleType)}
+                        className="w-full bg-white border border-input rounded px-2 py-1 text-xs text-slate-900 outline-none"
+                      >
+                        <option value="rack">Storage Rack</option>
+                        <option value="machine">Machinery / Robot</option>
+                        <option value="column">Structural Column</option>
+                        <option value="wall">Perimeter Wall</option>
+                        <option value="partition">Partition</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-600 mb-0.5">Width (m)</label>
+                      <input
+                        type="number"
+                        min="0.5"
+                        max="200"
+                        step="0.5"
+                        value={newObsW}
+                        onChange={e => setNewObsW(parseFloat(e.target.value) || 5)}
+                        className="w-full bg-white border border-input rounded px-2 py-1 text-xs font-mono text-slate-900 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-600 mb-0.5">Depth (m)</label>
+                      <input
+                        type="number"
+                        min="0.5"
+                        max="100"
+                        step="0.5"
+                        value={newObsD}
+                        onChange={e => setNewObsD(parseFloat(e.target.value) || 2)}
+                        className="w-full bg-white border border-input rounded px-2 py-1 text-xs font-mono text-slate-900 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-600 mb-0.5">Height (m)</label>
+                      <input
+                        type="number"
+                        min="0.5"
+                        max="30"
+                        step="0.5"
+                        value={newObsH}
+                        onChange={e => setNewObsH(parseFloat(e.target.value) || 3.5)}
+                        className="w-full bg-white border border-input rounded px-2 py-1 text-xs font-mono text-slate-900 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddObstacle}
+                    className="w-full py-1.5 rounded bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-xs"
+                  >
+                    Place Structure on Blueprint
+                  </button>
+                </div>
+              )}
+
+              {/* Obstacles List */}
+              <div className="max-h-[220px] overflow-y-auto space-y-1.5 pr-0.5">
+                {obstacles.map(o => {
+                  const isSelected = o.id === selectedObstacleId;
+                  return (
+                    <div
+                      key={o.id}
+                      onClick={() => setSelectedObstacleId(isSelected ? null : o.id)}
+                      className={`p-2 rounded-lg border text-xs flex items-center justify-between gap-2 cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50/50 shadow-xs'
+                          : 'border-border bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${
+                            o.type === 'rack' ? 'bg-amber-500' :
+                            o.type === 'machine' ? 'bg-sky-500' :
+                            o.type === 'column' ? 'bg-purple-500' :
+                            o.type === 'wall' ? 'bg-rose-500' : 'bg-emerald-500'
+                          }`} />
+                          <span className="font-semibold text-slate-900 truncate">{o.name}</span>
+                          <span className="text-[10px] uppercase font-mono text-muted-foreground px-1 py-0.2 rounded bg-slate-100">
+                            {o.type || 'obs'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-500 mt-0.5">
+                          pos ({o.x.toFixed(1)}m, {o.y.toFixed(1)}m) · size {o.w.toFixed(1)}m &times; {o.d.toFixed(1)}m · h={o.h.toFixed(1)}m
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          handleDeleteObstacle(o.id);
+                        }}
+                        className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
+                        title="Remove structure"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -803,21 +1234,50 @@ ${'─'.repeat(78)}\n`;
               {/* View & Heatmap Controls */}
               <div className="flex items-center gap-3">
                 {activeViewTab === 'top' && (
-                  <div className="flex items-center bg-slate-200/60 rounded-lg p-0.5 border border-border text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => setHeatMode('dori')}
-                      className={`px-2.5 py-1 rounded-md transition-colors ${heatMode === 'dori' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                    >
-                      DORI Resolution
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHeatMode('overlap')}
-                      className={`px-2.5 py-1 rounded-md transition-colors ${heatMode === 'overlap' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                    >
-                      Redundancy
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center bg-slate-200/60 rounded-lg p-0.5 border border-border text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setHeatMode('dori')}
+                        className={`px-2.5 py-1 rounded-md transition-colors ${heatMode === 'dori' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                      >
+                        DORI Resolution
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHeatMode('overlap')}
+                        className={`px-2.5 py-1 rounded-md transition-colors ${heatMode === 'overlap' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                      >
+                        Redundancy
+                      </button>
+                    </div>
+
+                    {/* Animated Optical Wave Scan Controls */}
+                    <div className="flex items-center gap-1 bg-slate-200/60 rounded-lg p-0.5 border border-border text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setIsAnimated(!isAnimated)}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-colors ${
+                          isAnimated
+                            ? 'bg-emerald-600 text-white font-semibold shadow-xs'
+                            : 'bg-white text-slate-700 hover:text-slate-900'
+                        }`}
+                        title="Toggle animated propagating optical wave scan"
+                      >
+                        {isAnimated ? <Activity className="w-3 h-3 animate-pulse" /> : <Play className="w-3 h-3" />}
+                        <span>{isAnimated ? 'Live Waves' : 'Paused'}</span>
+                      </button>
+                      {isAnimated && (
+                        <button
+                          type="button"
+                          onClick={() => setAnimSpeed(s => (s === 1 ? 2 : 1))}
+                          className="px-1.5 py-1 rounded-md text-[10px] font-mono font-bold text-slate-700 hover:text-slate-900 transition-colors"
+                          title="Optical wave pulse speed"
+                        >
+                          {animSpeed}x
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -869,6 +1329,10 @@ ${'─'.repeat(78)}\n`;
                   onSelect={setSelectedId}
                   onMove={handleMoveCamera}
                   heatMode={heatMode}
+                  selectedObstacleId={selectedObstacleId}
+                  onSelectObstacle={setSelectedObstacleId}
+                  isAnimated={isAnimated}
+                  animSpeed={animSpeed}
                 />
               )}
 
@@ -922,6 +1386,14 @@ ${'─'.repeat(78)}\n`;
                   }`}
                 >
                   Full Details
+                </button>
+                <button
+                  onClick={() => setActiveDetTab('obstacles')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    activeDetTab === 'obstacles' ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  Obstacles ({obstacles.length})
                 </button>
                 <button
                   onClick={() => setActiveDetTab('reco')}
@@ -1036,6 +1508,89 @@ ${'─'.repeat(78)}\n`;
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Obstacles & Physical Shadow Table */}
+              {activeDetTab === 'obstacles' && (
+                <div className="space-y-3 font-sans text-xs">
+                  {obstacles.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground border border-dashed rounded-lg bg-slate-50/50">
+                      No physical obstacles placed. Use the &quot;Facility Blueprint &amp; Obstacles&quot; panel on the left to generate procedural racks or place custom structures.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-border bg-slate-50 text-slate-700 text-[11px] font-semibold uppercase">
+                            <th className="p-2.5">Structure</th>
+                            <th className="p-2.5">Type</th>
+                            <th className="p-2.5">Origin (X, Y)</th>
+                            <th className="p-2.5">Footprint (W &times; D)</th>
+                            <th className="p-2.5">Height</th>
+                            <th className="p-2.5">Footprint Area</th>
+                            <th className="p-2.5">3D Ray Occlusion</th>
+                            <th className="p-2.5 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {obstacles.map(o => {
+                            const isSel = o.id === selectedObstacleId;
+                            return (
+                              <tr
+                                key={o.id}
+                                onClick={() => setSelectedObstacleId(o.id)}
+                                className={`cursor-pointer transition-colors ${
+                                  isSel ? 'bg-primary/5 font-semibold' : 'hover:bg-slate-50'
+                                }`}
+                              >
+                                <td className="p-2.5 font-bold text-slate-900">
+                                  {o.name}
+                                </td>
+                                <td className="p-2.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                                    o.type === 'rack' ? 'bg-amber-100 text-amber-800' :
+                                    o.type === 'machine' ? 'bg-sky-100 text-sky-800' :
+                                    o.type === 'column' ? 'bg-purple-100 text-purple-800' :
+                                    o.type === 'wall' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                                  }`}>
+                                    {o.type || 'obstacle'}
+                                  </span>
+                                </td>
+                                <td className="p-2.5 text-slate-700">
+                                  {o.x.toFixed(1)}m, {o.y.toFixed(1)}m
+                                </td>
+                                <td className="p-2.5 text-slate-700">
+                                  {o.w.toFixed(1)}m &times; {o.d.toFixed(1)}m
+                                </td>
+                                <td className="p-2.5 font-bold text-slate-900">
+                                  {o.h.toFixed(1)}m
+                                </td>
+                                <td className="p-2.5 text-slate-700">
+                                  {(o.w * o.d).toFixed(1)} m²
+                                </td>
+                                <td className="p-2.5 text-emerald-600 font-semibold">
+                                  Casts 3D shadow (target h={targetHeight}m)
+                                </td>
+                                <td className="p-2.5 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      handleDeleteObstacle(o.id);
+                                    }}
+                                    className="text-xs text-rose-600 hover:text-rose-800 font-medium"
+                                  >
+                                    Delete
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
 

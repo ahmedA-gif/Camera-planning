@@ -19,7 +19,10 @@ import {
   Sliders,
   ShieldCheck,
   Eye,
-  Crosshair
+  Crosshair,
+  Building2,
+  SlidersHorizontal,
+  Info
 } from 'lucide-react';
 import type { Camera as ProjectCamera, DetVisionProject } from '@/lib/types';
 import {
@@ -45,6 +48,7 @@ import {
   camColor,
   CAM_COLORS
 } from './coverage-views';
+import { detectFacilityProfile, extractDesiredCameraCount } from '@/lib/rule-based-planner';
 
 interface CameraCoveragePlannerProps {
   project?: DetVisionProject;
@@ -53,14 +57,45 @@ interface CameraCoveragePlannerProps {
 }
 
 export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: CameraCoveragePlannerProps) {
+  // Infer initial configuration from user scenario / project brief dynamically
+  const initialFacility = useMemo(() => {
+    const text = project?.business_description || '';
+    const prof = detectFacilityProfile(text);
+    const count = project?.cameras?.length && project.cameras.length > 0
+      ? project.cameras.length
+      : extractDesiredCameraCount(text) || 12;
+
+    // Detect target inspection mode based on scenario requirements / keywords
+    const lower = text.toLowerCase();
+    let initialMode: DoriMode = 'recognize';
+    if (/facial|identity|plate|lpr|anpr|biometric/i.test(lower)) {
+      initialMode = 'identify';
+    } else if (/ppe|helmet|vest|personnel|badge|mask/i.test(lower)) {
+      initialMode = 'recognize';
+    } else if (/forklift|vehicle|traffic|crowd|motion/i.test(lower)) {
+      initialMode = 'observe';
+    } else if (/perimeter|boundary|fence/i.test(lower)) {
+      initialMode = 'detect';
+    }
+
+    return {
+      length: Math.max(10, Math.round(prof.length)),
+      width: Math.max(5, Math.round(prof.width)),
+      height: Math.max(3, Math.round(prof.height * 10) / 10),
+      count: Math.max(1, count),
+      mode: initialMode,
+      facilityType: prof.facility_type,
+    };
+  }, [project?.business_description, project?.cameras?.length]);
+
   // Global site specifications
-  const [bayLength, setBayLength] = useState(90);
-  const [bayWidth, setBayWidth] = useState(10);
-  const [mountHeight, setMountHeight] = useState(4.0);
+  const [bayLength, setBayLength] = useState(initialFacility.length);
+  const [bayWidth, setBayWidth] = useState(initialFacility.width);
+  const [mountHeight, setMountHeight] = useState(initialFacility.height);
   const [targetHeight, setTargetHeight] = useState(1.5); // Target inspection plane (e.g. 1.5m for human/PPE)
   const [marginPct, setMarginPct] = useState(10); // Overlap margin
-  const [mode, setMode] = useState<DoriMode>('recognize');
-  const [cameraCount, setCameraCount] = useState(5);
+  const [mode, setMode] = useState<DoriMode>(initialFacility.mode);
+  const [cameraCount, setCameraCount] = useState(initialFacility.count);
 
   // Camera lens specifications
   const [lens, setLens] = useState<LensSpec>({
@@ -99,21 +134,47 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
               y: minY,
               w: Math.max(0.5, maxX - minX),
               d: Math.max(0.5, maxY - minY),
-              h: 3.5, // Standard industrial obstacle height
+              h: Math.min(mountHeight, 3.5),
             };
           })
       : [],
   }), [bayLength, bayWidth, mountHeight, targetHeight, marginPct, project?.structure]);
 
-  // Camera poses (initialized with mathematically sound defaults)
-  const [poses, setPoses] = useState<CameraPose[]>(() => 
-    defaultLayout(5, { length: 90, width: 10, mountHeight: 4.0, targetHeight: 1.5, marginPct: 10, obstacles: [] }, {
+  // Initialize camera poses: dynamically from project.cameras if present, else mathematically sound distribution
+  const [poses, setPoses] = useState<CameraPose[]>(() => {
+    if (project?.cameras && project.cameras.length > 0) {
+      return project.cameras.map((c, i) => {
+        const x = Math.max(0.5, Math.min(initialFacility.length - 0.5, c.x * initialFacility.length));
+        const y = Math.max(0.5, Math.min(initialFacility.width - 0.5, c.y * initialFacility.width));
+        const panDeg = Math.round(c.orientation_degrees || 0);
+        const tiltDeg = Math.round(25);
+        const mount: MountType = y < 1.0 ? 'cross' : (y > initialFacility.width - 1.0 ? 'cross' : 'roof-tilt');
+        return {
+          id: i + 1,
+          mount,
+          x: +x.toFixed(2),
+          y: +y.toFixed(2),
+          z: initialFacility.height,
+          panDeg,
+          tiltDeg,
+        };
+      });
+    }
+    const initialSite: SiteSpec = {
+      length: initialFacility.length,
+      width: initialFacility.width,
+      mountHeight: initialFacility.height,
+      targetHeight: 1.5,
+      marginPct: 10,
+      obstacles: [],
+    };
+    return defaultLayout(initialFacility.count, initialSite, {
       focalMm: 2.8,
       hfovDeg: 106,
       vfovDeg: 56,
       ranges: { detect: 88, observe: 35.2, recognize: 17.6, identify: 8.8 },
-    }, 'recognize')
-  );
+    }, initialFacility.mode);
+  });
 
   // UI state
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -205,16 +266,18 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const handleExportReport = () => {
     const m = result.metrics;
     let r = `══════════════════════════════════════════════════════════════════════════════
-  CAMERA COVERAGE PLANNER — DETERMINISTIC GEOMETRY REPORT v3.0
-  Generated: ${new Date().toLocaleString()}
-  Compliance: IEC EN 62676-4 Pixel Density Standards
+  CAMERA COVERAGE PLANNER — ENGINEERING GEOMETRY REPORT v3.0
+  Project:            ${project?.name || 'Computer Vision Facility Plan'}
+  Industry/Type:      ${project?.industry || initialFacility.facilityType}
+  Generated:          ${new Date().toLocaleString()}
+  Compliance:         IEC EN 62676-4 Pixel Density Standards
 ══════════════════════════════════════════════════════════════════════════════
 
 FACILITY & SITE PARAMETERS
-  Bay Length:         ${bayLength} m
-  Bay Width:          ${bayWidth} m
+  Facility Length:    ${bayLength} m
+  Facility Width:     ${bayWidth} m
   Mounting Height:    ${mountHeight} m
-  Target Plane:       ${targetHeight} m (PPE / Face Height)
+  Target Plane:       ${targetHeight} m (PPE / Face Inspection Height)
   Boundary Margin:    ${marginPct}% derating
   Total Area:         ${m.totalArea} m² (Coverable: ${m.coverableArea.toFixed(1)} m²)
 
@@ -267,44 +330,50 @@ ${'─'.repeat(78)}\n`;
   const selectedStats = selectedId != null ? result.cameras.find(c => c.id === selectedId) : null;
 
   return (
-    <div className="flex flex-col h-full bg-[#070a10] text-[#e2e8f0] font-sans overflow-hidden">
-      {/* Top Mission Control Bar */}
-      <div className="flex items-center justify-between flex-wrap gap-3 px-5 py-3 border-b border-[#1e293b] bg-[#0d1220]/90 backdrop-blur-md shrink-0">
+    <div className="flex flex-col h-full bg-slate-50/60 text-slate-900 font-sans overflow-hidden">
+      {/* Top Header Control Bar */}
+      <div className="flex items-center justify-between flex-wrap gap-3 px-6 py-3.5 border-b border-border bg-white shadow-xs shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shadow-lg shadow-cyan-500/20">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
             <Camera className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-base font-extrabold tracking-tight text-white flex items-center gap-2">
-              Coverage <span className="text-[#00e5ff]">Planner</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded border border-[#00e5ff]/40 bg-[#00e5ff]/10 text-[#00e5ff] font-bold">
-                ENGINE v3.0
+            <div className="text-base font-bold tracking-tight text-slate-900 flex items-center gap-2">
+              Coverage <span className="text-primary">Planner v3</span>
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/20 bg-primary/10 text-primary">
+                EN 62676-4 Standard
               </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded border border-[#ff6b35]/40 bg-[#ff6b35]/10 text-[#ff6b35] font-bold">
-                IEC EN 62676-4
-              </span>
+              {project?.business_description && (
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-slate-200 bg-slate-100 text-slate-600 hidden sm:inline-block">
+                  Scenario-Linked
+                </span>
+              )}
             </div>
-            <div className="text-[11px] font-mono text-[#64748b]">
-              Exact pinhole frustums · 3D obstacle occlusion · Pure deterministic mathematics
+            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <span>{initialFacility.facilityType.toUpperCase()} facility</span>
+              <span>•</span>
+              <span>{bayLength}m × {bayWidth}m</span>
+              <span>•</span>
+              <span>Exact ray frustums & 3D obstacle occlusion</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={handleOptimize}
             disabled={isOptimizing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 font-bold text-xs hover:opacity-90 transition-all shadow-lg shadow-cyan-500/20 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 transition-colors shadow-xs disabled:opacity-50"
             title="Automatically solve the Art Gallery problem for >= 95% coverage with minimum cameras"
           >
             <Sparkles className="w-3.5 h-3.5 fill-current" />
-            {isOptimizing ? 'Optimizing…' : '⚡ Auto-Solve (≥95%)'}
+            {isOptimizing ? 'Optimizing…' : 'Auto-Solve (≥95%)'}
           </button>
 
           {onApplyToProject && (
             <button
               onClick={handleApplyToCanvas}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#00e5ff] text-[#070a10] font-bold text-xs hover:bg-[#33ecff] transition-all shadow-lg shadow-cyan-500/20"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-xs hover:bg-primary/90 transition-colors shadow-xs"
               title="Sync calculated camera positions and optical cones to the project interactive canvas"
             >
               <Share2 className="w-3.5 h-3.5" />
@@ -315,7 +384,7 @@ ${'─'.repeat(78)}\n`;
           {onClose && (
             <button
               onClick={onClose}
-              className="px-3 py-1.5 rounded-md border border-[#252c3f] bg-[#121826] text-xs font-semibold hover:border-[#00e5ff] text-slate-300 hover:text-white transition-colors"
+              className="px-3.5 py-2 rounded-lg border border-border bg-white text-xs font-semibold hover:bg-muted text-slate-700 transition-colors"
             >
               Back to Map
             </button>
@@ -324,48 +393,49 @@ ${'─'.repeat(78)}\n`;
       </div>
 
       {/* Main Grid: Left Controls & Right Visualizer */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4 p-4 overflow-y-auto min-h-0">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-5 p-5 overflow-y-auto min-h-0">
         
         {/* Left Column: Interactive Parameters */}
-        <div className="flex flex-col gap-3.5 overflow-y-auto pr-1">
+        <div className="flex flex-col gap-4 overflow-y-auto pr-1">
           
           {/* Facility & Target Height */}
-          <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg overflow-hidden shadow-lg">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e293b] text-xs font-bold uppercase tracking-wider text-[#94a3b8]">
+          <div className="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-slate-50/50 text-xs font-semibold text-slate-700">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#ff6b35]" />
+                <Building2 className="w-4 h-4 text-primary" />
                 Facility & Target Geometry
               </div>
+              <span className="text-[11px] font-mono text-muted-foreground">{bayLength * bayWidth} m²</span>
             </div>
-            <div className="p-3 space-y-2.5">
-              <div className="grid grid-cols-2 gap-2">
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">Bay Length (m)</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Facility Length (m)</label>
                   <input
                     type="number"
                     min="5"
                     max="500"
                     value={bayLength}
                     onChange={e => setBayLength(Math.max(5, parseFloat(e.target.value) || 90))}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2.5 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-3 py-1.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">Bay Width (m)</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Facility Width (m)</label>
                   <input
                     type="number"
                     min="2"
                     max="150"
                     value={bayWidth}
                     onChange={e => setBayWidth(Math.max(2, parseFloat(e.target.value) || 10))}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2.5 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-3 py-1.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2.5">
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">Mount H (m)</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Mount H (m)</label>
                   <input
                     type="number"
                     step="0.5"
@@ -373,11 +443,11 @@ ${'─'.repeat(78)}\n`;
                     max="30"
                     value={mountHeight}
                     onChange={e => setMountHeight(Math.max(1, parseFloat(e.target.value) || 4))}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">Target H (m)</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Target H (m)</label>
                   <input
                     type="number"
                     step="0.1"
@@ -385,31 +455,31 @@ ${'─'.repeat(78)}\n`;
                     max="5"
                     value={targetHeight}
                     onChange={e => setTargetHeight(Math.max(0, parseFloat(e.target.value) || 1.5))}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none"
-                    title="Inspection height (0m = floor ground, 1.5m = face/PPE inspection)"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
+                    title="Target inspection plane height (1.5m for human face/PPE inspection)"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">Margin (%)</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Margin (%)</label>
                   <input
                     type="number"
                     min="0"
                     max="50"
                     value={marginPct}
                     onChange={e => setMarginPct(Math.max(0, Math.min(50, parseFloat(e.target.value) || 10)))}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                     title="Derating margin for boundary overlap"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#1e293b]/60">
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">Monitoring Mode</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Target Mode</label>
                   <select
                     value={mode}
                     onChange={e => setMode(e.target.value as DoriMode)}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none font-bold"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   >
                     <option value="detect">Detect (25 px/m)</option>
                     <option value="observe">Observe (62.5 px/m)</option>
@@ -418,14 +488,14 @@ ${'─'.repeat(78)}\n`;
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">Camera Count</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Camera Count</label>
                   <input
                     type="number"
                     min="1"
                     max="100"
                     value={cameraCount}
                     onChange={e => handleCameraCountChange(parseInt(e.target.value) || 5)}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none font-bold"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -433,18 +503,18 @@ ${'─'.repeat(78)}\n`;
           </div>
 
           {/* Camera Specifications & Lens Physics */}
-          <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg overflow-hidden shadow-lg">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e293b] text-xs font-bold uppercase tracking-wider text-[#94a3b8]">
+          <div className="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-slate-50/50 text-xs font-semibold text-slate-700">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#00e5ff]" />
-                Lens Physics & DORI Standard
+                <SlidersHorizontal className="w-4 h-4 text-primary" />
+                Lens Physics & DORI
               </div>
-              <span className="text-[10px] font-mono text-cyan-400">~{Math.round(result.metrics.impliedHpx)} px</span>
+              <span className="text-[11px] font-mono text-primary font-medium">~{Math.round(result.metrics.impliedHpx)} px</span>
             </div>
-            <div className="p-3 space-y-2.5">
-              <div className="grid grid-cols-3 gap-2">
+            <div className="p-4 space-y-3">
+              <div className="grid grid-cols-3 gap-2.5">
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">Focal (mm)</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">Focal (mm)</label>
                   <input
                     type="number"
                     step="0.4"
@@ -452,57 +522,57 @@ ${'─'.repeat(78)}\n`;
                     max="50"
                     value={lens.focalMm}
                     onChange={e => handleFocalChange(parseFloat(e.target.value) || 2.8)}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">H-FOV (°)</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">H-FOV (°)</label>
                   <input
                     type="number"
                     value={lens.hfovDeg}
                     onChange={e => setLens(l => ({ ...l, hfovDeg: parseFloat(e.target.value) || 106 }))}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-mono text-[#64748b] mb-1">V-FOV (°)</label>
+                  <label className="block text-[11px] font-medium text-slate-600 mb-1">V-FOV (°)</label>
                   <input
                     type="number"
                     value={lens.vfovDeg}
                     onChange={e => setLens(l => ({ ...l, vfovDeg: parseFloat(e.target.value) || 56 }))}
-                    className="w-full bg-[#121826] border border-[#252c3f] rounded px-2 py-1 text-xs font-mono text-white focus:border-[#00e5ff] outline-none"
+                    className="w-full bg-slate-50 border border-input rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-900 focus:bg-white focus:border-primary outline-none transition-colors"
                   />
                 </div>
               </div>
 
               {/* Published Ranges Display */}
-              <div className="grid grid-cols-4 gap-1.5 text-center pt-1 border-t border-[#1e293b]/60">
-                <div className="bg-[#121826] p-1.5 rounded border border-[#1e293b]">
-                  <div className="text-[8px] font-mono text-amber-400">DETECT</div>
-                  <div className="text-xs font-mono font-bold text-white">{lens.ranges.detect}m</div>
+              <div className="grid grid-cols-4 gap-2 text-center pt-2 border-t border-border">
+                <div className="bg-slate-50 p-2 rounded-lg border border-border">
+                  <div className="text-[10px] font-bold text-amber-600">DETECT</div>
+                  <div className="text-xs font-mono font-bold text-slate-900">{lens.ranges.detect}m</div>
                 </div>
-                <div className="bg-[#121826] p-1.5 rounded border border-[#1e293b]">
-                  <div className="text-[8px] font-mono text-yellow-400">OBSERVE</div>
-                  <div className="text-xs font-mono font-bold text-white">{lens.ranges.observe}m</div>
+                <div className="bg-slate-50 p-2 rounded-lg border border-border">
+                  <div className="text-[10px] font-bold text-yellow-600">OBSERVE</div>
+                  <div className="text-xs font-mono font-bold text-slate-900">{lens.ranges.observe}m</div>
                 </div>
-                <div className="bg-[#121826] p-1.5 rounded border border-[#1e293b]">
-                  <div className="text-[8px] font-mono text-emerald-400">RECOGNIZE</div>
-                  <div className="text-xs font-mono font-bold text-white">{lens.ranges.recognize}m</div>
+                <div className="bg-slate-50 p-2 rounded-lg border border-border">
+                  <div className="text-[10px] font-bold text-emerald-600">RECOGNIZE</div>
+                  <div className="text-xs font-mono font-bold text-slate-900">{lens.ranges.recognize}m</div>
                 </div>
-                <div className="bg-[#121826] p-1.5 rounded border border-[#1e293b]">
-                  <div className="text-[8px] font-mono text-cyan-400">IDENTIFY</div>
-                  <div className="text-xs font-mono font-bold text-white">{lens.ranges.identify}m</div>
+                <div className="bg-slate-50 p-2 rounded-lg border border-border">
+                  <div className="text-[10px] font-bold text-cyan-600">IDENTIFY</div>
+                  <div className="text-xs font-mono font-bold text-slate-900">{lens.ranges.identify}m</div>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Per-Camera Mount Cards */}
-          <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg overflow-hidden shadow-lg">
-            <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e293b] text-xs font-bold uppercase tracking-wider text-[#94a3b8]">
+          <div className="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-slate-50/50 text-xs font-semibold text-slate-700">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#7fff6b]" />
-                Per-Camera Mount Schedule ({poses.length})
+                <Camera className="w-4 h-4 text-primary" />
+                Mount Schedule ({poses.length} Cameras)
               </div>
               <button
                 onClick={() => {
@@ -510,13 +580,13 @@ ${'─'.repeat(78)}\n`;
                   setPoses(prev => [...prev, defaultPose('wall-h', nextId, bayLength / 2, nextId, site, lens, mode)]);
                   setCameraCount(c => c + 1);
                 }}
-                className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-mono"
+                className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 font-semibold"
               >
-                <Plus className="w-3 h-3" /> Add Cam
+                <Plus className="w-3.5 h-3.5" /> Add Cam
               </button>
             </div>
 
-            <div className="p-2.5 max-h-[380px] overflow-y-auto space-y-2">
+            <div className="p-3 max-h-[380px] overflow-y-auto space-y-2.5">
               {poses.map((p, idx) => {
                 const color = camColor(p.id);
                 const info = MOUNT_INFO[p.mount];
@@ -527,34 +597,34 @@ ${'─'.repeat(78)}\n`;
                   <div
                     key={p.id}
                     onClick={() => setSelectedId(isSelected ? null : p.id)}
-                    className={`rounded-md border p-2.5 transition-all cursor-pointer ${
+                    className={`rounded-lg border p-3 transition-all cursor-pointer ${
                       isSelected
-                        ? 'border-cyan-400 bg-cyan-950/20 shadow-md shadow-cyan-500/10'
-                        : 'border-[#1e293b] bg-[#121826]/70 hover:border-slate-700'
+                        ? 'border-primary bg-primary/5 ring-1 ring-primary/20 shadow-xs'
+                        : 'border-border bg-white hover:border-slate-300 hover:bg-slate-50/50'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-2">
                         <div
-                          className="w-5 h-5 rounded-full flex items-center justify-center font-mono text-[10px] font-bold text-slate-950"
+                          className="w-5 h-5 rounded-full flex items-center justify-center font-mono text-[10px] font-bold text-white shadow-xs"
                           style={{ backgroundColor: color }}
                         >
                           {p.id}
                         </div>
-                        <span className="text-xs font-bold" style={{ color }}>
+                        <span className="text-xs font-bold text-slate-900">
                           Camera {p.id}
                         </span>
-                        <span className="text-[10px] font-mono text-slate-400">
+                        <span className="text-[11px] font-mono text-muted-foreground">
                           x={p.x.toFixed(1)}m, y={p.y.toFixed(1)}m
                         </span>
                       </div>
-                      <div className="text-[10px] font-mono font-bold text-cyan-400">
+                      <div className="text-[11px] font-medium text-primary font-mono">
                         {info.short}
                       </div>
                     </div>
 
                     {/* Quick Metrics */}
-                    <div className="text-[9px] font-mono text-slate-400 flex items-center justify-between">
+                    <div className="text-[10px] font-mono text-slate-500 flex items-center justify-between">
                       <span>Span: {st ? (st.coverEnd - st.coverStart).toFixed(1) : '0'}m</span>
                       <span>Blind: {st ? st.nearBlind.toFixed(1) : '0'}m</span>
                       <span>Reach: {st ? st.farReach.toFixed(1) : '0'}m</span>
@@ -562,18 +632,18 @@ ${'─'.repeat(78)}\n`;
 
                     {/* Expanded Controls when Selected */}
                     {isSelected && (
-                      <div className="mt-2.5 pt-2.5 border-t border-slate-800 space-y-2" onClick={e => e.stopPropagation()}>
+                      <div className="mt-3 pt-3 border-t border-border space-y-2.5" onClick={e => e.stopPropagation()}>
                         {/* Mount Type Selector */}
-                        <div className="grid grid-cols-4 gap-1">
+                        <div className="grid grid-cols-4 gap-1.5">
                           {(Object.keys(MOUNT_INFO) as MountType[]).map(mKey => (
                             <button
                               key={mKey}
                               type="button"
                               onClick={() => handleMountChange(p.id, mKey)}
-                              className={`p-1 rounded text-[8px] font-bold border transition-all ${
+                              className={`p-1.5 rounded-md text-[10px] font-semibold border transition-all ${
                                 p.mount === mKey
-                                  ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300'
-                                  : 'border-[#1e293b] bg-[#0d1220] text-slate-400 hover:border-slate-700'
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : 'border-border bg-white text-slate-700 hover:bg-muted'
                               }`}
                             >
                               {MOUNT_INFO[mKey].label.split(' ')[0]}
@@ -582,31 +652,31 @@ ${'─'.repeat(78)}\n`;
                         </div>
 
                         {/* Pan and Tilt Sliders */}
-                        <div className="space-y-1.5 pt-1">
+                        <div className="space-y-2 pt-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-mono text-slate-400 w-12">Pan</span>
+                            <span className="text-[11px] font-medium text-slate-600 w-12">Pan</span>
                             <input
                               type="range"
                               min="0"
                               max="359"
                               value={p.panDeg}
                               onChange={e => handlePoseChange(p.id, { panDeg: parseFloat(e.target.value) })}
-                              className="flex-1 accent-cyan-400"
+                              className="flex-1 accent-primary"
                             />
-                            <span className="text-[10px] font-mono text-cyan-400 w-8 text-right">{p.panDeg}°</span>
+                            <span className="text-[11px] font-mono text-slate-900 w-9 text-right font-bold">{p.panDeg}°</span>
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-mono text-slate-400 w-12">Tilt</span>
+                            <span className="text-[11px] font-medium text-slate-600 w-12">Tilt</span>
                             <input
                               type="range"
                               min="-60"
                               max="90"
                               value={p.tiltDeg}
                               onChange={e => handlePoseChange(p.id, { tiltDeg: parseFloat(e.target.value) })}
-                              className="flex-1 accent-cyan-400"
+                              className="flex-1 accent-primary"
                             />
-                            <span className="text-[10px] font-mono text-cyan-400 w-8 text-right">{p.tiltDeg}°</span>
+                            <span className="text-[11px] font-mono text-slate-900 w-9 text-right font-bold">{p.tiltDeg}°</span>
                           </div>
                         </div>
 
@@ -618,9 +688,9 @@ ${'─'.repeat(78)}\n`;
                               setCameraCount(c => c - 1);
                               setSelectedId(null);
                             }}
-                            className="text-[9px] text-rose-400 hover:text-rose-300 font-mono flex items-center gap-1"
+                            className="text-xs text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1"
                           >
-                            <Trash2 className="w-3 h-3" /> Remove Camera
+                            <Trash2 className="w-3.5 h-3.5" /> Remove Camera
                           </button>
                         </div>
                       </div>
@@ -632,152 +702,152 @@ ${'─'.repeat(78)}\n`;
           </div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-2 pt-1 pb-4">
+          <div className="grid grid-cols-2 gap-3 pt-1 pb-4">
             <button
               onClick={() => {
                 setPoses(defaultLayout(cameraCount, site, lens, mode));
                 setSelectedId(null);
               }}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-md bg-[#121826] border border-[#1e293b] text-slate-300 hover:text-white hover:border-cyan-400 text-xs font-semibold"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-white border border-border text-slate-700 hover:bg-muted text-xs font-semibold shadow-xs"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              ↺ Reset Layout
+              Reset Layout
             </button>
             <button
               onClick={handleExportReport}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-md bg-[#121826] border border-[#1e293b] text-slate-300 hover:text-white hover:border-cyan-400 text-xs font-semibold"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-white border border-border text-slate-700 hover:bg-muted text-xs font-semibold shadow-xs"
             >
               <Download className="w-3.5 h-3.5" />
-              ↓ Full Blueprint
+              Export Blueprint
             </button>
           </div>
         </div>
 
         {/* Right Column: Visualization & Mathematical Metrics */}
-        <div className="flex flex-col gap-3.5 overflow-y-auto">
+        <div className="flex flex-col gap-4 overflow-y-auto">
           
           {/* Top KPI Metrics Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg p-3 shadow-lg">
-              <div className="text-[9px] font-mono uppercase tracking-wider text-[#64748b] mb-1">Cameras</div>
-              <div className="text-2xl font-mono font-extrabold text-[#00e5ff] leading-none">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            <div className="bg-white border border-border rounded-xl p-4 shadow-xs">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Cameras</div>
+              <div className="text-2xl font-mono font-bold text-primary leading-none">
                 {result.metrics.cameras}
               </div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">active mounts</div>
+              <div className="text-xs text-muted-foreground mt-1.5">active mount positions</div>
             </div>
 
-            <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg p-3 shadow-lg">
-              <div className="text-[9px] font-mono uppercase tracking-wider text-[#64748b] mb-1">Coverage</div>
-              <div className="text-2xl font-mono font-extrabold text-[#7fff6b] leading-none">
+            <div className="bg-white border border-border rounded-xl p-4 shadow-xs">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Coverage</div>
+              <div className="text-2xl font-mono font-bold text-emerald-600 leading-none">
                 {result.metrics.coveragePct.toFixed(1)}%
               </div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">
+              <div className="text-xs text-muted-foreground mt-1.5">
                 {result.metrics.coveredArea.toFixed(0)} / {result.metrics.totalArea} m²
               </div>
             </div>
 
-            <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg p-3 shadow-lg">
-              <div className="text-[9px] font-mono uppercase tracking-wider text-[#64748b] mb-1">Blind Spot</div>
-              <div className="text-2xl font-mono font-extrabold text-[#ff4757] leading-none">
+            <div className="bg-white border border-border rounded-xl p-4 shadow-xs">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Blind Spot</div>
+              <div className="text-2xl font-mono font-bold text-rose-600 leading-none">
                 {result.metrics.blindPct.toFixed(1)}%
               </div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">
-                gap: {result.metrics.largestGapM.toFixed(1)}m max
+              <div className="text-xs text-muted-foreground mt-1.5">
+                largest gap: {result.metrics.largestGapM.toFixed(1)}m
               </div>
             </div>
 
-            <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg p-3 shadow-lg">
-              <div className="text-[9px] font-mono uppercase tracking-wider text-[#64748b] mb-1">Efficiency</div>
-              <div className="text-2xl font-mono font-extrabold text-[#ffd60a] leading-none">
+            <div className="bg-white border border-border rounded-xl p-4 shadow-xs">
+              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Efficiency</div>
+              <div className="text-2xl font-mono font-bold text-amber-600 leading-none">
                 {result.metrics.efficiency.toFixed(1)}%
               </div>
-              <div className="text-[10px] font-mono text-slate-500 mt-1">coverage / camera</div>
+              <div className="text-xs text-muted-foreground mt-1.5">coverage / camera</div>
             </div>
           </div>
 
           {/* Alert Status Banner */}
           {result.metrics.blindPct === 0 ? (
-            <div className="bg-emerald-950/30 border-l-4 border-[#7fff6b] text-[#9ef090] p-3 rounded text-xs font-mono flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-[#7fff6b]" />
-                <span>✓ Perfect — zero blind spots achieved across all {bayLength}m × {bayWidth}m at {mode.toUpperCase()} level.</span>
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3.5 rounded-xl text-xs flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span className="font-medium">100% Complete Coverage — zero blind spots detected across all {bayLength}m × {bayWidth}m at {mode.toUpperCase()} level.</span>
               </div>
-              <span className="text-[10px] font-bold text-emerald-400">100% SECURE</span>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">COMPLIANT</span>
             </div>
           ) : result.metrics.blindPct < 10 ? (
-            <div className="bg-amber-950/30 border-l-4 border-[#ffd60a] text-[#ffe15a] p-3 rounded text-xs font-mono flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-[#ffd60a]" />
-                <span>⚠ Only {result.metrics.blindPct.toFixed(1)}% blind spots remain. Adding 1 camera or widening HFOV fills the gap.</span>
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3.5 rounded-xl text-xs flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                <span className="font-medium">Only {result.metrics.blindPct.toFixed(1)}% blind spots remain. Adding 1 camera or widening HFOV fills the gap.</span>
               </div>
-              <button onClick={handleOptimize} className="underline text-[10px] font-bold hover:text-white">Auto-Solve</button>
+              <button onClick={handleOptimize} className="underline font-bold text-amber-900 hover:text-black">Auto-Solve</button>
             </div>
           ) : (
-            <div className="bg-rose-950/30 border-l-4 border-[#ff4757] text-[#ff7a85] p-3 rounded text-xs font-mono flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <XCircle className="w-4 h-4 shrink-0 text-[#ff4757]" />
-                <span>✗ {result.metrics.blindPct.toFixed(1)}% coverage gap. Adjust camera mount angles or click Auto-Solve.</span>
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-xl text-xs flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <XCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span className="font-medium">{result.metrics.blindPct.toFixed(1)}% coverage gap. Adjust camera mount angles or click Auto-Solve.</span>
               </div>
-              <button onClick={handleOptimize} className="underline text-[10px] font-bold hover:text-white">Auto-Solve (≥95%)</button>
+              <button onClick={handleOptimize} className="underline font-bold text-rose-900 hover:text-black">Auto-Solve (≥95%)</button>
             </div>
           )}
 
           {/* Main Visualizer: Top / Side / 3D Canvas Tabs */}
-          <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#1e293b] px-3 bg-[#121826]">
-              <div className="flex items-center gap-2 py-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-                <div className="w-2 h-2 rounded-full bg-[#ff6b35]" />
-                Precision Multi-Angle Simulation
+          <div className="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border px-4 py-2.5 bg-slate-50/50">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <Layers className="w-4 h-4 text-primary" />
+                Multi-Angle Simulation
               </div>
 
               {/* View & Heatmap Controls */}
               <div className="flex items-center gap-3">
                 {activeViewTab === 'top' && (
-                  <div className="flex items-center bg-[#070a10] rounded p-0.5 border border-[#1e293b] text-[10px] font-mono">
+                  <div className="flex items-center bg-slate-200/60 rounded-lg p-0.5 border border-border text-[11px]">
                     <button
                       type="button"
                       onClick={() => setHeatMode('dori')}
-                      className={`px-2 py-0.5 rounded ${heatMode === 'dori' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400'}`}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${heatMode === 'dori' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                       DORI Resolution
                     </button>
                     <button
                       type="button"
                       onClick={() => setHeatMode('overlap')}
-                      className={`px-2 py-0.5 rounded ${heatMode === 'overlap' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400'}`}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${heatMode === 'overlap' ? 'bg-white text-slate-900 font-semibold shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
                     >
                       Redundancy
                     </button>
                   </div>
                 )}
 
-                <div className="flex border-l border-[#1e293b] pl-2">
+                <div className="flex border-l border-border pl-3 gap-1">
                   <button
                     onClick={() => setActiveViewTab('top')}
-                    className={`px-3 py-2 text-xs font-bold transition-all border-b-2 ${
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                       activeViewTab === 'top'
-                        ? 'border-[#00e5ff] text-[#00e5ff]'
-                        : 'border-transparent text-[#64748b] hover:text-[#e2e8f0]'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
                     Top View
                   </button>
                   <button
                     onClick={() => setActiveViewTab('side')}
-                    className={`px-3 py-2 text-xs font-bold transition-all border-b-2 ${
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                       activeViewTab === 'side'
-                        ? 'border-[#00e5ff] text-[#00e5ff]'
-                        : 'border-transparent text-[#64748b] hover:text-[#e2e8f0]'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
                     Side Elevation
                   </button>
                   <button
                     onClick={() => setActiveViewTab('3d')}
-                    className={`px-3 py-2 text-xs font-bold transition-all border-b-2 ${
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                       activeViewTab === '3d'
-                        ? 'border-[#00e5ff] text-[#00e5ff]'
-                        : 'border-transparent text-[#64748b] hover:text-[#e2e8f0]'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
                     3D Perspective
@@ -787,7 +857,7 @@ ${'─'.repeat(78)}\n`;
             </div>
 
             {/* Canvas Panels */}
-            <div className="p-3 bg-[#070a10]">
+            <div className="p-4 bg-slate-100/50">
               {activeViewTab === 'top' && (
                 <TopView
                   result={result}
@@ -830,41 +900,41 @@ ${'─'.repeat(78)}\n`;
           </div>
 
           {/* Details & Specifications Tabs */}
-          <div className="bg-[#0d1220] border border-[#1e293b] rounded-lg overflow-hidden shadow-lg">
-            <div className="flex items-center justify-between border-b border-[#1e293b] px-3 bg-[#121826]">
-              <div className="flex items-center gap-2 py-2 text-xs font-bold uppercase tracking-wider text-[#94a3b8]">
-                <div className="w-2 h-2 rounded-full bg-[#c084fc]" />
-                Engineering Breakdown
+          <div className="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border px-4 py-2.5 bg-slate-50/50">
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <Info className="w-4 h-4 text-primary" />
+                Technical Schedule
               </div>
-              <div className="flex">
+              <div className="flex gap-1">
                 <button
                   onClick={() => setActiveDetTab('table')}
-                  className={`px-3 py-2 text-xs font-bold transition-all border-b-2 ${
-                    activeDetTab === 'table' ? 'border-[#00e5ff] text-[#00e5ff]' : 'border-transparent text-[#64748b] hover:text-white'
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    activeDetTab === 'table' ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
                   Summary Table
                 </button>
                 <button
                   onClick={() => setActiveDetTab('list')}
-                  className={`px-3 py-2 text-xs font-bold transition-all border-b-2 ${
-                    activeDetTab === 'list' ? 'border-[#00e5ff] text-[#00e5ff]' : 'border-transparent text-[#64748b] hover:text-white'
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    activeDetTab === 'list' ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
                   Full Details
                 </button>
                 <button
                   onClick={() => setActiveDetTab('reco')}
-                  className={`px-3 py-2 text-xs font-bold transition-all border-b-2 ${
-                    activeDetTab === 'reco' ? 'border-[#00e5ff] text-[#00e5ff]' : 'border-transparent text-[#64748b] hover:text-white'
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    activeDetTab === 'reco' ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
                   Recommendations
                 </button>
                 <button
                   onClick={() => setActiveDetTab('legend')}
-                  className={`px-3 py-2 text-xs font-bold transition-all border-b-2 ${
-                    activeDetTab === 'legend' ? 'border-[#00e5ff] text-[#00e5ff]' : 'border-transparent text-[#64748b] hover:text-white'
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    activeDetTab === 'legend' ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
                   DORI Legend
@@ -872,25 +942,25 @@ ${'─'.repeat(78)}\n`;
               </div>
             </div>
 
-            <div className="p-3">
+            <div className="p-4">
               {/* Summary Table */}
               {activeDetTab === 'table' && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left font-mono text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-[#1e293b] bg-[#121826] text-[#00e5ff] text-[10px] uppercase">
-                        <th className="p-2">#</th>
-                        <th className="p-2">Position (X, Y)</th>
-                        <th className="p-2">Height</th>
-                        <th className="p-2">Mount Type</th>
-                        <th className="p-2">Pan / Tilt</th>
-                        <th className="p-2">Coverage Span</th>
-                        <th className="p-2">Near Blind</th>
-                        <th className="p-2">Area</th>
-                        <th className="p-2">Resolution</th>
+                      <tr className="border-b border-border bg-slate-50 text-slate-700 text-[11px] font-semibold uppercase">
+                        <th className="p-2.5">#</th>
+                        <th className="p-2.5">Position (X, Y)</th>
+                        <th className="p-2.5">Height</th>
+                        <th className="p-2.5">Mount Type</th>
+                        <th className="p-2.5">Pan / Tilt</th>
+                        <th className="p-2.5">Coverage Span</th>
+                        <th className="p-2.5">Near Blind</th>
+                        <th className="p-2.5">Area</th>
+                        <th className="p-2.5">Resolution</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#1e293b]/60">
+                    <tbody className="divide-y divide-border">
                       {poses.map((p, idx) => {
                         const col = camColor(p.id);
                         const st = result.cameras[idx];
@@ -900,30 +970,30 @@ ${'─'.repeat(78)}\n`;
                             key={p.id}
                             onClick={() => setSelectedId(p.id)}
                             className={`cursor-pointer transition-colors ${
-                              selectedId === p.id ? 'bg-cyan-950/30' : 'hover:bg-[#121826]/60'
+                              selectedId === p.id ? 'bg-primary/5 font-semibold' : 'hover:bg-slate-50'
                             }`}
                           >
-                            <td className="p-2 font-bold" style={{ color: col }}>
+                            <td className="p-2.5 font-bold" style={{ color: col }}>
                               ▌{p.id}
                             </td>
-                            <td className="p-2 text-slate-300">
+                            <td className="p-2.5 text-slate-700">
                               {p.x.toFixed(1)}m, {p.y.toFixed(1)}m
                             </td>
-                            <td className="p-2 text-slate-300">{p.z.toFixed(1)}m</td>
-                            <td className="p-2 font-bold text-cyan-400">
+                            <td className="p-2.5 text-slate-700">{p.z.toFixed(1)}m</td>
+                            <td className="p-2.5 font-bold text-primary">
                               {p.mount.toUpperCase()}
                             </td>
-                            <td className="p-2 text-slate-300">
+                            <td className="p-2.5 text-slate-700">
                               {p.panDeg}°, {p.tiltDeg}°
                             </td>
-                            <td className="p-2 font-bold text-[#7fff6b]">{span}m</td>
-                            <td className="p-2 text-slate-300">
+                            <td className="p-2.5 font-bold text-emerald-600">{span}m</td>
+                            <td className="p-2.5 text-slate-700">
                               {st && st.nearBlind > 0 ? `${st.nearBlind.toFixed(1)}m` : '0m'}
                             </td>
-                            <td className="p-2 text-slate-300">
+                            <td className="p-2.5 text-slate-700">
                               {st ? `${st.coveredArea.toFixed(0)} m²` : '0'}
                             </td>
-                            <td className="p-2 text-cyan-300 font-bold">
+                            <td className="p-2.5 text-primary font-bold">
                               {st ? `${Math.round(st.ppmAtAxis)} px/m` : '-'}
                             </td>
                           </tr>
@@ -936,32 +1006,32 @@ ${'─'.repeat(78)}\n`;
 
               {/* Full Camera Details */}
               {activeDetTab === 'list' && (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {poses.map((p, idx) => {
                     const col = camColor(p.id);
                     const st = result.cameras[idx];
                     const info = MOUNT_INFO[p.mount];
 
                     return (
-                      <div key={p.id} className="p-3 bg-[#121826] border border-[#1e293b] rounded flex gap-3 items-start">
+                      <div key={p.id} className="p-3.5 bg-slate-50/50 border border-border rounded-lg flex gap-3.5 items-start">
                         <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center font-mono text-xs font-bold text-slate-950 shrink-0"
+                          className="w-7 h-7 rounded-full flex items-center justify-center font-mono text-xs font-bold text-white shrink-0 shadow-xs"
                           style={{ backgroundColor: col }}
                         >
                           {p.id}
                         </div>
-                        <div className="min-w-0 flex-1 font-mono text-[11px] text-slate-300 space-y-1">
+                        <div className="min-w-0 flex-1 font-mono text-xs text-slate-700 space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-xs" style={{ color: col }}>
                               Camera {p.id} — {info.label.replace('\n', ' ')}
                             </span>
-                            <span className="text-cyan-400">Mount: {p.mount.toUpperCase()}</span>
+                            <span className="text-primary font-semibold">Mount: {p.mount.toUpperCase()}</span>
                           </div>
                           <div>Position: x={p.x.toFixed(2)}m ({(p.x / bayLength * 100).toFixed(1)}% of length) · y={p.y.toFixed(2)}m · z={p.z.toFixed(2)}m</div>
                           <div>Angles: Pan={p.panDeg}° · Tilt={p.tiltDeg}° · HFOV={lens.hfovDeg}°</div>
                           <div>Effective Span: {st ? `${st.coverStart.toFixed(1)}m → ${st.coverEnd.toFixed(1)}m (Span: ${(st.coverEnd - st.coverStart).toFixed(1)}m)` : '0m'}</div>
-                          <div>Under-camera blind cone: {st && st.nearBlind > 0 ? `${st.nearBlind.toFixed(2)}m radius` : 'None directly visible'}</div>
-                          <div className="text-slate-400 text-[10px] italic">{info.tip}</div>
+                          <div>Under-camera dead-zone: {st && st.nearBlind > 0 ? `${st.nearBlind.toFixed(2)}m radius` : 'Zero dead-zone directly under mount'}</div>
+                          <div className="text-muted-foreground text-[11px] italic">{info.tip}</div>
                         </div>
                       </div>
                     );
@@ -971,45 +1041,45 @@ ${'─'.repeat(78)}\n`;
 
               {/* Recommendations */}
               {activeDetTab === 'reco' && (
-                <div className="space-y-2 font-mono text-xs text-slate-300">
-                  <div className="p-3 bg-[#121826] border-l-2 border-[#00e5ff] rounded">
+                <div className="space-y-3 font-sans text-xs text-slate-700">
+                  <div className="p-3.5 bg-slate-50 border-l-4 border-primary rounded-lg">
                     {result.metrics.blindPct === 0 ? (
-                      <div><strong className="text-white">✓ Optimal Coverage Achieved:</strong> {result.metrics.cameras} cameras provide 100% complete coverage of the {bayLength}m × {bayWidth}m facility at {mode.toUpperCase()} level.</div>
+                      <div><strong className="text-slate-900">Optimal Coverage Achieved:</strong> {result.metrics.cameras} cameras provide 100% complete coverage of the {bayLength}m × {bayWidth}m facility at {mode.toUpperCase()} level.</div>
                     ) : (
-                      <div><strong className="text-white">Coverage Gap of {result.metrics.blindPct.toFixed(1)}%:</strong> Click &quot;⚡ Auto-Solve (≥95%)&quot; above to find the optimal camera count and mount configuration deterministically.</div>
+                      <div><strong className="text-slate-900">Coverage Gap of {result.metrics.blindPct.toFixed(1)}%:</strong> Click &quot;Auto-Solve (≥95%)&quot; above to find the optimal camera count and mount configuration deterministically.</div>
                     )}
                   </div>
-                  <div className="p-3 bg-[#121826] border-l-2 border-[#00e5ff] rounded">
-                    <strong className="text-white">IEC EN 62676-4 Standard:</strong> Mode {mode.toUpperCase()} requires ≥ {DORI_PPM[mode]} pixels/metre at target inspection height {targetHeight}m.
+                  <div className="p-3.5 bg-slate-50 border-l-4 border-primary rounded-lg">
+                    <strong className="text-slate-900">IEC EN 62676-4 Standard:</strong> Mode {mode.toUpperCase()} requires ≥ {DORI_PPM[mode]} pixels/metre at target inspection height {targetHeight}m.
                   </div>
-                  <div className="p-3 bg-[#121826] border-l-2 border-[#00e5ff] rounded">
-                    <strong className="text-white">Infrastructure & Cabling:</strong> Estimated ~{(bayLength * 1.4).toFixed(0)}m Cat6 PoE cabling. Dedicated {Math.ceil(result.metrics.cameras / 8) * 8}-port PoE switch recommended.
+                  <div className="p-3.5 bg-slate-50 border-l-4 border-primary rounded-lg">
+                    <strong className="text-slate-900">Infrastructure & Cabling:</strong> Estimated ~{(bayLength * 1.4).toFixed(0)}m Cat6 PoE cabling. Dedicated {Math.ceil(result.metrics.cameras / 8) * 8}-port PoE switch recommended.
                   </div>
                 </div>
               )}
 
               {/* Legend */}
               {activeDetTab === 'legend' && (
-                <div className="space-y-3 font-mono text-xs">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-300">
+                <div className="space-y-3 font-sans text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-slate-700">
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 rounded bg-cyan-400" />
-                      Identify (≥250 px/m)
+                      <span className="font-medium">Identify (≥250 px/m)</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 rounded bg-emerald-400" />
-                      Recognize (≥125 px/m)
+                      <span className="font-medium">Recognize (≥125 px/m)</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 rounded bg-yellow-400" />
-                      Observe (≥62.5 px/m)
+                      <span className="font-medium">Observe (≥62.5 px/m)</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 rounded bg-amber-400" />
-                      Detect (≥25 px/m)
+                      <span className="font-medium">Detect (≥25 px/m)</span>
                     </div>
                   </div>
-                  <div className="pt-2 border-t border-[#1e293b] text-[10px] text-slate-400 leading-relaxed">
+                  <div className="pt-3 border-t border-border text-xs text-muted-foreground leading-relaxed">
                     • Exact frustum mathematics calculates ray-plane intercepts for rectilinear lenses and equidistant fisheye lenses.<br />
                     • 3D obstacle occlusion computes ray-box slab intersections to eliminate false visibility behind racks or machinery.
                   </div>

@@ -64,15 +64,15 @@ function setupCanvas(canvas: HTMLCanvasElement, w: number, h: number) {
 
 function background(ctx: CanvasRenderingContext2D, w: number, h: number) {
   const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, '#070a10');
-  g.addColorStop(1, '#0b0f18');
+  g.addColorStop(0, '#f8fafc');
+  g.addColorStop(1, '#f1f5f9');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 }
 
 function title(ctx: CanvasRenderingContext2D, text: string, sub: string, x: number, y: number) {
   ctx.font = '700 11px ui-sans-serif, system-ui';
-  ctx.fillStyle = '#00e5ff';
+  ctx.fillStyle = '#0f172a';
   ctx.textAlign = 'left';
   ctx.fillText(text, x, y);
   const tw = ctx.measureText(text).width;
@@ -143,7 +143,7 @@ export function TopView({
     const X = (x: number) => PL + x * sx, Y = (y: number) => PT + y * sy;
     const trace = (poly: Pt[]) => { ctx.beginPath(); poly.forEach((p, k) => (k ? ctx.lineTo(X(p.x), Y(p.y)) : ctx.moveTo(X(p.x), Y(p.y)))); ctx.closePath(); };
 
-    ctx.fillStyle = '#0d1220';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(PL, PT, L * sx, W * sy);
     if (heat) {
       ctx.imageSmoothingEnabled = (L * sx) / result.cols < 4;
@@ -152,7 +152,7 @@ export function TopView({
 
     // grid
     const gx = niceStep(L, 12), gy = niceStep(W, 6);
-    ctx.strokeStyle = 'rgba(148,163,184,0.08)';
+    ctx.strokeStyle = 'rgba(203,213,225,0.7)';
     ctx.lineWidth = 1;
     for (let x = 0; x <= L + 1e-6; x += gx) { ctx.beginPath(); ctx.moveTo(X(x), PT); ctx.lineTo(X(x), PT + W * sy); ctx.stroke(); }
     for (let y = 0; y <= W + 1e-6; y += gy) { ctx.beginPath(); ctx.moveTo(PL, Y(y)); ctx.lineTo(PL + L * sx, Y(y)); ctx.stroke(); }
@@ -219,8 +219,8 @@ export function TopView({
     ctx.restore();
 
     // bay outline
-    ctx.strokeStyle = '#334155';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(PL, PT, L * sx, W * sy);
 
     // cameras
@@ -318,14 +318,14 @@ export function TopView({
     const b = result.best[idx];
     tip = (
       <div
-        className="pointer-events-none absolute z-10 rounded-md border border-slate-700/80 bg-slate-950/90 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed text-slate-300 shadow-xl backdrop-blur"
+        className="pointer-events-none absolute z-10 rounded-md border border-border bg-white px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-800 shadow-xl"
         style={{ left: Math.min(hover.mx + 14, width - 170), top: Math.max(4, hover.my - 64) }}
       >
-        <div className="text-slate-500">x {hover.x.toFixed(2)} m · y {hover.y.toFixed(2)} m</div>
-        {b === 255 ? <div className="text-slate-400">Inside obstacle</div> : (
+        <div className="text-muted-foreground">x {hover.x.toFixed(2)} m · y {hover.y.toFixed(2)} m</div>
+        {b === 255 ? <div className="text-slate-500 font-medium">Inside obstacle</div> : (
           <>
-            <div style={{ color: rgba(LEVEL_RGB[b], 1) }}>{LEVEL_NAMES[b]}{b > 0 ? ` · ${Math.round(result.bestPpm[idx])} px/m` : ''}</div>
-            <div>{result.count[idx]} camera{result.count[idx] === 1 ? '' : 's'} at {mode}</div>
+            <div className="font-bold" style={{ color: rgba(LEVEL_RGB[b], 1) }}>{LEVEL_NAMES[b]}{b > 0 ? ` · ${Math.round(result.bestPpm[idx])} px/m` : ''}</div>
+            <div className="text-slate-600 font-medium">{result.count[idx]} camera{result.count[idx] === 1 ? '' : 's'} at {mode}</div>
           </>
         )}
       </div>
@@ -378,28 +378,28 @@ export function SideView({ result, poses, lens, site, mode, selectedId, onSelect
     const gz = niceStep(zTop, 5);
     ctx.font = '9px ui-monospace, monospace';
     for (let z = 0; z <= zTop + 1e-6; z += gz) {
-      ctx.strokeStyle = 'rgba(148,163,184,0.08)';
+      ctx.strokeStyle = 'rgba(203,213,225,0.7)';
       ctx.beginPath(); ctx.moveTo(PL, Z(z)); ctx.lineTo(PL + L * sx, Z(z)); ctx.stroke();
       ctx.fillStyle = '#64748b'; ctx.textAlign = 'right'; ctx.fillText(`${+z.toFixed(1)}m`, PL - 6, Z(z) + 3);
     }
-    ctx.fillStyle = '#1e2638';
-    ctx.fillRect(PL, floorY, L * sx, 5);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(PL, floorY, L * sx, 4);
 
     ctx.save();
     ctx.beginPath(); ctx.rect(PL, PT - 10, L * sx, floorY - PT + 10); ctx.clip();
 
     // mount height & target plane
     ctx.setLineDash([6, 5]);
-    ctx.strokeStyle = 'rgba(148,163,184,0.35)';
+    ctx.strokeStyle = 'rgba(100,116,139,0.5)';
     ctx.beginPath(); ctx.moveTo(PL, Z(site.mountHeight)); ctx.lineTo(PL + L * sx, Z(site.mountHeight)); ctx.stroke();
-    ctx.strokeStyle = 'rgba(34,211,238,0.55)';
+    ctx.strokeStyle = 'rgba(14,165,233,0.7)';
     ctx.beginPath(); ctx.moveTo(PL, Z(site.targetHeight)); ctx.lineTo(PL + L * sx, Z(site.targetHeight)); ctx.stroke();
     ctx.setLineDash([]);
 
     site.obstacles.forEach(o => {
-      ctx.fillStyle = 'rgba(51,65,85,0.55)';
+      ctx.fillStyle = 'rgba(148,163,184,0.35)';
       ctx.fillRect(X(o.x), Z(o.h), o.w * sx, o.h * sz);
-      ctx.strokeStyle = 'rgba(148,163,184,0.4)';
+      ctx.strokeStyle = 'rgba(100,116,139,0.6)';
       ctx.strokeRect(X(o.x), Z(o.h), o.w * sx, o.h * sz);
     });
 
@@ -517,9 +517,9 @@ export function PerspectiveView({ result, poses, site, mode, selectedId, heatMod
     }
     // floor outline & ghost walls
     poly([P(0, 0, 0), P(L, 0, 0), P(L, W, 0), P(0, W, 0)]);
-    ctx.strokeStyle = '#334155'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.setLineDash([4, 5]);
-    ctx.strokeStyle = 'rgba(100,116,139,0.35)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(148,163,184,0.6)'; ctx.lineWidth = 1;
     for (const [x, y] of [[0, 0], [L, 0], [L, W], [0, W]]) { const a = P(x, y, 0), b = P(x, y, site.mountHeight); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
     poly([P(0, 0, site.mountHeight), P(L, 0, site.mountHeight), P(L, W, site.mountHeight), P(0, W, site.mountHeight)]); ctx.stroke();
     ctx.setLineDash([]);
@@ -613,7 +613,7 @@ export function PerspectiveView({ result, poses, site, mode, selectedId, heatMod
       <div className="absolute bottom-2 right-2 flex gap-1">
         {[['Iso', -28, 32], ['Top', 0, 89], ['Front', 0, 10]].map(([label, y, p]) => (
           <button key={label as string} type="button" onClick={() => { setYaw(y as number); setPitch(p as number); setZoom(1); }}
-            className="rounded border border-slate-700 bg-slate-900/80 px-2 py-0.5 font-mono text-[10px] text-slate-300 transition hover:border-cyan-400 hover:text-cyan-300">
+            className="rounded border border-border bg-white/90 px-2.5 py-1 font-mono text-[10px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-primary">
             {label}
           </button>
         ))}

@@ -109,6 +109,9 @@ export function WorkflowEditor({ project, onUpdate }: WorkflowEditorProps) {
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
 
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
   useEffect(() => {
     if (!nodes.length || fittedProjectId.current === project.id) return;
     const frame = requestAnimationFrame(() => {
@@ -123,6 +126,7 @@ export function WorkflowEditor({ project, onUpdate }: WorkflowEditorProps) {
     if (isNewProject) {
       loadedProjectId.current = project.id;
       generatedProjectId.current = null;
+      fittedProjectId.current = null;
       if (project.workflow?.nodes?.length) {
         setNodes(project.workflow.nodes.map(n => ({ id: n.id, type: 'custom', position: n.position, data: { ...n.data, category: n.type } })));
         setEdges(project.workflow.edges.map(e => ({
@@ -157,9 +161,9 @@ export function WorkflowEditor({ project, onUpdate }: WorkflowEditorProps) {
         style: { stroke: '#94a3b8', strokeWidth: 2 },
       }));
       setEdges(flowEdges);
-      onUpdate(workflow);
+      onUpdateRef.current(workflow);
     }
-  }, [project.id, project.workflow, project.use_cases, project.cameras, setNodes, setEdges, onUpdate]);
+  }, [project.id, project.workflow, project.use_cases, project.cameras, setNodes, setEdges]);
 
   const onConnect = useCallback((params: Connection) => {
     const nextEdges = addEdge({ 
@@ -248,17 +252,24 @@ export function WorkflowEditor({ project, onUpdate }: WorkflowEditorProps) {
   const handleNodesChange = (changes: any[]) => {
     const nextNodes = applyNodeChanges(changes, nodes);
     setNodes(nextNodes);
-    persistWorkflow(nextNodes, edges);
+    // Only persist if there are positional drag changes or removals, not mere transient selections
+    const hasMeaningfulChanges = changes.some(c => c.type === 'position' && c.dragging === false || c.type === 'remove');
+    if (hasMeaningfulChanges) {
+      persistWorkflow(nextNodes, edges);
+    }
   };
 
   const handleEdgesChange = (changes: any[]) => {
     const nextEdges = applyEdgeChanges(changes, edges);
     setEdges(nextEdges);
-    persistWorkflow(nodes, nextEdges);
+    const hasMeaningfulChanges = changes.some(c => c.type === 'remove');
+    if (hasMeaningfulChanges) {
+      persistWorkflow(nodes, nextEdges);
+    }
   };
 
   function persistWorkflow(nextNodes: Node[], nextEdges: Edge[]) {
-    onUpdate({
+    onUpdateRef.current({
       nodes: nextNodes.map(n => ({ id: n.id, type: (n.data.category as NodeCategory) || 'camera_input', position: n.position, data: n.data })),
       edges: nextEdges.map(e => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? undefined, targetHandle: e.targetHandle ?? undefined })),
     });

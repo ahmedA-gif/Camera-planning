@@ -50,7 +50,17 @@ export interface LensSpec {
   ranges: Record<DoriMode, number>;
 }
 
-export type ObstacleType = 'rack' | 'machine' | 'column' | 'wall' | 'partition';
+export type ObstacleType =
+  | 'rack'
+  | 'machine'
+  | 'column'
+  | 'wall'
+  | 'partition'
+  | 'conveyor'
+  | 'agv_lane'
+  | 'mezzanine'
+  | 'hazard'
+  | 'dock';
 
 export interface Obstacle {
   id: string;

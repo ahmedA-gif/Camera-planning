@@ -23,6 +23,30 @@ export const LEVEL_RGB: [number, number, number][] = [
 ];
 const OVERLAP_RGB: [number, number, number][] = [[239, 68, 68], [20, 184, 166], [74, 222, 128], [168, 85, 247]];
 
+export const MOUNT_SYMBOLS: Record<string, string> = {
+  'wall-h': '■',
+  'wall-v': '▼',
+  'roof-nadir': '●',
+  'roof-tilt': '◆',
+  'corner': '▲',
+  'cross': '◀▶',
+  'pole360': '⊕',
+  'underside': '●',
+};
+
+export const OBSTACLE_TYPE_LABELS: Record<string, { label: string; icon: string; border: string; fill: string; hatch: string }> = {
+  rack: { label: 'Storage Rack', icon: '📦', border: '#f59e0b', fill: 'rgba(30,41,59,0.95)', hatch: 'rgba(245,158,11,0.18)' },
+  machine: { label: 'Machine / Robot', icon: '🤖', border: '#0284c7', fill: 'rgba(23,37,84,0.95)', hatch: 'rgba(14,165,233,0.22)' },
+  conveyor: { label: 'Conveyor Line', icon: '🔄', border: '#06b6d4', fill: 'rgba(15,23,42,0.94)', hatch: 'rgba(6,182,212,0.25)' },
+  agv_lane: { label: 'AGV Transit Lane', icon: '🚜', border: '#10b981', fill: 'rgba(6,78,59,0.25)', hatch: 'rgba(16,185,129,0.15)' },
+  mezzanine: { label: 'Mezzanine Platform', icon: '🏢', border: '#c084fc', fill: 'rgba(59,7,100,0.65)', hatch: 'rgba(192,132,252,0.2)' },
+  column: { label: 'Structural Column', icon: '🏛️', border: '#a855f7', fill: 'rgba(51,65,85,0.96)', hatch: 'rgba(168,85,247,0.22)' },
+  hazard: { label: 'Hazard Zone', icon: '⚠️', border: '#f43f5e', fill: 'rgba(69,10,10,0.85)', hatch: 'rgba(244,63,94,0.25)' },
+  dock: { label: 'Loading Dock', icon: '🚛', border: '#eab308', fill: 'rgba(23,37,84,0.9)', hatch: 'rgba(234,179,8,0.2)' },
+  wall: { label: 'Concrete Wall', icon: '🧱', border: '#ef4444', fill: 'rgba(15,23,42,0.98)', hatch: 'rgba(239,68,68,0.15)' },
+  partition: { label: 'Partition Screen', icon: '🛡️', border: '#14b8a6', fill: 'rgba(30,41,59,0.78)', hatch: 'rgba(20,184,166,0.15)' },
+};
+
 const rgba = (c: [number, number, number], a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 export function hexA(hex: string, a: number) {
   const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
@@ -170,42 +194,16 @@ export function TopView({
     ctx.rect(PL, PT, L * sx, W * sy);
     ctx.clip();
 
-    // obstacles
+    // obstacles with rich physical styling
     site.obstacles.forEach(o => {
       const isSelObs = o.id === selectedObstacleId;
       const ox = X(o.x), oy = Y(o.y), ow = Math.max(2, o.w * sx), od = Math.max(2, o.d * sy);
+      const meta = OBSTACLE_TYPE_LABELS[o.type || 'rack'] || OBSTACLE_TYPE_LABELS.rack;
 
-      // Distinct fill and accent depending on obstacle type
-      let fillCol = 'rgba(30,41,59,0.92)';
-      let borderCol = 'rgba(148,163,184,0.55)';
-      let hatchCol = 'rgba(148,163,184,0.18)';
-
-      if (o.type === 'rack') {
-        fillCol = 'rgba(30,41,59,0.95)';
-        borderCol = isSelObs ? '#f59e0b' : 'rgba(245,158,11,0.6)';
-        hatchCol = 'rgba(245,158,11,0.15)';
-      } else if (o.type === 'machine') {
-        fillCol = 'rgba(23,37,84,0.95)';
-        borderCol = isSelObs ? '#0284c7' : 'rgba(14,165,233,0.6)';
-        hatchCol = 'rgba(14,165,233,0.18)';
-      } else if (o.type === 'column') {
-        fillCol = 'rgba(51,65,85,0.96)';
-        borderCol = isSelObs ? '#a855f7' : 'rgba(168,85,247,0.6)';
-        hatchCol = 'rgba(168,85,247,0.22)';
-      } else if (o.type === 'wall') {
-        fillCol = 'rgba(15,23,42,0.98)';
-        borderCol = isSelObs ? '#ef4444' : 'rgba(239,68,68,0.6)';
-        hatchCol = 'rgba(239,68,68,0.12)';
-      } else if (o.type === 'partition') {
-        fillCol = 'rgba(30,41,59,0.75)';
-        borderCol = isSelObs ? '#10b981' : 'rgba(16,185,129,0.6)';
-        hatchCol = 'rgba(16,185,129,0.12)';
-      }
-
-      ctx.fillStyle = fillCol;
+      ctx.fillStyle = meta.fill;
       ctx.fillRect(ox, oy, ow, od);
-      ctx.strokeStyle = isSelObs ? '#2563eb' : borderCol;
-      ctx.lineWidth = isSelObs ? 2.5 : 1;
+      ctx.strokeStyle = isSelObs ? '#3b82f6' : meta.border;
+      ctx.lineWidth = isSelObs ? 2.5 : 1.2;
       ctx.strokeRect(ox, oy, ow, od);
 
       // Hatching
@@ -213,7 +211,7 @@ export function TopView({
       ctx.beginPath();
       ctx.rect(ox, oy, ow, od);
       ctx.clip();
-      ctx.strokeStyle = hatchCol;
+      ctx.strokeStyle = meta.hatch;
       ctx.lineWidth = 1;
       for (let k = -od; k < ow; k += 8) {
         ctx.beginPath();
@@ -223,14 +221,14 @@ export function TopView({
       }
       ctx.restore();
 
-      // Label
-      if (ow > 36 && od > 12) {
-        ctx.fillStyle = isSelObs ? '#60a5fa' : '#cbd5e1';
+      // Label & icon
+      if (ow > 28 && od > 10) {
+        ctx.fillStyle = isSelObs ? '#93c5fd' : '#e2e8f0';
         ctx.font = '700 9px ui-monospace, monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        const labelText = o.name.length > 22 && ow < 110 ? o.name.slice(0, 20) + '…' : o.name;
-        ctx.fillText(labelText, ox + ow / 2, oy + od / 2);
+        const labelText = o.name.length > 20 && ow < 100 ? o.name.slice(0, 18) + '…' : o.name;
+        ctx.fillText(`${meta.icon} ${labelText}`, ox + ow / 2, oy + od / 2);
         ctx.textBaseline = 'alphabetic';
       }
     });
@@ -315,6 +313,19 @@ export function TopView({
         ctx.lineTo(tx - 6 * Math.cos(ang + 0.5), ty - 6 * Math.sin(ang + 0.5));
         ctx.closePath(); ctx.fillStyle = col; ctx.fill();
       }
+      // Under-camera dead zone ring (physical occlusion directly beneath high mounts)
+      if (p.mount !== 'roof-nadir' && p.tiltDeg < 80) {
+        const deadRadius = Math.max(0.6, Math.min(4.5, (p.z - site.targetHeight) * 0.45));
+        ctx.save();
+        ctx.setLineDash([2, 3]);
+        ctx.strokeStyle = sel ? 'rgba(239,68,68,0.7)' : 'rgba(239,68,68,0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(5, deadRadius * sx), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       const r = sel ? 11 : 9;
       ctx.save();
       ctx.shadowBlur = sel ? 22 : 12;
@@ -328,6 +339,23 @@ export function TopView({
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(String(p.id), cx, cy + 0.5);
       ctx.textBaseline = 'alphabetic';
+
+      // Mount symbol badge
+      const sym = MOUNT_SYMBOLS[p.mount] || '●';
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(cx + r * 0.8, cy - r * 0.8, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '700 7px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(sym, cx + r * 0.8, cy - r * 0.8);
+      ctx.textBaseline = 'alphabetic';
+
       if (poses.length <= 24 || sel) {
         ctx.fillStyle = col;
         ctx.font = '9px ui-monospace, monospace';
@@ -646,15 +674,27 @@ export function PerspectiveView({ result, poses, site, mode, selectedId, heatMod
             { n: [0, -1, 0], pts: [[x0, y0, 0], [x1, y0, 0], [x1, y0, h], [x0, y0, h]] },
             { n: [0, 1, 0], pts: [[x0, y1, 0], [x1, y1, 0], [x1, y1, h], [x0, y1, h]] },
           ];
+          let baseR = 51, baseG = 65, baseB = 85;
+          if (o.type === 'rack') { baseR = 45; baseG = 55; baseB = 72; }
+          else if (o.type === 'machine') { baseR = 23; baseG = 37; baseB = 84; }
+          else if (o.type === 'conveyor') { baseR = 14; baseG = 116; baseB = 144; }
+          else if (o.type === 'agv_lane') { baseR = 6; baseG = 95; baseB = 70; }
+          else if (o.type === 'mezzanine') { baseR = 88; baseG = 28; baseB = 135; }
+          else if (o.type === 'hazard') { baseR = 159; baseG = 18; baseB = 57; }
+          else if (o.type === 'dock') { baseR = 161; baseG = 98; baseB = 7; }
+          else if (o.type === 'column') { baseR = 71; baseG = 85; baseB = 105; }
+
           faces.forEach(f => {
             const n1y = f.n[0] * sy + f.n[1] * cy;
             const facing = -n1y * cp + f.n[2] * sp;
             if (facing <= 0) return;
             poly(f.pts.map(([x, y, z]) => P(x, y, z)));
-            const shade = f.n[2] ? 0.95 : 0.55 + 0.3 * facing;
-            ctx.fillStyle = `rgba(${Math.round(51 * shade)},${Math.round(65 * shade)},${Math.round(85 * shade)},0.95)`;
+            const shade = f.n[2] ? 1.35 : 0.65 + 0.35 * facing;
+            ctx.fillStyle = `rgba(${Math.min(255, Math.round(baseR * shade))},${Math.min(255, Math.round(baseG * shade))},${Math.min(255, Math.round(baseB * shade))},0.95)`;
             ctx.fill();
-            ctx.strokeStyle = 'rgba(148,163,184,0.45)'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.strokeStyle = f.n[2] ? 'rgba(255,255,255,0.3)' : 'rgba(148,163,184,0.45)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
           });
         },
       });

@@ -22,23 +22,47 @@ async function callAI(prompt: string): Promise<string> {
             { role: 'user', content: prompt },
           ],
           temperature: 0.2,
-          max_tokens: 1800,
+          max_tokens: 2500,
         }),
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(35000),
       });
       if (resp.ok) {
         const data = await resp.json();
         const content = data.choices?.[0]?.message?.content;
         if (content) return content;
       }
+    } catch (err) {
+      console.warn('NVIDIA primary model timed out, retrying with fast model:', err);
+    }
+
+    try {
+      // Fallback to fast model on NVIDIA NIM
+      const fallbackResp = await fetchNvidia(getNvidiaCompletionsURL(), {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'deepseek-ai/deepseek-v4.1-flash',
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.2,
+          max_tokens: 2500,
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (fallbackResp.ok) {
+        const data = await fallbackResp.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content) return content;
+      }
     } catch {
-      // Fallback to Groq
+      // proceed to final attempt
     }
   }
 
   const config = getAIConfig();
   const { apiKey, model, provider, keyName } = config;
-  if (!apiKey && !nvidia.apiKey) throw new Error(`AI analysis needs a configured provider key. Add NVIDIA_API_KEY or ${keyName}.`);
+  if (!apiKey && !nvidia.apiKey) throw new Error('AI analysis needs NVIDIA_API_KEY configured.');
 
   const send = async (maxTokens: number): Promise<Response> => {
     try {

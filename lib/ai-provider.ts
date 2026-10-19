@@ -1,34 +1,32 @@
+/**
+ * AI Provider Client — Unified NVIDIA NIM Architecture
+ * 
+ * Drops Grok / Groq and OpenRouter dependencies in favor of NVIDIA NIM
+ * (https://integrate.api.nvidia.com/v1) powered by meta/llama-3.2-90b-vision-instruct
+ * and deepseek-ai/deepseek-v4.1-flash for both multimodal vision and deep engineering reasoning.
+ */
+
 export type AITask = 'text' | 'vision';
 
-type ModelRateState = {
-  queue: Promise<void>;
-  requestTimes: number[];
-  remainingRequests: number | null;
-  requestsResetAt: number;
-  remainingTokens: number | null;
-  tokensResetAt: number;
+export const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1';
+
+// Verified active models on this NVIDIA NIM account:
+export const NVIDIA_MODELS = {
+  primary: 'meta/llama-3.2-90b-vision-instruct', // State-of-the-art 90B multimodal vision + reasoning
+  vision: 'meta/llama-3.2-90b-vision-instruct',  // Floor plan & camera image understanding
+  fast: 'deepseek-ai/deepseek-v4.1-flash',       // Ultra-fast text reasoning
+  lightVision: 'meta/llama-3.2-11b-vision-instruct',
 };
 
-type GroqGuardGlobal = typeof globalThis & { __detvisionGroqRateState?: Map<string, ModelRateState> };
-const globalState = globalThis as GroqGuardGlobal;
-const modelRateState = globalState.__detvisionGroqRateState ??= new Map<string, ModelRateState>();
+export const DEFAULT_NVIDIA_API_KEY = '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';
 
-const BASE_URL = 'https://api.groq.com/openai/v1';
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1';
-const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1';
-
-type OpenRouterGuardState = { queue: Promise<void>; requestTimes: number[] };
-type OpenRouterGuardGlobal = typeof globalThis & { __detvisionOpenRouterState?: Map<string, OpenRouterGuardState> };
-const openRouterGlobal = globalThis as OpenRouterGuardGlobal;
-const openRouterStates = openRouterGlobal.__detvisionOpenRouterState ??= new Map<string, OpenRouterGuardState>();
-
-export function getNvidiaConfig() {
+export function getNvidiaConfig(task: AITask = 'text') {
   return {
-    provider: 'NVIDIA',
+    provider: 'NVIDIA' as const,
     keyName: 'NVIDIA_API_KEY',
-    apiKey: process.env.NVIDIA_API_KEY || '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',
+    apiKey: process.env.NVIDIA_API_KEY || DEFAULT_NVIDIA_API_KEY,
     baseUrl: NVIDIA_URL,
-    model: process.env.NVIDIA_MODEL || 'google/diffusiongemma-26b-a4b-it',
+    model: task === 'vision' ? NVIDIA_MODELS.vision : (process.env.NVIDIA_MODEL || NVIDIA_MODELS.primary),
   };
 }
 
@@ -36,6 +34,7 @@ export function getNvidiaCompletionsURL() {
   return `${NVIDIA_URL}/chat/completions`;
 }
 
+/** Directly invoke NVIDIA NIM chat completion with authorization headers and timeout guard */
 export async function fetchNvidia(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const config = getNvidiaConfig();
   const headers = new Headers(init?.headers);
@@ -48,162 +47,59 @@ export async function fetchNvidia(input: RequestInfo | URL, init?: RequestInit):
   return fetch(input, { ...init, headers });
 }
 
-export function getLayoutAIConfig() {
-  // If NVIDIA is available, we can also leverage it or OpenRouter
-  return {
-    provider: 'OpenRouter',
-    keyName: 'OPENROUTER_API_KEY',
-    apiKey: process.env.OPENROUTER_API_KEY,
-    baseUrl: OPENROUTER_URL,
-    model: process.env.OPENROUTER_LAYOUT_MODEL || 'openrouter/free',
-  };
-}
-
-export function getLayoutAICompletionsURL() {
-  return `${OPENROUTER_URL}/chat/completions`;
-}
-
-/** Conservative process-local limits for OpenRouter's free tier (50 requests/day). */
-export async function fetchOpenRouter(model: string, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  let state = openRouterStates.get(model);
-  if (!state) {
-    state = { queue: Promise.resolve(), requestTimes: [] };
-    openRouterStates.set(model, state);
-  }
-  const previous = state.queue;
-  let release!: () => void;
-  state.queue = new Promise<void>(resolve => { release = resolve; });
-  await previous;
-  try {
-    const now = Date.now();
-    state.requestTimes = state.requestTimes.filter(time => now - time < 86_400_000);
-    const dailyLimit = Math.max(1, Math.min(45, Number(process.env.OPENROUTER_LAYOUT_MAX_REQUESTS_PER_DAY) || 40));
-    const minuteLimit = Math.max(1, Math.min(10, Number(process.env.OPENROUTER_LAYOUT_MAX_REQUESTS_PER_MINUTE) || 3));
-    const recent = state.requestTimes.filter(time => now - time < 60_000);
-    if (state.requestTimes.length >= dailyLimit || recent.length >= minuteLimit) {
-      const retry = state.requestTimes.length >= dailyLimit
-        ? Math.ceil((state.requestTimes[0] + 86_400_000 - now) / 1000)
-        : Math.ceil((recent[0] + 60_000 - now) / 1000);
-      return syntheticRateLimit('Local OpenRouter layout guard paused this request to preserve the configured free-tier budget.', retry);
-    }
-    state.requestTimes.push(now);
-    return await fetch(input, init);
-  } finally {
-    release();
-  }
-}
-
+/** Seamless backward compatibility routing: getAIConfig now points to NVIDIA NIM */
 export function getAIConfig(task: AITask = 'text') {
+  const nvidia = getNvidiaConfig(task);
   return {
-    provider: 'Groq',
-    keyName: 'GROQ_API_KEY',
-    apiKey: process.env.GROQ_API_KEY,
-    baseUrl: BASE_URL,
-    model: task === 'vision'
-      ? process.env.GROQ_VISION_MODEL || 'qwen/qwen3.8-27b'
-      : process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+    provider: 'NVIDIA',
+    keyName: 'NVIDIA_API_KEY',
+    apiKey: nvidia.apiKey,
+    baseUrl: nvidia.baseUrl,
+    model: nvidia.model,
   };
 }
 
 export function getAICompletionsURL(task: AITask = 'text') {
-  return `${getAIConfig(task).baseUrl}/chat/completions`;
+  return `${NVIDIA_URL}/chat/completions`;
 }
 
-function getModelState(model: string): ModelRateState {
-  let state = modelRateState.get(model);
-  if (!state) {
-    state = { queue: Promise.resolve(), requestTimes: [], remainingRequests: null, requestsResetAt: 0, remainingTokens: null, tokensResetAt: 0 };
-    modelRateState.set(model, state);
+export function getLayoutAIConfig() {
+  return getNvidiaConfig('text');
+}
+
+export function getLayoutAICompletionsURL() {
+  return `${NVIDIA_URL}/chat/completions`;
+}
+
+/** Backward compatible drop-in: routes old fetchGroq calls directly to NVIDIA NIM */
+export async function fetchGroq(model: string, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const config = getNvidiaConfig();
+  const headers = new Headers(init?.headers);
+  headers.set('Authorization', `Bearer ${config.apiKey}`);
+  headers.set('Content-Type', 'application/json');
+
+  // If the body requested an obsolete model, rewrite to NVIDIA's primary model
+  let modifiedBody = init?.body;
+  if (typeof init?.body === 'string') {
+    try {
+      const parsed = JSON.parse(init.body);
+      if (!parsed.model || !parsed.model.includes('/')) {
+        parsed.model = config.model;
+        modifiedBody = JSON.stringify(parsed);
+      }
+    } catch {
+      // keep original
+    }
   }
-  return state;
-}
 
-function durationMs(value: string | null): number {
-  if (!value) return 0;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
-  const date = Date.parse(value);
-  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
-  const match = value.match(/(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?/);
-  return match && (match[1] || match[2] || match[3])
-    ? (Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0)) * 1000
-    : 0;
-}
-
-function updateFromHeaders(state: ModelRateState, headers: Headers) {
-  const now = Date.now();
-  const requestsHeader = headers.get('x-ratelimit-remaining-requests');
-  const remainingRequests = requestsHeader === null || requestsHeader.trim() === '' ? Number.NaN : Number(requestsHeader);
-  if (Number.isFinite(remainingRequests) && remainingRequests >= 0) state.remainingRequests = remainingRequests;
-  const requestReset = durationMs(headers.get('x-ratelimit-reset-requests'));
-  if (requestReset > 0) state.requestsResetAt = now + requestReset;
-  const tokensHeader = headers.get('x-ratelimit-remaining-tokens');
-  const remainingTokens = tokensHeader === null || tokensHeader.trim() === '' ? Number.NaN : Number(tokensHeader);
-  if (Number.isFinite(remainingTokens) && remainingTokens >= 0) state.remainingTokens = remainingTokens;
-  const tokenReset = durationMs(headers.get('x-ratelimit-reset-tokens'));
-  if (tokenReset > 0) state.tokensResetAt = now + tokenReset;
-}
-
-function estimateReservedTokens(body: unknown): number {
-  if (!body || typeof body !== 'object') return 0;
-  const request = body as Record<string, unknown>;
-  const messages = JSON.stringify(request.messages ?? request.input ?? '');
-  const imageCount = (messages.match(/"image_url"\s*:/g) || []).length;
-  const text = messages.replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/g, '[image]');
-  const estimatedInput = Math.ceil(text.length / 3) + imageCount * 2048 + (Array.isArray(request.messages) ? request.messages.length * 16 : 16);
-  const maxOutput = Number(request.max_completion_tokens ?? request.max_tokens ?? 0);
-  return estimatedInput + Math.max(0, Number.isFinite(maxOutput) ? maxOutput : 0) + Math.ceil(estimatedInput * 0.15);
-}
-
-function syntheticRateLimit(message: string, retryAfterSeconds: number): Response {
-  const retry = Math.max(1, Math.ceil(retryAfterSeconds));
-  return new Response(JSON.stringify({ error: { message } }), {
-    status: 429,
-    headers: { 'content-type': 'application/json', 'retry-after': String(retry) },
+  return fetch(getNvidiaCompletionsURL(), {
+    ...init,
+    headers,
+    body: modifiedBody,
   });
 }
 
-/**
- * Pace this server process and reserve against the latest Groq response headers
- * before making another billable request. Groq's account-wide usage from other
- * apps remains outside this local guard's visibility.
- */
-export async function fetchGroq(model: string, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const state = getModelState(model);
-  const previous = state.queue;
-  let release!: () => void;
-  state.queue = new Promise<void>(resolve => { release = resolve; });
-  await previous;
-
-  try {
-    const now = Date.now();
-    state.requestTimes = state.requestTimes.filter(time => now - time < 60_000);
-    const configuredLimit = Number(process.env.GROQ_MAX_REQUESTS_PER_MINUTE || 8);
-    const requestsPerMinute = Number.isFinite(configuredLimit) ? Math.max(1, Math.min(30, Math.floor(configuredLimit))) : 8;
-    if (state.requestTimes.length >= requestsPerMinute) {
-      const retry = Math.max(1, Math.ceil((state.requestTimes[0] + 60_000 - now) / 1000));
-      return syntheticRateLimit(`Local Groq guard paused this model to stay under ${requestsPerMinute} requests per minute.`, retry);
-    }
-
-    if (state.remainingRequests === 0 && state.requestsResetAt > now) {
-      return syntheticRateLimit('Local Groq guard paused this model until the provider request limit resets.', (state.requestsResetAt - now) / 1000);
-    }
-    if (state.requestsResetAt <= now) state.remainingRequests = null;
-
-    const bodyText = typeof init?.body === 'string' ? init.body : '';
-    let body: unknown;
-    try { body = bodyText ? JSON.parse(bodyText) : null; } catch { body = null; }
-    const reservation = estimateReservedTokens(body);
-    if (state.remainingTokens !== null && state.tokensResetAt > now && reservation > state.remainingTokens) {
-      return syntheticRateLimit('Local Groq guard paused this request because its estimated input and maximum output exceed the remaining token window.', (state.tokensResetAt - now) / 1000);
-    }
-    if (state.tokensResetAt <= now) state.remainingTokens = null;
-
-    state.requestTimes.push(now);
-    const response = await fetch(input, init);
-    updateFromHeaders(state, response.headers);
-    return response;
-  } finally {
-    release();
-  }
+/** Backward compatible drop-in: routes old fetchOpenRouter calls directly to NVIDIA NIM */
+export async function fetchOpenRouter(model: string, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  return fetchGroq(model, input, init);
 }

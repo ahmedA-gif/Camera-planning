@@ -147,12 +147,13 @@ interface BaseProps {
 
 export function TopView({
   result, poses, site, mode, selectedId, onSelect, onMove, heatMode,
-  selectedObstacleId, onSelectObstacle, isAnimated = true, animSpeed = 1,
+  selectedObstacleId, onSelectObstacle, onMoveObstacle, isAnimated = true, animSpeed = 1,
 }: BaseProps & {
   onMove: (id: number, x: number, y: number) => void;
   heatMode: 'dori' | 'overlap';
   selectedObstacleId?: string | null;
   onSelectObstacle?: (id: string | null) => void;
+  onMoveObstacle?: (id: string, x: number, y: number) => void;
   isAnimated?: boolean;
   animSpeed?: number;
 }) {
@@ -167,6 +168,7 @@ export function TopView({
   const heat = useMemo(() => (typeof document === 'undefined' ? null : buildHeatImage(result, need, heatMode)), [result, need, heatMode]);
   const [hover, setHover] = useState<{ mx: number; my: number; x: number; y: number } | null>(null);
   const drag = useRef<number | null>(null);
+  const dragObstacle = useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
 
   const draw = useCallback((dash: number) => {
     const canvas = canvasRef.current;
@@ -400,6 +402,7 @@ export function TopView({
     });
     if (hit != null) {
       drag.current = hit;
+      dragObstacle.current = null;
       onSelect(hit);
       onSelectObstacle?.(null);
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -407,9 +410,14 @@ export function TopView({
       // Check if clicking inside an obstacle
       const hitObs = site.obstacles.find(o => w.x >= o.x && w.x <= o.x + o.w && w.y >= o.y && w.y <= o.y + o.d);
       if (hitObs) {
+        dragObstacle.current = { id: hitObs.id, offsetX: w.x - hitObs.x, offsetY: w.y - hitObs.y };
+        drag.current = null;
         onSelectObstacle?.(hitObs.id);
         onSelect(null);
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
       } else if (w.x >= 0 && w.x <= L && w.y >= 0 && w.y <= W) {
+        drag.current = null;
+        dragObstacle.current = null;
         onSelect(null);
         onSelectObstacle?.(null);
       }
@@ -417,10 +425,22 @@ export function TopView({
   };
   const onPointerMove = (e: React.PointerEvent) => {
     const w = toWorld(e);
-    if (drag.current != null) onMove(drag.current, +clamp(w.x, 0, L).toFixed(2), +clamp(w.y, 0, W).toFixed(2));
+    if (drag.current != null) {
+      onMove(drag.current, +clamp(w.x, 0, L).toFixed(2), +clamp(w.y, 0, W).toFixed(2));
+    } else if (dragObstacle.current != null && onMoveObstacle) {
+      const obs = site.obstacles.find(o => o.id === dragObstacle.current!.id);
+      const obsW = obs ? obs.w : 2;
+      const obsD = obs ? obs.d : 2;
+      const nx = clamp(w.x - dragObstacle.current.offsetX, 0, L - obsW);
+      const ny = clamp(w.y - dragObstacle.current.offsetY, 0, W - obsD);
+      onMoveObstacle(dragObstacle.current.id, +nx.toFixed(2), +ny.toFixed(2));
+    }
     setHover(w.x >= 0 && w.x <= L && w.y >= 0 && w.y <= W ? w : null);
   };
-  const onPointerUp = () => { drag.current = null; };
+  const onPointerUp = () => {
+    drag.current = null;
+    dragObstacle.current = null;
+  };
 
   let tip: React.ReactNode = null;
   if (hover) {

@@ -1362,7 +1362,13 @@ export function architectureAwareLayout(
 /* Procedural Virtual Map & Obstacle Synthesis Engine                   */
 /* ------------------------------------------------------------------ */
 
-export type FacilityPresetType = 'logistics_warehouse' | 'manufacturing_plant' | 'retail_supermarket' | 'data_center';
+export type FacilityPresetType =
+  | 'logistics_warehouse'
+  | 'manufacturing_plant'
+  | 'retail_supermarket'
+  | 'data_center'
+  | 'perimeter_security'
+  | 'corporate_office';
 
 export interface ProceduralFacilityConfig {
   type: FacilityPresetType;
@@ -1374,7 +1380,7 @@ export interface ProceduralFacilityConfig {
   hasColumns?: boolean;
 }
 
-/** Generate realistic obstacles (racks, machinery, columns) based on facility archetype */
+/** Generate realistic obstacles (racks, machinery, columns, turnstiles, fences) based on facility archetype */
 export function generateProceduralObstacles(config: ProceduralFacilityConfig): Obstacle[] {
   const { type, length: L, width: W, mountHeight: H } = config;
   const obstacles: Obstacle[] = [];
@@ -1527,6 +1533,115 @@ export function generateProceduralObstacles(config: ProceduralFacilityConfig): O
       h: 2.8,
       type: 'machine',
     });
+  } else if (type === 'perimeter_security') {
+    // Perimeter chain-link fence lines, automated gate, guard kiosk & inspection zone
+    obstacles.push({
+      id: `perim-north-${obsId++}`,
+      name: 'North Boundary Fence',
+      x: 1.0,
+      y: 1.0,
+      w: L - 2.0,
+      d: 0.3,
+      h: 3.0,
+      type: 'partition',
+    });
+    obstacles.push({
+      id: `perim-south-${obsId++}`,
+      name: 'South Boundary Fence',
+      x: 1.0,
+      y: W - 1.3,
+      w: L - 2.0,
+      d: 0.3,
+      h: 3.0,
+      type: 'partition',
+    });
+    obstacles.push({
+      id: `perim-west-1-${obsId++}`,
+      name: 'West Boundary Fence (North Wing)',
+      x: 1.0,
+      y: 1.0,
+      w: 0.3,
+      d: W * 0.35,
+      h: 3.0,
+      type: 'partition',
+    });
+    obstacles.push({
+      id: `perim-west-2-${obsId++}`,
+      name: 'West Boundary Fence (South Wing)',
+      x: 1.0,
+      y: W * 0.65,
+      w: 0.3,
+      d: W * 0.35,
+      h: 3.0,
+      type: 'partition',
+    });
+    obstacles.push({
+      id: `guard-kiosk-${obsId++}`,
+      name: 'Security Guard Gatehouse',
+      x: 3.5,
+      y: W * 0.42,
+      w: 3.5,
+      d: 2.8,
+      h: 3.0,
+      type: 'partition',
+    });
+    obstacles.push({
+      id: `vehicle-barrier-${obsId++}`,
+      name: 'Automated Vehicle Gate Barrier',
+      x: 1.0,
+      y: W * 0.48,
+      w: 4.5,
+      d: 0.4,
+      h: 1.2,
+      type: 'dock',
+    });
+  } else if (type === 'corporate_office') {
+    // Reception desk, speed turnstiles, glass meeting room & workstation clusters
+    obstacles.push({
+      id: `reception-desk-${obsId++}`,
+      name: 'Executive Reception Desk',
+      x: L * 0.15,
+      y: W * 0.45,
+      w: 1.8,
+      d: 4.5,
+      h: 1.15,
+      type: 'partition',
+    });
+    obstacles.push({
+      id: `turnstiles-${obsId++}`,
+      name: 'Optical Speed Turnstiles',
+      x: L * 0.08,
+      y: W * 0.35,
+      w: 1.2,
+      d: 3.8,
+      h: 1.1,
+      type: 'dock',
+    });
+    obstacles.push({
+      id: `conf-room-${obsId++}`,
+      name: 'Glass Conference Enclosure',
+      x: L * 0.55,
+      y: W * 0.15,
+      w: L * 0.35,
+      d: 0.2,
+      h: 3.0,
+      type: 'wall',
+    });
+    const numPods = Math.max(2, Math.min(5, Math.round(W / 8)));
+    const yPitch = (W * 0.65) / numPods;
+    for (let i = 0; i < numPods; i++) {
+      const y = W * 0.2 + i * yPitch;
+      obstacles.push({
+        id: `desk-pod-${obsId++}`,
+        name: `Workstation Pod Cluster ${i + 1}`,
+        x: L * 0.35,
+        y,
+        w: 4.8,
+        d: 2.2,
+        h: 1.25,
+        type: 'rack',
+      });
+    }
   }
 
   return obstacles;

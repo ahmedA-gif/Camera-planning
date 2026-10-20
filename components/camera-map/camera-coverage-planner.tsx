@@ -20,6 +20,7 @@ import {
   Trash2,
   Sliders,
   ShieldCheck,
+  Shield,
   Eye,
   Crosshair,
   Building2,
@@ -170,7 +171,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     // Default procedural layout for facility archetype
     const facType = (initialFacility.facilityType as FacilityPresetType) || 'logistics_warehouse';
     return generateProceduralObstacles({
-      type: ['logistics_warehouse', 'manufacturing_plant', 'retail_supermarket', 'data_center'].includes(facType)
+      type: ['logistics_warehouse', 'manufacturing_plant', 'retail_supermarket', 'data_center', 'perimeter_security', 'corporate_office'].includes(facType)
         ? facType
         : 'logistics_warehouse',
       length: initialFacility.length,
@@ -184,7 +185,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
 
   const [selectedObstacleId, setSelectedObstacleId] = useState<string | null>(null);
   const [activeFacilityPreset, setActiveFacilityPreset] = useState<FacilityPresetType | 'custom'>(
-    (['logistics_warehouse', 'manufacturing_plant', 'retail_supermarket', 'data_center'].includes(initialFacility.facilityType as any)
+    (['logistics_warehouse', 'manufacturing_plant', 'retail_supermarket', 'data_center', 'perimeter_security', 'corporate_office'].includes(initialFacility.facilityType as any)
       ? (initialFacility.facilityType as FacilityPresetType)
       : 'logistics_warehouse')
   );
@@ -681,15 +682,15 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       <div>
         <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">Operational Scenario &amp; Brief:</div>
         <p style="margin: 0; font-size: 10.5px; color: #334155; line-height: 1.5; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-          ${project?.business_description || 'Industrial high-bay facility requiring comprehensive computer vision coverage across logistics corridors, storage racking aisles, loading docks, and machinery workcells.'}
+          ${project?.business_description || `Comprehensive computer vision sensor coverage engineered for ${activeFacilityPreset !== 'custom' ? activeFacilityPreset.replace(/_/g, ' ') : 'custom facility layout'}, ensuring optimal optical density, blind spot elimination, and AI model telemetry.`}
         </p>
       </div>
       <div>
         <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">Facility Metadata:</div>
         <table style="margin: 0; font-size: 9.5px;">
           <tr><td style="font-weight: 600; color: #64748b; width: 40%;">Company</td><td><strong>${project?.company_name || 'Enterprise Facility Operations'}</strong></td></tr>
-          <tr><td style="font-weight: 600; color: #64748b;">Industry</td><td>${project?.industry || 'Logistics & Automated Manufacturing'}</td></tr>
-          <tr><td style="font-weight: 600; color: #64748b;">Archetype</td><td><span class="badge badge-indigo">${initialFacility.facilityType ? initialFacility.facilityType.replace('_', ' ').toUpperCase() : 'WAREHOUSE'}</span></td></tr>
+          <tr><td style="font-weight: 600; color: #64748b;">Industry</td><td>${project?.industry || 'Commercial & Industrial Facility Automation'}</td></tr>
+          <tr><td style="font-weight: 600; color: #64748b;">Archetype</td><td><span class="badge badge-indigo">${(activeFacilityPreset !== 'custom' ? activeFacilityPreset : (initialFacility.facilityType || 'CUSTOM BLUEPRINT')).replace(/_/g, ' ').toUpperCase()}</span></td></tr>
           <tr><td style="font-weight: 600; color: #64748b;">Volume</td><td>${(bayLength * bayWidth * mountHeight).toLocaleString()} m³ (${(bayLength * bayWidth).toLocaleString()} m²)</td></tr>
         </table>
       </div>
@@ -1466,6 +1467,30 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                   >
                     <Server className="w-3.5 h-3.5 shrink-0" />
                     <span>Data Center</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('perimeter_security')}
+                    className={`flex items-center gap-1.5 p-2 rounded-lg border text-[11px] font-medium transition-all ${
+                      activeFacilityPreset === 'perimeter_security'
+                        ? 'border-primary bg-primary text-primary-foreground font-bold'
+                        : 'border-border bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Shield className="w-3.5 h-3.5 shrink-0" />
+                    <span>Perimeter & Gate</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('corporate_office')}
+                    className={`flex items-center gap-1.5 p-2 rounded-lg border text-[11px] font-medium transition-all ${
+                      activeFacilityPreset === 'corporate_office'
+                        ? 'border-primary bg-primary text-primary-foreground font-bold'
+                        : 'border-border bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>Office & Lobby</span>
                   </button>
                 </div>
               </div>
@@ -2629,6 +2654,12 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
 
               {activeViewTab === 'frustum' && (
                 <FrustumSpatialInspector
+                  site={site}
+                  poses={poses}
+                  selectedId={selectedId}
+                  onSelectCamera={(id) => setSelectedId(id)}
+                  lens={lens}
+                  facilityType={activeFacilityPreset === 'custom' ? 'project' : activeFacilityPreset}
                   initialFocalLength={lens.focalMm}
                   initialMountHeight={selectedPose?.z ?? site.mountHeight}
                   initialTilt={selectedPose?.tiltDeg ?? 25}

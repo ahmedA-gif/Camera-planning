@@ -1734,7 +1734,7 @@ export function BirdCameraView({
                 <span>{activeCameraTargetInfo.fullyOccluded ? 'FULL OCCLUSION' : 'PARTIAL OCCLUSION DETECTED'}</span>
               </div>
               <div className="text-[10px] text-rose-200">
-                Blocked by <strong>{activeCameraTargetInfo.occludingObstacle || 'warehouse structure'}</strong>.
+                Blocked by <strong>{activeCameraTargetInfo.occludingObstacle || 'facility structure'}</strong>.
               </div>
             </div>
           ) : (

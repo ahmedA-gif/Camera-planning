@@ -15,19 +15,46 @@ import {
   Move,
   Maximize2,
   Tv,
+  Building,
+  Factory,
+  ShoppingBag,
+  Server,
+  Shield,
+  Briefcase,
+  ChevronDown,
 } from 'lucide-react';
 import {
   clamp,
   type Vec3,
   type CameraSpec,
+  type CameraPose,
+  type Obstacle,
   type Obstacle3D,
   type TargetEvaluation,
+  type SiteSpec,
+  type LensSpec,
   evaluateTargetPoint3D,
   computeSensorFov,
+  obstaclesTo3D,
   AI_MODEL_FEASIBILITY_CRITERIA,
 } from '@/lib/coverage-engine';
 
-interface FrustumSpatialInspectorProps {
+export type ScenarioArchetype =
+  | 'project'              // Active project floorplan
+  | 'logistics_warehouse'  // High-bay pallet racks & forklift aisle
+  | 'manufacturing_plant'  // Assembly conveyors, robotic workcells, CNC machines
+  | 'retail_supermarket'   // Gondola shelving runs & POS registers
+  | 'data_center'          // Server rack rows with LED arrays & CRAC units
+  | 'perimeter_security'   // Fence line, automated gate & vehicle access
+  | 'corporate_office';    // Reception lobby, glass partitions & turnstiles
+
+export interface FrustumSpatialInspectorProps {
+  site?: SiteSpec;
+  poses?: CameraPose[];
+  selectedId?: number | null;
+  onSelectCamera?: (id: number) => void;
+  lens?: LensSpec;
+  facilityType?: string;
   initialFocalLength?: number;
   initialMountHeight?: number;
   initialTilt?: number;
@@ -37,6 +64,12 @@ interface FrustumSpatialInspectorProps {
 }
 
 export function FrustumSpatialInspector({
+  site,
+  poses,
+  selectedId,
+  onSelectCamera,
+  lens,
+  facilityType = 'logistics_warehouse',
   initialFocalLength = 4.0,
   initialMountHeight = 4.5,
   initialTilt = 25,
@@ -47,12 +80,43 @@ export function FrustumSpatialInspector({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Determine initial scenario: if project has custom obstacles, default to 'project'
+  const hasProjectObstacles = Boolean(site?.obstacles && site.obstacles.length > 0);
+  const [activeScenario, setActiveScenario] = useState<ScenarioArchetype>(
+    hasProjectObstacles ? 'project' : (facilityType as ScenarioArchetype) || 'logistics_warehouse'
+  );
+
+  // Sync selected camera from props
+  const activeCamera = useMemo(() => {
+    if (poses && poses.length > 0) {
+      return (selectedId != null ? poses.find(p => p.id === selectedId) : null) || poses[0];
+    }
+    return null;
+  }, [poses, selectedId]);
+
   // Optical & Physical Camera State
-  const [focalLengthMm, setFocalLengthMm] = useState<number>(initialFocalLength);
-  const [mountHeightM, setMountHeightM] = useState<number>(initialMountHeight);
-  const [tiltDeg, setTiltDeg] = useState<number>(initialTilt);
-  const [azimuthDeg, setAzimuthDeg] = useState<number>(initialAzimuth);
-  const [targetType, setTargetType] = useState<'worker' | 'forklift' | 'intruder'>('worker');
+  const [focalLengthMm, setFocalLengthMm] = useState<number>(lens?.focalMm ?? initialFocalLength);
+  const [mountHeightM, setMountHeightM] = useState<number>(activeCamera?.z ?? initialMountHeight);
+  const [tiltDeg, setTiltDeg] = useState<number>(activeCamera?.tiltDeg ?? initialTilt);
+  const [azimuthDeg, setAzimuthDeg] = useState<number>(activeCamera?.panDeg ?? initialAzimuth);
+
+  // Synchronize when activeCamera changes
+  useEffect(() => {
+    if (activeCamera) {
+      setMountHeightM(activeCamera.z);
+      setTiltDeg(activeCamera.tiltDeg);
+      setAzimuthDeg(activeCamera.panDeg);
+    }
+  }, [activeCamera]);
+
+  useEffect(() => {
+    if (lens?.focalMm) {
+      setFocalLengthMm(lens.focalMm);
+    }
+  }, [lens]);
+
+  // Target & Animation Controls
+  const [targetRole, setTargetRole] = useState<string>('primary');
   const [targetSpeed, setTargetSpeed] = useState<number>(1.4); // m/s
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [showPip, setShowPip] = useState<boolean>(true);
@@ -66,7 +130,7 @@ export function FrustumSpatialInspector({
   // Animation timeline
   const animTimeRef = useRef<number>(0);
 
-  // Physical Sensor Dimensions (1/1.8" Sensor for 4K / 8MP)
+  // Physical Sensor Dimensions
   const sensorSpec = useMemo(() => {
     if (resolutionName === '12MP') return { wMm: 7.6, hMm: 5.7, resW: 4000, resH: 3000 };
     if (resolutionName === '8MP 4K') return { wMm: 7.18, hMm: 4.04, resW: 3840, resH: 2160 };
@@ -81,109 +145,399 @@ export function FrustumSpatialInspector({
   );
 
   // Camera Specification for Engine
-  const cameraSpec: CameraSpec = useMemo(() => ({
-    id: 'cam-inspector-01',
-    position: { x: 3.5, y: 3.5, z: mountHeightM },
-    azimuthDeg,
-    tiltDeg,
-    focalLengthMm,
-    sensorWidthMm: sensorSpec.wMm,
-    sensorHeightMm: sensorSpec.hMm,
-    resolutionW: sensorSpec.resW,
-    resolutionH: sensorSpec.resH,
-    distortionK1: focalLengthMm <= 2.8 ? -0.18 : focalLengthMm <= 4.0 ? -0.09 : -0.03,
-  }), [mountHeightM, azimuthDeg, tiltDeg, focalLengthMm, sensorSpec]);
+  const cameraSpec: CameraSpec = useMemo(() => {
+    const pos = activeCamera
+      ? { x: activeCamera.x, y: activeCamera.y, z: mountHeightM }
+      : { x: 3.5, y: 3.5, z: mountHeightM };
 
-  // Warehouse 3D Pallet Racks & Obstacle Shelves with cargo boxes
-  const warehouseObstacles: Obstacle3D[] = useMemo(() => {
+    return {
+      id: activeCamera ? `cam-${activeCamera.id}` : 'cam-inspector-01',
+      position: pos,
+      azimuthDeg,
+      tiltDeg,
+      focalLengthMm,
+      sensorWidthMm: sensorSpec.wMm,
+      sensorHeightMm: sensorSpec.hMm,
+      resolutionW: sensorSpec.resW,
+      resolutionH: sensorSpec.resH,
+      distortionK1: focalLengthMm <= 2.8 ? -0.18 : focalLengthMm <= 4.0 ? -0.09 : -0.03,
+    };
+  }, [activeCamera, mountHeightM, azimuthDeg, tiltDeg, focalLengthMm, sensorSpec]);
+
+  // Scenario Definitions & Target Options
+  const scenarioOptions = useMemo(() => [
+    {
+      id: 'project' as const,
+      name: site?.obstacles && site.obstacles.length > 0 ? `Active Project Plan (${site.obstacles.length} Obstacles)` : 'Active Project Plan',
+      icon: '📐',
+      description: 'Your real-time customized floor plan obstacles, dimensions, and camera mounts.',
+      targets: [
+        { id: 'primary', label: '👷 Site Worker', icon: '👷', height: 1.7, speed: 1.4 },
+        { id: 'vehicle', label: '🚜 Site Equipment', icon: '🚜', height: 2.2, speed: 3.2 },
+        { id: 'intruder', label: '⚠️ Unauthorized Intruder', icon: '⚠️', height: 1.75, speed: 1.8 },
+      ],
+    },
+    {
+      id: 'logistics_warehouse' as const,
+      name: 'Logistics Warehouse & Distribution',
+      icon: '📦',
+      description: 'Dual-bank high-bay pallet racking aisles, AGV transit lanes, and forklift traffic.',
+      targets: [
+        { id: 'primary', label: '👷 Warehouse Worker', icon: '👷', height: 1.7, speed: 1.4 },
+        { id: 'vehicle', label: '🚜 High-Reach Forklift', icon: '🚜', height: 2.3, speed: 3.5 },
+        { id: 'intruder', label: '⚠️ Perimeter Intruder', icon: '⚠️', height: 1.75, speed: 1.8 },
+      ],
+    },
+    {
+      id: 'manufacturing_plant' as const,
+      name: 'Manufacturing & Robotic Assembly',
+      icon: '🏭',
+      description: 'Automated conveyor lines, robotic CNC workcells, and worker safety zones.',
+      targets: [
+        { id: 'primary', label: '👷 Assembly Operator', icon: '👷', height: 1.7, speed: 1.2 },
+        { id: 'vehicle', label: '🤖 Autonomous Mobile Robot', icon: '🤖', height: 1.4, speed: 2.0 },
+        { id: 'intruder', label: '⚠️ Zone Trespasser', icon: '⚠️', height: 1.75, speed: 1.6 },
+      ],
+    },
+    {
+      id: 'retail_supermarket' as const,
+      name: 'Retail Supermarket & Store',
+      icon: '🛒',
+      description: 'Gondola shelving runs, checkout counter bank, and customer queue aisles.',
+      targets: [
+        { id: 'primary', label: '🛒 Store Shopper', icon: '🛒', height: 1.65, speed: 1.1 },
+        { id: 'vehicle', label: '👤 Cashier / Staff', icon: '👤', height: 1.6, speed: 0.8 },
+        { id: 'intruder', label: '⚠️ Shoplifter / Suspect', icon: '⚠️', height: 1.75, speed: 2.2 },
+      ],
+    },
+    {
+      id: 'data_center' as const,
+      name: 'Data Center Server Hall',
+      icon: '🖥️',
+      description: 'High-density server cabinets with LED status lights, cold aisle doors, and CRAC cooling.',
+      targets: [
+        { id: 'primary', label: '🧑‍💻 Systems Engineer', icon: '🧑‍💻', height: 1.72, speed: 1.2 },
+        { id: 'vehicle', label: '🤖 Server Cart / Lift', icon: '🤖', height: 1.5, speed: 1.5 },
+        { id: 'intruder', label: '⚠️ Unescorted Person', icon: '⚠️', height: 1.75, speed: 1.7 },
+      ],
+    },
+    {
+      id: 'perimeter_security' as const,
+      name: 'Perimeter & Access Control',
+      icon: '🛡️',
+      description: 'Fence boundary tripwire, motorized boom barrier gate, and vehicle entry.',
+      targets: [
+        { id: 'primary', label: '🚶 Security Officer', icon: '🚶', height: 1.75, speed: 1.5 },
+        { id: 'vehicle', label: '🚗 Delivery Vehicle', icon: '🚗', height: 1.9, speed: 4.0 },
+        { id: 'intruder', label: '⚠️ Fence Breacher', icon: '⚠️', height: 1.7, speed: 2.5 },
+      ],
+    },
+    {
+      id: 'corporate_office' as const,
+      name: 'Corporate Office & Lobby',
+      icon: '🏢',
+      description: 'Speed turnstiles, executive reception desk, and glass conference enclosures.',
+      targets: [
+        { id: 'primary', label: '💼 Corporate Employee', icon: '💼', height: 1.7, speed: 1.3 },
+        { id: 'vehicle', label: '👔 Guest / Visitor', icon: '👔', height: 1.68, speed: 1.0 },
+        { id: 'intruder', label: '⚠️ Tailgater / Intruder', icon: '⚠️', height: 1.75, speed: 1.8 },
+      ],
+    },
+  ], [site]);
+
+  const currentScenarioDef = useMemo(
+    () => scenarioOptions.find(s => s.id === activeScenario) || scenarioOptions[0],
+    [scenarioOptions, activeScenario]
+  );
+
+  const activeTargetOption = useMemo(
+    () => currentScenarioDef.targets.find(t => t.id === targetRole) || currentScenarioDef.targets[0],
+    [currentScenarioDef, targetRole]
+  );
+
+  // Generate 3D Obstacle Models based on Active Scenario
+  const { obstacleEntities, visualDetails } = useMemo(() => {
     const list: Obstacle3D[] = [];
+    const details: Array<{
+      id: string;
+      type: string;
+      x: number;
+      y: number;
+      z: number;
+      w: number;
+      d: number;
+      h: number;
+      color: string;
+      label: string;
+      shelves?: number[];
+      boxes?: Array<{ x: number; y: number; z: number; w: number; d: number; h: number; color: string; label: string }>;
+    }> = [];
 
-    // Rack A: 3-tier heavy duty industrial pallet rack
-    const rx = 10.0, ry = 8.5, rw = 3.6, rd = 1.2, rh = 4.2;
+    // Case 1: Active Project Blueprint with custom user obstacles
+    if (activeScenario === 'project' && site?.obstacles && site.obstacles.length > 0) {
+      site.obstacles.forEach(o => {
+        const zb = o.zBase ?? 0;
+        list.push({
+          id: o.id,
+          name: o.name,
+          type: o.type,
+          min: { x: o.x, y: o.y, z: zb },
+          max: { x: o.x + o.w, y: o.y + o.d, z: zb + o.h },
+        });
 
-    // Outer bounding structure
-    list.push({
-      id: 'rack-a-main',
-      name: 'Storage Rack A (Aisle 2)',
-      min: { x: rx, y: ry, z: 0 },
-      max: { x: rx + rw, y: ry + rd, z: rh },
-      type: 'rack',
+        // Generate visual detail styling depending on obstacle type
+        const col = o.type === 'rack' ? '#0284c7'
+          : o.type === 'machine' ? '#1e3a8a'
+          : o.type === 'conveyor' ? '#0891b2'
+          : o.type === 'column' ? '#64748b'
+          : o.type === 'partition' ? '#059669'
+          : '#334155';
+
+        const boxes = o.type === 'rack' ? [
+          { x: o.x + 0.2, y: o.y + 0.1, z: zb + 0.2, w: o.w * 0.4, d: o.d * 0.8, h: Math.min(1.0, o.h * 0.4), color: '#f97316', label: 'LOT A' },
+          { x: o.x + o.w * 0.5, y: o.y + 0.1, z: zb + 0.2, w: o.w * 0.4, d: o.d * 0.8, h: Math.min(1.0, o.h * 0.4), color: '#a855f7', label: 'LOT B' },
+        ] : undefined;
+
+        details.push({
+          id: o.id,
+          type: o.type || 'structure',
+          x: o.x,
+          y: o.y,
+          z: zb,
+          w: o.w,
+          d: o.d,
+          h: o.h,
+          color: col,
+          label: o.name,
+          shelves: o.type === 'rack' ? [zb + 0.1, zb + o.h * 0.45, zb + o.h * 0.8] : undefined,
+          boxes,
+        });
+      });
+
+      return { obstacleEntities: list, visualDetails: details };
+    }
+
+    // Case 2: Logistics Warehouse Archetype
+    if (activeScenario === 'logistics_warehouse') {
+      const rx = 10.0, ry = 8.5, rw = 3.6, rd = 1.2, rh = 4.2;
+      list.push({ id: 'wh-rack-1', name: 'Storage Rack Aisle 1', min: { x: rx, y: ry, z: 0 }, max: { x: rx + rw, y: ry + rd, z: rh }, type: 'rack' });
+      list.push({ id: 'wh-col-1', name: 'Structural Column C1', min: { x: 15.5, y: 13.0, z: 0 }, max: { x: 16.3, y: 13.8, z: 6.0 }, type: 'column' });
+
+      details.push({
+        id: 'wh-rack-1',
+        type: 'rack',
+        x: rx, y: ry, z: 0, w: rw, d: rd, h: rh,
+        color: '#0284c7',
+        label: 'STORAGE RACK 01',
+        shelves: [0.15, 1.4, 2.8],
+        boxes: [
+          { x: 10.3, y: 8.6, z: 1.45, w: 1.4, d: 1.0, h: 1.1, color: '#f97316', label: 'CARGO 01' },
+          { x: 11.9, y: 8.65, z: 1.45, w: 1.4, d: 0.95, h: 0.95, color: '#a855f7', label: 'LOT 24' },
+          { x: 10.4, y: 8.6, z: 0.18, w: 1.5, d: 1.0, h: 1.15, color: '#06b6d4', label: 'PALLET A' },
+          { x: 12.0, y: 8.65, z: 0.18, w: 1.3, d: 0.95, h: 1.05, color: '#10b981', label: 'BOX B' },
+        ],
+      });
+
+      details.push({
+        id: 'wh-col-1',
+        type: 'column',
+        x: 15.5, y: 13.0, z: 0, w: 0.8, d: 0.8, h: 6.0,
+        color: '#475569',
+        label: 'COLUMN C1',
+      });
+
+      return { obstacleEntities: list, visualDetails: details };
+    }
+
+    // Case 3: Manufacturing & Robotic Assembly
+    if (activeScenario === 'manufacturing_plant') {
+      // Linear assembly conveyor line
+      list.push({ id: 'mfg-conveyor', name: 'Assembly Conveyor #1', min: { x: 8.0, y: 8.0, z: 0 }, max: { x: 16.0, y: 9.8, z: 1.3 }, type: 'conveyor' });
+      // Robotic workcell station
+      list.push({ id: 'mfg-robot-cell', name: 'Robotic Workcell 2A', min: { x: 11.0, y: 5.5, z: 0 }, max: { x: 14.2, y: 7.6, z: 2.8 }, type: 'machine' });
+      // Safety partition enclosure
+      list.push({ id: 'mfg-barrier', name: 'Safety Laser Barrier', min: { x: 10.8, y: 5.3, z: 0 }, max: { x: 14.4, y: 5.5, z: 2.0 }, type: 'partition' });
+
+      details.push({
+        id: 'mfg-conveyor',
+        type: 'conveyor',
+        x: 8.0, y: 8.0, z: 0, w: 8.0, d: 1.8, h: 1.3,
+        color: '#0891b2',
+        label: 'ASSEMBLY LINE #1',
+        boxes: [
+          { x: 9.0, y: 8.3, z: 1.3, w: 1.0, d: 1.0, h: 0.7, color: '#f59e0b', label: 'UNIT #101' },
+          { x: 11.5, y: 8.3, z: 1.3, w: 1.2, d: 1.0, h: 0.8, color: '#38bdf8', label: 'CHASSIS 2B' },
+          { x: 14.0, y: 8.3, z: 1.3, w: 0.9, d: 1.0, h: 0.6, color: '#10b981', label: 'PACKAGE C' },
+        ],
+      });
+
+      details.push({
+        id: 'mfg-robot-cell',
+        type: 'machine',
+        x: 11.0, y: 5.5, z: 0, w: 3.2, d: 2.1, h: 2.8,
+        color: '#1e3a8a',
+        label: 'ROBOTIC WORKCELL',
+      });
+
+      return { obstacleEntities: list, visualDetails: details };
+    }
+
+    // Case 4: Retail Supermarket & Store
+    if (activeScenario === 'retail_supermarket') {
+      // 2 parallel gondola shelving runs
+      list.push({ id: 'ret-gondola-1', name: 'Shelving Gondola Aisle 1', min: { x: 9.0, y: 7.5, z: 0 }, max: { x: 14.5, y: 8.8, z: 2.1 }, type: 'rack' });
+      // Checkout register bank
+      list.push({ id: 'ret-pos', name: 'Checkout Register Bank', min: { x: 15.0, y: 6.0, z: 0 }, max: { x: 16.2, y: 11.5, z: 1.15 }, type: 'partition' });
+
+      details.push({
+        id: 'ret-gondola-1',
+        type: 'rack',
+        x: 9.0, y: 7.5, z: 0, w: 5.5, d: 1.3, h: 2.1,
+        color: '#0d9488',
+        label: 'RETAIL GONDOLA 1',
+        shelves: [0.15, 0.75, 1.4],
+        boxes: [
+          { x: 9.4, y: 7.6, z: 0.8, w: 1.2, d: 1.0, h: 0.55, color: '#ec4899', label: 'GOODS 1' },
+          { x: 11.2, y: 7.6, z: 0.8, w: 1.3, d: 1.0, h: 0.55, color: '#8b5cf6', label: 'GOODS 2' },
+          { x: 13.0, y: 7.6, z: 0.8, w: 1.1, d: 1.0, h: 0.55, color: '#f59e0b', label: 'GOODS 3' },
+        ],
+      });
+
+      details.push({
+        id: 'ret-pos',
+        type: 'partition',
+        x: 15.0, y: 6.0, z: 0, w: 1.2, d: 5.5, h: 1.15,
+        color: '#047857',
+        label: 'CHECKOUT COUNTERS',
+      });
+
+      return { obstacleEntities: list, visualDetails: details };
+    }
+
+    // Case 5: Data Center Server Hall
+    if (activeScenario === 'data_center') {
+      // Server Rack Row (Cold Aisle Containment)
+      list.push({ id: 'dc-rack-row', name: 'Server Rack Row A (Cold Aisle)', min: { x: 9.0, y: 8.0, z: 0 }, max: { x: 15.5, y: 9.4, z: 2.4 }, type: 'rack' });
+      // CRAC Precision Cooling Unit
+      list.push({ id: 'dc-crac', name: 'CRAC Cooling Unit 1', min: { x: 16.5, y: 6.5, z: 0 }, max: { x: 18.2, y: 8.5, z: 2.8 }, type: 'machine' });
+
+      details.push({
+        id: 'dc-rack-row',
+        type: 'rack',
+        x: 9.0, y: 8.0, z: 0, w: 6.5, d: 1.4, h: 2.4,
+        color: '#0f172a',
+        label: 'SERVER CABINETS (COLD AISLE)',
+        boxes: [
+          { x: 9.2, y: 8.1, z: 0.2, w: 1.2, d: 1.2, h: 2.0, color: '#1e293b', label: 'RACK A1' },
+          { x: 10.7, y: 8.1, z: 0.2, w: 1.2, d: 1.2, h: 2.0, color: '#1e293b', label: 'RACK A2' },
+          { x: 12.2, y: 8.1, z: 0.2, w: 1.2, d: 1.2, h: 2.0, color: '#1e293b', label: 'RACK A3' },
+          { x: 13.7, y: 8.1, z: 0.2, w: 1.2, d: 1.2, h: 2.0, color: '#1e293b', label: 'RACK A4' },
+        ],
+      });
+
+      details.push({
+        id: 'dc-crac',
+        type: 'machine',
+        x: 16.5, y: 6.5, z: 0, w: 1.7, d: 2.0, h: 2.8,
+        color: '#0369a1',
+        label: 'CRAC COOLING UNIT',
+      });
+
+      return { obstacleEntities: list, visualDetails: details };
+    }
+
+    // Case 6: Perimeter & Gate Access
+    if (activeScenario === 'perimeter_security') {
+      // Chain-link perimeter fence line
+      list.push({ id: 'perim-fence', name: 'Perimeter Chain-link Fence', min: { x: 7.0, y: 8.5, z: 0 }, max: { x: 16.5, y: 8.8, z: 3.0 }, type: 'partition' });
+      // Guard Kiosk Booth
+      list.push({ id: 'perim-kiosk', name: 'Security Guard Kiosk', min: { x: 12.0, y: 5.5, z: 0 }, max: { x: 14.5, y: 7.8, z: 2.8 }, type: 'partition' });
+
+      details.push({
+        id: 'perim-fence',
+        type: 'partition',
+        x: 7.0, y: 8.5, z: 0, w: 9.5, d: 0.3, h: 3.0,
+        color: '#475569',
+        label: 'PERIMETER FENCE (3.0m)',
+      });
+
+      details.push({
+        id: 'perim-kiosk',
+        type: 'partition',
+        x: 12.0, y: 5.5, z: 0, w: 2.5, d: 2.3, h: 2.8,
+        color: '#334155',
+        label: 'GUARD KIOSK',
+      });
+
+      return { obstacleEntities: list, visualDetails: details };
+    }
+
+    // Case 7: Corporate Office & Lobby
+    // Optical speed turnstiles & reception desk
+    list.push({ id: 'off-desk', name: 'Executive Reception Desk', min: { x: 10.0, y: 7.5, z: 0 }, max: { x: 14.0, y: 8.8, z: 1.15 }, type: 'partition' });
+    list.push({ id: 'off-glass', name: 'Frosted Glass Partition', min: { x: 14.5, y: 6.0, z: 0 }, max: { x: 14.8, y: 11.0, z: 2.8 }, type: 'wall' });
+
+    details.push({
+      id: 'off-desk',
+      type: 'partition',
+      x: 10.0, y: 7.5, z: 0, w: 4.0, d: 1.3, h: 1.15,
+      color: '#3b82f6',
+      label: 'RECEPTION DESK',
     });
 
-    // Horizontal shelf beams at 1.4m and 2.8m (with physical gaps)
-    list.push({
-      id: 'rack-a-shelf-1',
-      name: 'Rack A Tier-1 Beam',
-      min: { x: rx, y: ry, z: 1.35 },
-      max: { x: rx + rw, y: ry + rd, z: 1.55 },
-      type: 'rack',
+    details.push({
+      id: 'off-glass',
+      type: 'wall',
+      x: 14.5, y: 6.0, z: 0, w: 0.3, d: 5.0, h: 2.8,
+      color: '#10b981',
+      label: 'GLASS ENCLOSURE',
     });
 
-    list.push({
-      id: 'rack-a-shelf-2',
-      name: 'Rack A Tier-2 Beam',
-      min: { x: rx, y: ry, z: 2.75 },
-      max: { x: rx + rw, y: ry + rd, z: 2.95 },
-      type: 'rack',
-    });
+    return { obstacleEntities: list, visualDetails: details };
+  }, [activeScenario, site]);
 
-    // Pallet Cargo Boxes on shelves (different heights and positions)
-    list.push({
-      id: 'cargo-box-1',
-      name: 'Heavy Pallet Box (Tier 1)',
-      min: { x: rx + 0.3, y: ry + 0.1, z: 1.55 },
-      max: { x: rx + 1.8, y: ry + 1.1, z: 2.65 },
-      type: 'rack',
-    });
-
-    list.push({
-      id: 'cargo-box-2',
-      name: 'Industrial Carton Lot (Tier 2)',
-      min: { x: rx + 1.9, y: ry + 0.15, z: 1.55 },
-      max: { x: rx + 3.3, y: ry + 1.05, z: 2.55 },
-      type: 'rack',
-    });
-
-    // Structural Concrete Column
-    list.push({
-      id: 'column-c1',
-      name: 'Structural Column C1',
-      min: { x: 15.5, y: 13.0, z: 0 },
-      max: { x: 16.3, y: 13.8, z: 6.0 },
-      type: 'column',
-    });
-
-    return list;
-  }, []);
-
-  // Visual Pallet Rack Wireframe Data for Rendering
-  const rackVisualModel = useMemo(() => ({
-    rx: 10.0,
-    ry: 8.5,
-    rw: 3.6,
-    rd: 1.2,
-    rh: 4.2,
-    shelvesZ: [0.15, 1.4, 2.8],
-    cargoBoxes: [
-      { x: 10.3, y: 8.6, z: 1.45, w: 1.4, d: 1.0, h: 1.1, color: '#f97316', label: 'CARGO 01' },
-      { x: 11.9, y: 8.65, z: 1.45, w: 1.4, d: 0.95, h: 0.95, color: '#a855f7', label: 'LOT 24' },
-      { x: 10.4, y: 8.6, z: 0.18, w: 1.5, d: 1.0, h: 1.15, color: '#06b6d4', label: 'PALLET A' },
-      { x: 12.0, y: 8.65, z: 0.18, w: 1.3, d: 0.95, h: 1.05, color: '#10b981', label: 'BOX B' },
-    ],
-  }), []);
-
-  // Target Patrol Path Generator
+  // Target Patrol Path Generator (Adapts to Active Scenario)
   const getTargetPositionAtTime = useCallback((t: number) => {
-    // Smooth looping path through warehouse aisle and behind Rack A
     const speedFactor = 0.25 * targetSpeed;
     const progress = (t * speedFactor) % (Math.PI * 2);
 
-    const x = 11.8 + Math.cos(progress) * 3.8;
-    const y = 9.8 + Math.sin(progress * 1.5) * 2.2;
-    const z = targetType === 'forklift' ? 2.2 : 1.7;
+    let x = 11.8, y = 9.8;
+    const targetH = activeTargetOption.height;
 
-    return { x, y, z };
-  }, [targetSpeed, targetType]);
+    if (activeScenario === 'project' && site) {
+      // Patrol centered in actual project bounds
+      const cx = site.length * 0.45;
+      const cy = site.width * 0.45;
+      x = cx + Math.cos(progress) * (site.length * 0.22);
+      y = cy + Math.sin(progress * 1.5) * (site.width * 0.2);
+    } else if (activeScenario === 'manufacturing_plant') {
+      // Moves along linear conveyor line
+      x = 9.5 + Math.cos(progress) * 3.2;
+      y = 8.8 + Math.sin(progress) * 1.2;
+    } else if (activeScenario === 'retail_supermarket') {
+      // Moves through shopping aisle towards checkout
+      x = 11.0 + Math.cos(progress) * 2.8;
+      y = 8.5 + Math.sin(progress) * 1.6;
+    } else if (activeScenario === 'data_center') {
+      // Patrols down cold aisle
+      x = 10.5 + Math.cos(progress) * 3.0;
+      y = 8.8 + Math.sin(progress) * 0.9;
+    } else if (activeScenario === 'perimeter_security') {
+      // Approaches fence and access gate
+      x = 10.0 + Math.cos(progress) * 3.5;
+      y = 9.2 + Math.sin(progress) * 1.5;
+    } else if (activeScenario === 'corporate_office') {
+      // Approaches turnstiles and reception desk
+      x = 11.5 + Math.cos(progress) * 2.2;
+      y = 9.0 + Math.sin(progress * 1.2) * 1.8;
+    } else {
+      // Logistics Warehouse default
+      x = 11.8 + Math.cos(progress) * 3.8;
+      y = 9.8 + Math.sin(progress * 1.5) * 2.2;
+    }
+
+    return { x, y, z: targetH };
+  }, [activeScenario, site, targetSpeed, activeTargetOption]);
 
   // Current Target Evaluation
   const [currentEval, setCurrentEval] = useState<TargetEvaluation | null>(null);
@@ -232,26 +586,27 @@ export function FrustumSpatialInspector({
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Deep Dark Tactical Background (matches prototype)
+      // Deep Dark Tactical Background
       ctx.fillStyle = '#050811';
       ctx.fillRect(0, 0, w, h);
 
       // 3D Perspective Projection Setup
-      const lookAt: Vec3 = { x: 10.5, y: 8.5, z: 2.2 };
+      const sceneCenter = site
+        ? { x: site.length * 0.45, y: site.width * 0.45, z: (site.mountHeight || 4.5) * 0.4 }
+        : { x: 11.0, y: 9.0, z: 2.2 };
+
       const radYaw = (yaw * Math.PI) / 180;
       const radPitch = (pitch * Math.PI) / 180;
 
-      // Orbit distance
       const orbitDist = 26 / zoom;
-      const eyeX = lookAt.x + orbitDist * Math.cos(radPitch) * Math.sin(radYaw);
-      const eyeY = lookAt.y - orbitDist * Math.cos(radPitch) * Math.cos(radYaw);
-      const eyeZ = lookAt.z + orbitDist * Math.sin(radPitch);
+      const eyeX = sceneCenter.x + orbitDist * Math.cos(radPitch) * Math.sin(radYaw);
+      const eyeY = sceneCenter.y - orbitDist * Math.cos(radPitch) * Math.cos(radYaw);
+      const eyeZ = sceneCenter.z + orbitDist * Math.sin(radPitch);
 
-      // Forward, Right, Up vectors for 3D camera
       const fwd = {
-        x: lookAt.x - eyeX,
-        y: lookAt.y - eyeY,
-        z: lookAt.z - eyeZ,
+        x: sceneCenter.x - eyeX,
+        y: sceneCenter.y - eyeY,
+        z: sceneCenter.z - eyeZ,
       };
       const fwdLen = Math.hypot(fwd.x, fwd.y, fwd.z);
       const fn = { x: fwd.x / fwdLen, y: fwd.y / fwdLen, z: fwd.z / fwdLen };
@@ -293,28 +648,23 @@ export function FrustumSpatialInspector({
       ctx.lineWidth = 1;
       ctx.strokeStyle = 'rgba(14, 165, 233, 0.18)';
 
-      const gridSize = 20;
+      const gridSpanX = site ? Math.ceil(site.length / 2) * 2 : 24;
+      const gridSpanY = site ? Math.ceil(site.width / 2) * 2 : 24;
       const step = 2.0;
 
-      for (let gx = 0; gx <= gridSize; gx += step) {
+      for (let gx = 0; gx <= gridSpanX; gx += step) {
         const p1 = project(gx, 0, 0);
-        const p2 = project(gx, gridSize, 0);
+        const p2 = project(gx, gridSpanY, 0);
         if (p1.valid && p2.valid) {
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
         }
       }
 
-      for (let gy = 0; gy <= gridSize; gy += step) {
+      for (let gy = 0; gy <= gridSpanY; gy += step) {
         const p1 = project(0, gy, 0);
-        const p2 = project(gridSize, gy, 0);
+        const p2 = project(gridSpanX, gy, 0);
         if (p1.valid && p2.valid) {
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
         }
       }
 
@@ -325,9 +675,9 @@ export function FrustumSpatialInspector({
       const evaluation = evaluateTargetPoint3D(
         cameraSpec,
         { x: tar.x, y: tar.y },
-        warehouseObstacles,
+        obstacleEntities,
         tar.z,
-        targetType === 'forklift' ? 1.2 : 0.5
+        activeTargetOption.id === 'vehicle' ? 1.2 : 0.5
       );
       setCurrentEval(evaluation);
 
@@ -405,10 +755,10 @@ export function FrustumSpatialInspector({
       const maxDistIdentify = Math.min(6.5, (hpx / (2 * 250 * Math.tan(hfovRad / 2))));
 
       const frustumTiers = [
-        { dist: maxDistIdentify, fill: 'rgba(0, 229, 255, 0.16)', stroke: 'rgba(0, 229, 255, 0.65)', label: 'IDENTIFY' },
-        { dist: maxDistRecognize, fill: 'rgba(74, 222, 128, 0.12)', stroke: 'rgba(74, 222, 128, 0.55)', label: 'RECOGNIZE' },
-        { dist: maxDistObserve, fill: 'rgba(250, 204, 21, 0.08)', stroke: 'rgba(250, 204, 21, 0.45)', label: 'OBSERVE' },
-        { dist: maxDistDetect, fill: 'rgba(245, 158, 11, 0.06)', stroke: 'rgba(245, 158, 11, 0.35)', label: 'DETECT' },
+        { dist: maxDistIdentify, fill: 'rgba(0, 229, 255, 0.16)', stroke: 'rgba(0, 229, 255, 0.65)' },
+        { dist: maxDistRecognize, fill: 'rgba(74, 222, 128, 0.12)', stroke: 'rgba(74, 222, 128, 0.55)' },
+        { dist: maxDistObserve, fill: 'rgba(250, 204, 21, 0.08)', stroke: 'rgba(250, 204, 21, 0.45)' },
+        { dist: maxDistDetect, fill: 'rgba(245, 158, 11, 0.06)', stroke: 'rgba(245, 158, 11, 0.35)' },
       ];
 
       for (let i = frustumTiers.length - 1; i >= 0; i--) {
@@ -449,75 +799,36 @@ export function FrustumSpatialInspector({
         }
       }
 
-      // 4. Draw Warehouse Pallet Racks with Uprights, Shelves & Cargo Boxes
-      const { rx, ry, rw, rd, rh, shelvesZ, cargoBoxes } = rackVisualModel;
-
-      const uprights = [
-        { x: rx, y: ry },
-        { x: rx + rw, y: ry },
-        { x: rx + rw, y: ry + rd },
-        { x: rx, y: ry + rd },
-      ];
-
-      ctx.strokeStyle = '#0284c7';
-      ctx.lineWidth = 3;
-      uprights.forEach(u => {
-        const pBase = project(u.x, u.y, 0);
-        const pTop = project(u.x, u.y, rh);
-        if (pBase.valid && pTop.valid) {
-          ctx.beginPath();
-          ctx.moveTo(pBase.x, pBase.y);
-          ctx.lineTo(pTop.x, pTop.y);
-          ctx.stroke();
-        }
-      });
-
-      shelvesZ.forEach(sz => {
-        const s1 = project(rx, ry, sz);
-        const s2 = project(rx + rw, ry, sz);
-        const s3 = project(rx + rw, ry + rd, sz);
-        const s4 = project(rx, ry + rd, sz);
-        if (s1.valid && s2.valid && s3.valid && s4.valid) {
-          ctx.beginPath();
-          ctx.moveTo(s1.x, s1.y);
-          ctx.lineTo(s2.x, s2.y);
-          ctx.lineTo(s3.x, s3.y);
-          ctx.lineTo(s4.x, s4.y);
-          ctx.closePath();
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-          ctx.fill();
-          ctx.strokeStyle = '#38bdf8';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
-      });
-
-      cargoBoxes.forEach(b => {
+      // 4. Draw Scenario 3D Obstacles
+      visualDetails.forEach(obs => {
+        // Draw 3D Box / Structure
         const corners = [
-          project(b.x, b.y, b.z),
-          project(b.x + b.w, b.y, b.z),
-          project(b.x + b.w, b.y + b.d, b.z),
-          project(b.x, b.y + b.d, b.z),
-          project(b.x, b.y, b.z + b.h),
-          project(b.x + b.w, b.y, b.z + b.h),
-          project(b.x + b.w, b.y + b.d, b.z + b.h),
-          project(b.x, b.y + b.d, b.z + b.h),
+          project(obs.x, obs.y, obs.z),
+          project(obs.x + obs.w, obs.y, obs.z),
+          project(obs.x + obs.w, obs.y + obs.d, obs.z),
+          project(obs.x, obs.y + obs.d, obs.z),
+          project(obs.x, obs.y, obs.z + obs.h),
+          project(obs.x + obs.w, obs.y, obs.z + obs.h),
+          project(obs.x + obs.w, obs.y + obs.d, obs.z + obs.h),
+          project(obs.x, obs.y + obs.d, obs.z + obs.h),
         ];
 
         if (corners.every(c => c.valid)) {
+          // Front Face
           ctx.beginPath();
           ctx.moveTo(corners[0].x, corners[0].y);
           ctx.lineTo(corners[1].x, corners[1].y);
           ctx.lineTo(corners[5].x, corners[5].y);
           ctx.lineTo(corners[4].x, corners[4].y);
           ctx.closePath();
-          ctx.fillStyle = b.color;
+          ctx.fillStyle = obs.color;
           ctx.globalAlpha = 0.85;
           ctx.fill();
           ctx.strokeStyle = '#0f172a';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 1.5;
           ctx.stroke();
 
+          // Top Face
           ctx.beginPath();
           ctx.moveTo(corners[4].x, corners[4].y);
           ctx.lineTo(corners[5].x, corners[5].y);
@@ -527,14 +838,84 @@ export function FrustumSpatialInspector({
           ctx.globalAlpha = 0.95;
           ctx.fill();
           ctx.stroke();
+
+          // Side Face
+          ctx.beginPath();
+          ctx.moveTo(corners[1].x, corners[1].y);
+          ctx.lineTo(corners[2].x, corners[2].y);
+          ctx.lineTo(corners[6].x, corners[6].y);
+          ctx.lineTo(corners[5].x, corners[5].y);
+          ctx.closePath();
+          ctx.globalAlpha = 0.75;
+          ctx.fill();
+          ctx.stroke();
           ctx.globalAlpha = 1.0;
+
+          // Structure Label
+          ctx.fillStyle = '#f8fafc';
+          ctx.font = '700 9px ui-monospace, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(obs.label, (corners[4].x + corners[6].x) / 2, corners[4].y - 8);
+        }
+
+        // Draw internal shelves if obstacle is a rack
+        if (obs.shelves) {
+          obs.shelves.forEach(sz => {
+            const s1 = project(obs.x, obs.y, sz);
+            const s2 = project(obs.x + obs.w, obs.y, sz);
+            const s3 = project(obs.x + obs.w, obs.y + obs.d, sz);
+            const s4 = project(obs.x, obs.y + obs.d, sz);
+            if (s1.valid && s2.valid && s3.valid && s4.valid) {
+              ctx.beginPath();
+              ctx.moveTo(s1.x, s1.y);
+              ctx.lineTo(s2.x, s2.y);
+              ctx.lineTo(s3.x, s3.y);
+              ctx.lineTo(s4.x, s4.y);
+              ctx.closePath();
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 1.5;
+              ctx.stroke();
+            }
+          });
+        }
+
+        // Draw boxes / items on shelves or conveyors
+        if (obs.boxes) {
+          obs.boxes.forEach(b => {
+            const bc = [
+              project(b.x, b.y, b.z),
+              project(b.x + b.w, b.y, b.z),
+              project(b.x + b.w, b.y + b.d, b.z),
+              project(b.x, b.y + b.d, b.z),
+              project(b.x, b.y, b.z + b.h),
+              project(b.x + b.w, b.y, b.z + b.h),
+              project(b.x + b.w, b.y + b.d, b.z + b.h),
+              project(b.x, b.y + b.d, b.z + b.h),
+            ];
+
+            if (bc.every(c => c.valid)) {
+              ctx.beginPath();
+              ctx.moveTo(bc[0].x, bc[0].y);
+              ctx.lineTo(bc[1].x, bc[1].y);
+              ctx.lineTo(bc[5].x, bc[5].y);
+              ctx.lineTo(bc[4].x, bc[4].y);
+              ctx.closePath();
+              ctx.fillStyle = b.color;
+              ctx.globalAlpha = 0.88;
+              ctx.fill();
+              ctx.strokeStyle = '#0f172a';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+              ctx.globalAlpha = 1.0;
+            }
+          });
         }
       });
 
-      // 5. Draw Patrolling Target (3D Human Worker with Hardhat & Hi-Vis Vest)
+      // 5. Draw Patrolling Scenario Target
       const targetBase = project(tar.x, tar.y, 0);
       const targetTorso = project(tar.x, tar.y, 1.1);
-      const targetHead = project(tar.x, tar.y, 1.65);
+      const targetHead = project(tar.x, tar.y, activeTargetOption.height);
 
       if (targetBase.valid && targetHead.valid) {
         ctx.beginPath();
@@ -550,7 +931,7 @@ export function FrustumSpatialInspector({
         ctx.stroke();
 
         if (targetTorso.valid) {
-          ctx.strokeStyle = '#eab308';
+          ctx.strokeStyle = activeTargetOption.id === 'vehicle' ? '#10b981' : '#eab308';
           ctx.lineWidth = 4;
           ctx.beginPath();
           ctx.moveTo(targetBase.x, targetBase.y);
@@ -559,12 +940,19 @@ export function FrustumSpatialInspector({
         }
 
         ctx.beginPath();
-        ctx.arc(targetHead.x, targetHead.y, 6, 0, Math.PI * 2);
-        ctx.fillStyle = '#f59e0b';
+        ctx.arc(targetHead.x, targetHead.y, 7, 0, Math.PI * 2);
+        ctx.fillStyle = activeTargetOption.id === 'intruder' ? '#ef4444' : '#f59e0b';
         ctx.fill();
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1.5;
         ctx.stroke();
+
+        // Target Emoji
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '10px ui-sans-serif, system-ui';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(activeTargetOption.icon, targetHead.x, targetHead.y);
       }
 
       // 6. Draw 3 Multi-Height Laser Sightline Rays (Kay-Kajiya Ray-AABB Slab Math)
@@ -636,16 +1024,18 @@ export function FrustumSpatialInspector({
     zoom,
     isPlaying,
     targetSpeed,
-    targetType,
+    targetRole,
     focalLengthMm,
     mountHeightM,
     tiltDeg,
     azimuthDeg,
     cameraSpec,
-    warehouseObstacles,
-    rackVisualModel,
+    obstacleEntities,
+    visualDetails,
     fov,
     sensorSpec,
+    activeTargetOption,
+    site,
     getTargetPositionAtTime,
   ]);
 
@@ -685,7 +1075,7 @@ export function FrustumSpatialInspector({
       ref={containerRef}
       className="w-full rounded-2xl border border-slate-800 bg-[#070b14] shadow-2xl overflow-hidden flex flex-col text-slate-100 font-sans"
     >
-      {/* Header Block (matches user prototype screenshot) */}
+      {/* Header Block with Dynamic Scenario Selector */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 bg-[#0a0f1d] border-b border-slate-800/80">
         <div>
           <div className="flex items-center gap-2.5">
@@ -695,12 +1085,49 @@ export function FrustumSpatialInspector({
             </h2>
           </div>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Interactive 3D Warehouse Patrol & Optical Telemetry
+            Multi-Scenario 3D Digital Twin & Optical Telemetry
           </p>
         </div>
 
-        {/* Live Status Badges */}
-        <div className="flex items-center gap-2.5">
+        {/* Dynamic Scenario Switcher Dropdown / Pills */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] font-mono text-slate-400">Scenario:</span>
+          <select
+            value={activeScenario}
+            onChange={e => setActiveScenario(e.target.value as ScenarioArchetype)}
+            className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400"
+          >
+            {scenarioOptions.map(sc => (
+              <option key={sc.id} value={sc.id}>
+                {sc.icon} {sc.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Camera Selection Switcher (if cameras exist in project) */}
+          {poses && poses.length > 0 && (
+            <div className="flex items-center gap-1 pl-2 border-l border-slate-800">
+              <span className="text-[10px] font-mono text-slate-400">Camera:</span>
+              <div className="flex gap-1">
+                {poses.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onSelectCamera?.(p.id)}
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition ${
+                      activeCamera?.id === p.id
+                        ? 'bg-cyan-500 text-slate-950 font-bold ring-1 ring-cyan-300'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    C{p.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Live DORI & Occlusion Badges */}
           <span
             className={`px-3 py-1 rounded-full text-xs font-mono font-bold tracking-wider uppercase transition shadow-sm ${
               evalData.doriTier === 'IDENTIFY'
@@ -762,7 +1189,7 @@ export function FrustumSpatialInspector({
           }}
         />
 
-        {/* Floating AI TELEMETRY HUD (Matches exact prototype card from screenshot) */}
+        {/* Floating AI TELEMETRY HUD */}
         <div className="absolute top-4 right-4 w-72 rounded-xl bg-[#090d19]/90 border border-slate-700/80 p-3.5 shadow-2xl backdrop-blur-md space-y-2.5">
           <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
             <span className="text-[11px] font-mono font-bold tracking-wider text-cyan-400">
@@ -774,6 +1201,10 @@ export function FrustumSpatialInspector({
           </div>
 
           <div className="space-y-1.5 text-xs font-mono">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">Active Scenario:</span>
+              <span className="font-bold text-slate-200">{currentScenarioDef.name.split('&')[0]}</span>
+            </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-400">Effective PPM:</span>
               <span className="font-bold text-white tracking-wide">{evalData.effectivePpm} px/m</span>
@@ -808,7 +1239,7 @@ export function FrustumSpatialInspector({
             </div>
           </div>
 
-          {/* AI Task Status Badges (Matches screenshot) */}
+          {/* AI Task Status Badges */}
           <div className="pt-2 border-t border-slate-800 grid grid-cols-3 gap-1.5 text-center">
             <div>
               <div className="text-[9px] font-mono text-slate-500 mb-0.5">FACE ID</div>
@@ -863,7 +1294,7 @@ export function FrustumSpatialInspector({
             <div className="flex items-center justify-between pb-1 mb-1.5 border-b border-slate-800 text-[10px] font-mono">
               <span className="text-cyan-400 font-bold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                CAM-01 LIVE RTSP
+                {activeCamera ? `CAM-0${activeCamera.id} LIVE RTSP` : 'CAM-01 LIVE RTSP'}
               </span>
               <span className="text-slate-400">{evalData.slantDistanceM}m</span>
             </div>
@@ -890,10 +1321,10 @@ export function FrustumSpatialInspector({
                   }}
                 >
                   <span className="absolute -top-3.5 left-0 text-[8px] font-mono font-bold bg-slate-900 px-1 rounded text-cyan-300">
-                    {targetType.toUpperCase()} {(evalData.visibilityRatio * 100).toFixed(0)}%
+                    {activeTargetOption.label.split(' ')[1] || 'TARGET'} {(evalData.visibilityRatio * 100).toFixed(0)}%
                   </span>
                   <div className="text-[9px] font-bold text-center">
-                    {targetType === 'forklift' ? '🚜' : targetType === 'intruder' ? '⚠️' : '👷'}
+                    {activeTargetOption.icon}
                   </div>
                   <span className="absolute -bottom-3 text-[7px] font-mono text-slate-400">
                     {evalData.effectivePpm} px/m
@@ -912,7 +1343,7 @@ export function FrustumSpatialInspector({
         </div>
       </div>
 
-      {/* Bottom Interactive Control Sliders (Matches exact prototype layout from screenshot) */}
+      {/* Bottom Interactive Control Sliders */}
       <div className="p-5 bg-[#0a0f1d] border-t border-slate-800 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Slider 1: Focal Length */}
@@ -945,7 +1376,7 @@ export function FrustumSpatialInspector({
             <input
               type="range"
               min="2.0"
-              max="10.0"
+              max="12.0"
               step="0.1"
               value={mountHeightM}
               onChange={e => handleHeightChange(parseFloat(e.target.value))}
@@ -953,7 +1384,7 @@ export function FrustumSpatialInspector({
             />
             <div className="flex justify-between text-[9px] font-mono text-slate-500">
               <span>2.0m (Eye-level)</span>
-              <span>10.0m (High-Bay)</span>
+              <span>12.0m (High-Bay)</span>
             </div>
           </div>
 
@@ -982,19 +1413,19 @@ export function FrustumSpatialInspector({
         {/* Secondary Navigation & Patrol Toolbar */}
         <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
           <div className="flex items-center gap-2">
-            <span className="text-slate-400">Patrol Target:</span>
-            {(['worker', 'forklift', 'intruder'] as const).map(t => (
+            <span className="text-slate-400">Patrol Actor:</span>
+            {currentScenarioDef.targets.map(t => (
               <button
-                key={t}
+                key={t.id}
                 type="button"
-                onClick={() => setTargetType(t)}
+                onClick={() => setTargetRole(t.id)}
                 className={`px-2.5 py-1 rounded-md transition ${
-                  targetType === t
+                  targetRole === t.id
                     ? 'bg-sky-600 text-white font-bold'
                     : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                 }`}
               >
-                {t === 'worker' ? '👷 Worker' : t === 'forklift' ? '🚜 Forklift' : '⚠️ Intruder'}
+                {t.label}
               </button>
             ))}
           </div>

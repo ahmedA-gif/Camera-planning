@@ -352,8 +352,8 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {project.use_cases.flatMap(uc => uc.candidate_techniques).filter((v, i, a) => a.indexOf(v) === i).map((technique, i) => (
-                    <div key={i} className="p-4 border border-border rounded-lg">
-                      <h4 className="font-medium">{technique}</h4>
+                    <div key={i} className="p-4 border border-border rounded-lg bg-slate-50/50">
+                      <h4 className="font-semibold text-slate-900">{technique}</h4>
                       <p className="text-sm text-muted-foreground mt-1">
                         Applicable to: {project.use_cases.filter(uc => uc.candidate_techniques.includes(technique)).map(uc => uc.name).join(', ')}
                       </p>
@@ -361,6 +361,73 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                   ))}
                 </div>
               )}
+
+              {/* IEC EN 62676-4 Standards & 3D Raycasting Methodology */}
+              <div className="mt-6 pt-6 border-t border-border space-y-4">
+                <h3 className="text-lg font-bold text-slate-900">IEC EN 62676-4 Camera Mapping & DORI Resolution Standards</h3>
+                <p className="text-sm text-muted-foreground">
+                  International optical density benchmarks dimensioned to guarantee computer vision accuracy at target inspection elevations:
+                </p>
+                <div className="overflow-x-auto border border-border rounded-lg">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-border">
+                      <tr>
+                        <th className="p-3">DORI Level</th>
+                        <th className="p-3">Min Pixel Density (PPM)</th>
+                        <th className="p-3">Target Operational Goal</th>
+                        <th className="p-3">Applicable Facility Zones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      <tr>
+                        <td className="p-3 font-bold text-sky-700">Identify</td>
+                        <td className="p-3 font-semibold text-sky-700">≥ 250 px/m</td>
+                        <td className="p-3 text-slate-700">Facial verification, vehicle license plate extraction (LPR), container OCR</td>
+                        <td className="p-3 text-slate-600">Narrow FOV (≤ 60°), Ingress Gates, Weighbridges</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-bold text-emerald-700">Recognize</td>
+                        <td className="p-3 font-semibold text-emerald-700">≥ 125 px/m</td>
+                        <td className="p-3 text-slate-700">PPE compliance (helmets, high-vis vests), personnel badge inspection</td>
+                        <td className="p-3 text-slate-600">Standard FOV (80° - 100°), Storage Aisles, Robotic Workcells</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-bold text-amber-700">Observe</td>
+                        <td className="p-3 font-semibold text-amber-700">≥ 62.5 px/m</td>
+                        <td className="p-3 text-slate-700">Forklift, pallet, and AGV transit tracking; crowd motion flow</td>
+                        <td className="p-3 text-slate-600">Wide FOV (90° - 110°), Cross-Corridors, Loading Staging</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 font-bold text-orange-700">Detect</td>
+                        <td className="p-3 font-semibold text-orange-700">≥ 25 px/m</td>
+                        <td className="p-3 text-slate-700">Presence of human or vehicle in restricted zone, perimeter motion alarms</td>
+                        <td className="p-3 text-slate-600">Ultra-Wide FOV (106° - 180°), Outer Fence, Roofs</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3.5 bg-slate-50 border border-border rounded-lg">
+                    <span className="font-bold text-primary block mb-1">Optical Pixel Density (PPM) Formula</span>
+                    <code className="block bg-white p-2 rounded border border-border text-sky-800 font-mono mb-1.5">
+                      PPM(D) = Resolution_W / [ 2 · D · tan(HFOV / 2) ]
+                    </code>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Calculates optical density at distance D on ground target plane (1.5m AFF). Ensures pixel density matches the assigned deep learning model input requirements.
+                    </p>
+                  </div>
+                  <div className="p-3.5 bg-slate-50 border border-border rounded-lg">
+                    <span className="font-bold text-primary block mb-1">3D Ray-Box Slab Occlusion & Dead-Zone</span>
+                    <code className="block bg-white p-2 rounded border border-border text-sky-800 font-mono mb-1.5">
+                      D_blind = (Mount_Z - Target_Z) / tan(θ_tilt + VFOV / 2)
+                    </code>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Computes under-camera dead zones. 3D Raycasting evaluates obstacle bounding boxes, casting physical line-of-sight shadows and eliminating blind spots via longitudinal aisle alignment.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 

@@ -118,8 +118,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const [mode, setMode] = useState<DoriMode>(initialFacility.mode);
   const [cameraCount, setCameraCount] = useState(initialFacility.count);
 
-  // Editable Obstacles state (procedural or from project)
-  const [obstacles, setObstacles] = useState<Obstacle[]>(() => {
+  // Derive initial obstacles from project structure or procedural generation based on scenario profile
+  const initialObstacles = useMemo<Obstacle[]>(() => {
     if (project?.structure && project.structure.length > 0) {
       const fromProject = project.structure
         .filter(s => s.type === 'obstacle' && s.points.length >= 2)
@@ -154,7 +154,10 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       width: initialFacility.width,
       mountHeight: initialFacility.height,
     });
-  });
+  }, [project?.structure, initialFacility]);
+
+  // Editable Obstacles state
+  const [obstacles, setObstacles] = useState<Obstacle[]>(initialObstacles);
 
   const [selectedObstacleId, setSelectedObstacleId] = useState<string | null>(null);
   const [activeFacilityPreset, setActiveFacilityPreset] = useState<FacilityPresetType | 'custom'>(
@@ -213,7 +216,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     obstacles,
   }), [bayLength, bayWidth, mountHeight, targetHeight, marginPct, obstacles]);
 
-  // Initialize camera poses: dynamically from project.cameras if present, else mathematically sound distribution
+  // Initialize camera poses: dynamically from project.cameras if present, else architecture-aware distribution
   const [poses, setPoses] = useState<CameraPose[]>(() => {
     if (project?.cameras && project.cameras.length > 0) {
       return project.cameras.map((c, i) => {
@@ -239,14 +242,18 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       mountHeight: initialFacility.height,
       targetHeight: 1.5,
       marginPct: 10,
-      obstacles: [],
+      obstacles: initialObstacles,
     };
-    return defaultLayout(initialFacility.count, initialSite, {
+    const defaultLens: LensSpec = {
       focalMm: 2.8,
       hfovDeg: 106,
       vfovDeg: 56,
       ranges: { detect: 88, observe: 35.2, recognize: 17.6, identify: 8.8 },
-    }, initialFacility.mode);
+    };
+    if (initialObstacles.length > 0) {
+      return architectureAwareLayout(initialObstacles, initialSite, defaultLens, initialFacility.mode, initialFacility.count);
+    }
+    return defaultLayout(initialFacility.count, initialSite, defaultLens, initialFacility.mode);
   });
 
   // UI state
@@ -528,6 +535,96 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       <div class="kpi-lbl">Total Area Coverage</div>
       <div class="kpi-val">${m.coveragePct.toFixed(1)}%</div>
       <div style="font-size: 9px; color: #64748b;">${m.cameras} Active Cameras • ${m.overlapPct.toFixed(1)}% Redundant Overlap</div>
+    </div>
+  </div>
+
+  <!-- PART 0: DETAILED AI SCENARIO & FACILITY PROFILE -->
+  <div class="section-card">
+    <div class="section-title">
+      <span>📋 PART 0: AI Facility Scenario &amp; Computer Vision Objectives</span>
+      <span class="badge badge-indigo">AI Scenario Analysis</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 10px;">
+      <div>
+        <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">Operational Scenario &amp; Brief:</div>
+        <p style="margin: 0; font-size: 10.5px; color: #334155; line-height: 1.5; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+          ${project?.business_description || 'Industrial high-bay facility requiring comprehensive computer vision coverage across logistics corridors, storage racking aisles, loading docks, and machinery workcells.'}
+        </p>
+      </div>
+      <div>
+        <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">Facility Metadata:</div>
+        <table style="margin: 0; font-size: 9.5px;">
+          <tr><td style="font-weight: 600; color: #64748b; width: 40%;">Company</td><td><strong>${project?.company_name || 'Enterprise Facility Operations'}</strong></td></tr>
+          <tr><td style="font-weight: 600; color: #64748b;">Industry</td><td>${project?.industry || 'Logistics & Automated Manufacturing'}</td></tr>
+          <tr><td style="font-weight: 600; color: #64748b;">Archetype</td><td><span class="badge badge-indigo">${initialFacility.facilityType ? initialFacility.facilityType.replace('_', ' ').toUpperCase() : 'WAREHOUSE'}</span></td></tr>
+          <tr><td style="font-weight: 600; color: #64748b;">Volume</td><td>${(bayLength * bayWidth * mountHeight).toLocaleString()} m³ (${(bayLength * bayWidth).toLocaleString()} m²)</td></tr>
+        </table>
+      </div>
+    </div>
+
+    ${project?.requirements && project.requirements.length > 0 ? `
+    <div style="margin-top: 8px;">
+      <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">Specific Computer Vision Requirements:</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 9.5px; color: #334155;">
+        ${project.requirements.map(r => `<div style="background: #f1f5f9; padding: 6px 8px; border-radius: 4px; border-left: 3px solid #2563eb;">• ${r}</div>`).join('')}
+      </div>
+    </div>` : ''}
+  </div>
+
+  <!-- PART 0B: OPTICAL DORI STANDARDS & 3D MAPPING TECHNIQUES -->
+  <div class="section-card">
+    <div class="section-title">
+      <span>📐 PART 0B: 3D Visualizations &amp; Camera Mapping Techniques</span>
+      <span class="badge badge-green">IEC EN 62676-4 Certified</span>
+    </div>
+    
+    <!-- Visual DORI Distribution Graph -->
+    <div style="margin-bottom: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase;">Visual DORI Coverage Breakdown &amp; Blind Spot Graph:</span>
+        <span style="font-size: 10px; font-weight: 700; color: #166534;">Covered: ${m.coveragePct.toFixed(1)}% | Blind Spot: ${m.blindPct.toFixed(1)}%</span>
+      </div>
+      
+      <!-- Multi-color Stacked Progress Bar -->
+      <div style="display: flex; width: 100%; height: 16px; border-radius: 4px; overflow: hidden; background: #e2e8f0; margin-bottom: 8px; border: 1px solid #cbd5e1;">
+        <div style="width: ${m.doriPct[4].toFixed(1)}%; background: #06b6d4;" title="Identify (${m.doriPct[4].toFixed(1)}%)"></div>
+        <div style="width: ${m.doriPct[3].toFixed(1)}%; background: #10b981;" title="Recognize (${m.doriPct[3].toFixed(1)}%)"></div>
+        <div style="width: ${m.doriPct[2].toFixed(1)}%; background: #f59e0b;" title="Observe (${m.doriPct[2].toFixed(1)}%)"></div>
+        <div style="width: ${m.doriPct[1].toFixed(1)}%; background: #f97316;" title="Detect (${m.doriPct[1].toFixed(1)}%)"></div>
+        <div style="width: ${m.blindPct.toFixed(1)}%; background: #f43f5e;" title="Blind Spot (${m.blindPct.toFixed(1)}%)"></div>
+      </div>
+
+      <!-- Legend Pills -->
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 9px;">
+        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #06b6d4;"></span> <strong>Identify (≥250 PPM):</strong> ${m.doriPct[4].toFixed(1)}%</span>
+        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #10b981;"></span> <strong>Recognize (≥125 PPM):</strong> ${m.doriPct[3].toFixed(1)}%</span>
+        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #f59e0b;"></span> <strong>Observe (≥62.5 PPM):</strong> ${m.doriPct[2].toFixed(1)}%</span>
+        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #f97316;"></span> <strong>Detect (≥25 PPM):</strong> ${m.doriPct[1].toFixed(1)}%</span>
+        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #f43f5e;"></span> <strong>Blind Spot:</strong> ${m.blindPct.toFixed(1)}%</span>
+      </div>
+    </div>
+
+    <!-- Mathematical Formulations -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
+      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
+        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">1. IEC EN 62676-4 Pixel Density (PPM) Formula:</div>
+        <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
+          PPM(D) = Resolution_W / [ 2 · D · tan(HFOV / 2) ]
+        </div>
+        <p style="margin: 0; color: #475569; line-height: 1.4;">
+          Calculates optical density at distance <em>D</em> on ground target plane (height ${targetHeight}m). Guarantees sufficient pixels across facial features (Identify ≥250 px/m) and safety apparel (Recognize ≥125 px/m).
+        </p>
+      </div>
+
+      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
+        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">2. 3D Ray-Box Slab Occlusion &amp; Dead-Zone:</div>
+        <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
+          D_blind = (Mount_Z - Target_Z) / tan(θ_tilt + VFOV / 2)
+        </div>
+        <p style="margin: 0; color: #475569; line-height: 1.4;">
+          Computes under-camera blind circles. 3D Ray-slab intersection queries physical bounding boxes (${obstacles.length} obstacles), casting geometric occlusion shadows and eliminating obstructed blind zones through longitudinal aisle aiming.
+        </p>
+      </div>
     </div>
   </div>
 

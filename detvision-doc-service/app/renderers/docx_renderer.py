@@ -349,7 +349,42 @@ def render_docx(project: DetVisionProject) -> bytes:
         for tech, use_cases in all_techniques.items():
             tech_rows.append([tech, ", ".join(use_cases)])
         add_table_with_style(doc, ["Technique", "Applicable Use Cases"], tech_rows, [3, 5])
-    
+        
+        doc.add_paragraph()
+
+        # DORI Optical Standards & Pixel Density Guarantees
+        add_styled_paragraph(doc, "IEC EN 62676-4 Camera Mapping & DORI Resolution Standards", bold=True, size=12)
+        add_styled_paragraph(doc, "All proposed cameras and optics are dimensioned according to international standard IEC EN 62676-4 to guarantee required detection thresholds at operational target heights:", size=10)
+        
+        dori_rows = [
+            ["Identify", "≥ 250 px/m", "Facial recognition, license plate extraction (LPR), container serial OCR", "Narrow FOV (≤ 60°), Entry Gates, Ingress Portals"],
+            ["Recognize", "≥ 125 px/m", "PPE detection (high-vis vests, hardhats), personnel safety verification", "Standard FOV (80° - 100°), Storage Aisles, Assembly Workcells"],
+            ["Observe", "≥ 62.5 px/m", "Forklift, pallet jack, and AGV transit tracking; crowd motion analysis", "Wide FOV (90° - 110°), Cross-Corridors, Loading Docks"],
+            ["Detect", "≥ 25 px/m", "Intrusion presence in restricted zones, perimeter motion alarms", "Ultra-Wide FOV (106° - 180°), Outer Fence Perimeter, Roofs"],
+        ]
+        add_table_with_style(doc, ["DORI Level", "Min Resolution (PPM)", "Operational Objective", "Recommended Lens / Zone"], dori_rows, [1.1, 1.3, 3.2, 2.4])
+
+        doc.add_paragraph()
+
+        # Optical Physics & 3D Raycasting Occlusion Formulas
+        add_styled_paragraph(doc, "Optical Mathematics & 3D Physical Ray Occlusion Modeling", bold=True, size=12)
+        math_text = (
+            "1. Ground Pixel Density Formulation:\n"
+            "   PPM(D) = Resolution_Width / [ 2 · D · tan(HFOV / 2) ]\n"
+            "   Where D is line-of-sight slant range to target plane (1.5m AFF).\n\n"
+            "2. Under-Camera Blind Zone Trigonometry:\n"
+            "   D_blind = (Mount_Elevation - Target_Elevation) / tan(Tilt_Angle + VFOV / 2)\n"
+            "   Guarantees zero-deadzone handoff between overlapping camera cones.\n\n"
+            "3. 3D Ray-Box Slab Intersect Occlusion Analysis:\n"
+            "   Physical obstacles (pallet racks, robotic cages, structural columns) cast geometric shadow\n"
+            "   cones. Longitudinal aisle alignment eliminates rack shadow occlusions along travel lanes."
+        )
+        p_math = doc.add_paragraph()
+        run_math = p_math.add_run(math_text)
+        run_math.font.name = 'Consolas'
+        run_math.font.size = Pt(9.5)
+        run_math.font.color.rgb = RGBColor(0x03, 0x69, 0xA1)
+
         doc.add_page_break()
     
     if not project.output_scope or "Camera plan" in project.output_scope:

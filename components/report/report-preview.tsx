@@ -362,54 +362,74 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </div>
               )}
 
-              {/* IEC EN 62676-4 Standards & 3D Raycasting Methodology */}
+              {/* Global Camera Mapping Standards: DORI, OODPCVS, Johnson's Criteria, DHS/NIJ & French Standards */}
               <div className="mt-6 pt-6 border-t border-border space-y-4">
-                <h3 className="text-lg font-bold text-slate-900">IEC EN 62676-4 Camera Mapping & DORI Resolution Standards</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-slate-900">Multi-Standard Camera Mapping &amp; Resolution Frameworks</h3>
+                  <span className="text-xs font-mono font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                    IEC 62676-4:2025 · US Military · DHS/NIJ · French Code
+                  </span>
+                </div>
                 <p className="text-sm text-muted-foreground">
-                  International optical density benchmarks dimensioned to guarantee computer vision accuracy at target inspection elevations:
+                  Unified cross-framework optical and thermal density benchmarks dimensioned to guarantee computer vision precision and courtroom-admissible forensic evidence:
                 </p>
-                <div className="overflow-x-auto border border-border rounded-lg">
+
+                {/* Comprehensive Standards Matrix */}
+                <div className="overflow-x-auto border border-border rounded-lg shadow-2xs">
                   <table className="w-full text-xs text-left">
                     <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-border">
                       <tr>
-                        <th className="p-3">DORI Level</th>
-                        <th className="p-3">Min Pixel Density (PPM)</th>
-                        <th className="p-3">Target Operational Goal</th>
-                        <th className="p-3">Applicable Facility Zones</th>
+                        <th className="p-3">Standard / Framework</th>
+                        <th className="p-3">Authority &amp; Domain</th>
+                        <th className="p-3">Metric Unit</th>
+                        <th className="p-3">Key Resolution Tiers &amp; Thresholds</th>
+                        <th className="p-3">Analytical &amp; Operational Goal</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
                       <tr>
-                        <td className="p-3 font-bold text-sky-700">Identify</td>
-                        <td className="p-3 font-semibold text-sky-700">≥ 250 px/m</td>
-                        <td className="p-3 text-slate-700">Facial verification, vehicle license plate extraction (LPR), container OCR</td>
-                        <td className="p-3 text-slate-600">Narrow FOV (≤ 60°), Ingress Gates, Weighbridges</td>
+                        <td className="p-3 font-bold text-slate-900">DORI</td>
+                        <td className="p-3 text-slate-600">IEC EN 62676-4:2015 (Visible Light)</td>
+                        <td className="p-3 font-mono font-semibold text-sky-700">Pixels / Metre (px/m)</td>
+                        <td className="p-3 text-slate-700">Detect (25), Observe (62.5), Recognize (125), Identify (250 px/m)</td>
+                        <td className="p-3 text-slate-600">Standard European security surveillance and human activity classification.</td>
+                      </tr>
+                      <tr className="bg-slate-50/70">
+                        <td className="p-3 font-bold text-violet-800">OODPCVS (2025)</td>
+                        <td className="p-3 text-slate-600">IEC 62676-4:2025 (Ultra-HD / AI)</td>
+                        <td className="p-3 font-mono font-semibold text-violet-700">Pixels / Metre (px/m)</td>
+                        <td className="p-3 text-slate-700">Overview (20), Outline (40), Discern (80), Perceive (125), Characterize (250), Validate (500), <strong className="text-violet-700">Scrutinize (1500 px/m)</strong></td>
+                        <td className="p-3 text-slate-600">Designed for 4K/8K sensors. Scrutinize tier guarantees passport-grade 3D biometric facial recognition.</td>
                       </tr>
                       <tr>
-                        <td className="p-3 font-bold text-emerald-700">Recognize</td>
-                        <td className="p-3 font-semibold text-emerald-700">≥ 125 px/m</td>
-                        <td className="p-3 text-slate-700">PPE compliance (helmets, high-vis vests), personnel badge inspection</td>
-                        <td className="p-3 text-slate-600">Standard FOV (80° - 100°), Storage Aisles, Robotic Workcells</td>
+                        <td className="p-3 font-bold text-amber-800">Johnson's Criteria</td>
+                        <td className="p-3 text-slate-600">US Military / NVESD (Thermal IR)</td>
+                        <td className="p-3 font-mono font-semibold text-amber-700">Line Pairs (lp) on Target</td>
+                        <td className="p-3 text-slate-700"><strong>Detection (1.0–1.5 lp)</strong>, <strong>Recognition (3.0–4.0 lp)</strong>, <strong>Identification (6.0–8.0 lp)</strong></td>
+                        <td className="p-3 text-slate-600">Thermal security equivalent across target critical dimensions (human 1.8m, vehicle 2.3m).</td>
+                      </tr>
+                      <tr className="bg-slate-50/70">
+                        <td className="p-3 font-bold text-sky-800">US DHS / NIJ</td>
+                        <td className="p-3 text-slate-600">Dept of Homeland Security (Forensic Video)</td>
+                        <td className="p-3 font-mono font-semibold text-sky-700">% Vertical Screen Height (% VSH)</td>
+                        <td className="p-3 text-slate-700">General (5%), Classification (10%), <strong className="text-sky-700">Forensic Evidence ID (≥15% VSH)</strong>, High-Security (≥25% VSH)</td>
+                        <td className="p-3 text-slate-600">Forensic court admissibility. A suspect's face must occupy ≥15% of vertical frame height for conviction.</td>
                       </tr>
                       <tr>
-                        <td className="p-3 font-bold text-amber-700">Observe</td>
-                        <td className="p-3 font-semibold text-amber-700">≥ 62.5 px/m</td>
-                        <td className="p-3 text-slate-700">Forklift, pallet, and AGV transit tracking; crowd motion flow</td>
-                        <td className="p-3 text-slate-600">Wide FOV (90° - 110°), Cross-Corridors, Loading Staging</td>
-                      </tr>
-                      <tr>
-                        <td className="p-3 font-bold text-orange-700">Detect</td>
-                        <td className="p-3 font-semibold text-orange-700">≥ 25 px/m</td>
-                        <td className="p-3 text-slate-700">Presence of human or vehicle in restricted zone, perimeter motion alarms</td>
-                        <td className="p-3 text-slate-600">Ultra-Wide FOV (106° - 180°), Outer Fence, Roofs</td>
+                        <td className="p-3 font-bold text-slate-900">French Standards</td>
+                        <td className="p-3 text-slate-600">Ministère de l'Intérieur / CNIL (France)</td>
+                        <td className="p-3 font-mono font-semibold text-slate-700">Pixels / Metre (px/m)</td>
+                        <td className="p-3 text-slate-700">Surveillance (30), Reconnaissance (150), <strong className="text-slate-800">Identification Stricte (300)</strong>, Contrôle d'Accès (800 px/m)</td>
+                        <td className="p-3 text-slate-600">Strict French municipal surveillance regulation integrated into JVSG CCTV design tools.</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
 
+                {/* Mathematical Formulations Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                   <div className="p-3.5 bg-slate-50 border border-border rounded-lg">
-                    <span className="font-bold text-primary block mb-1">Optical Pixel Density (PPM) Formula</span>
+                    <span className="font-bold text-primary block mb-1">1. Optical Pixel Density (PPM) Formula</span>
                     <code className="block bg-white p-2 rounded border border-border text-sky-800 font-mono mb-1.5">
                       PPM(D) = Resolution_W / [ 2 · D · tan(HFOV / 2) ]
                     </code>
@@ -417,13 +437,34 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                       Calculates optical density at distance D on ground target plane (1.5m AFF). Ensures pixel density matches the assigned deep learning model input requirements.
                     </p>
                   </div>
+
                   <div className="p-3.5 bg-slate-50 border border-border rounded-lg">
-                    <span className="font-bold text-primary block mb-1">3D Ray-Box Slab Occlusion & Dead-Zone</span>
+                    <span className="font-bold text-primary block mb-1">2. Thermal Johnson's Criteria Line-Pair Formula</span>
+                    <code className="block bg-white p-2 rounded border border-border text-sky-800 font-mono mb-1.5">
+                      N_lp = [ PPM(D) · H_target ] / 2 = [ Res_W · H_target ] / [ 4 · D · tan(HFOV/2) ]
+                    </code>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Measures line pairs resolved across a target object dimension (human 1.8m, vehicle 2.3m). Identification requires 6–8 lp; Recognition requires 3–4 lp; Detection requires 1–1.5 lp.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-50 border border-border rounded-lg">
+                    <span className="font-bold text-primary block mb-1">3. US DHS / NIJ % Vertical Screen Height</span>
+                    <code className="block bg-white p-2 rounded border border-border text-sky-800 font-mono mb-1.5">
+                      VSH_% = [ H_target / (2 · D · tan(VFOV / 2)) ] × 100%
+                    </code>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Maps camera distance based on vertical frame percentage. For court-admissible forensic evidence under NIJ standards, the target face must occupy at least 15% of the total vertical screen height.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-50 border border-border rounded-lg">
+                    <span className="font-bold text-primary block mb-1">4. 3D Bird Camera View &amp; Ray-Box Occlusion</span>
                     <code className="block bg-white p-2 rounded border border-border text-sky-800 font-mono mb-1.5">
                       D_blind = (Mount_Z - Target_Z) / tan(θ_tilt + VFOV / 2)
                     </code>
                     <p className="text-slate-600 text-[11px] leading-relaxed">
-                      Computes under-camera dead zones. 3D Raycasting evaluates obstacle bounding boxes, casting physical line-of-sight shadows and eliminating blind spots via longitudinal aisle alignment.
+                      Top-down 3D bird's-eye projection with 3D ray-box slab intersection testing against physical obstacles. Eliminates blind zone occlusions behind storage racks and structural columns via longitudinal aisle aiming.
                     </p>
                   </div>
                 </div>

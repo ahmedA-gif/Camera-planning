@@ -171,6 +171,177 @@ export const AI_VISION_TASKS: AiVisionTask[] = [
   },
 ];
 
+/* ------------------------------------------------------------------ */
+/* CCTV Standards Frameworks: DORI, OODPCVS, Johnson's, DHS/NIJ, French */
+/* ------------------------------------------------------------------ */
+
+export type MappingStandard = 'dori' | 'oodpcvs' | 'johnson' | 'dhs_nij' | 'french';
+
+export interface StandardTier {
+  name: string;
+  code: string;
+  threshold: number; // PPM, Line Pairs, or VSH %
+  unit: string;
+  description: string;
+  color: string;
+}
+
+export interface StandardDefinition {
+  id: MappingStandard;
+  name: string;
+  authority: string;
+  domain: 'Visible Light' | 'Thermal IR' | 'Forensic Video' | 'Public Municipal';
+  metricUnit: string;
+  description: string;
+  tiers: StandardTier[];
+}
+
+export const MAPPING_STANDARDS: Record<MappingStandard, StandardDefinition> = {
+  dori: {
+    id: 'dori',
+    name: 'DORI (IEC 62676-4:2015)',
+    authority: 'International Electrotechnical Commission',
+    domain: 'Visible Light',
+    metricUnit: 'px/m',
+    description: 'Traditional 4-tier pixel-density ladder widely adopted for standard optical surveillance design.',
+    tiers: [
+      { name: 'Identification', code: 'I', threshold: 250, unit: 'px/m', description: 'Positive facial identification beyond reasonable doubt and clear license plate character capture.', color: '#00e5ff' },
+      { name: 'Recognition', code: 'R', threshold: 125, unit: 'px/m', description: 'Verification of known individuals, PPE compliance (helmets, vests), and vehicle type classification.', color: '#4ade80' },
+      { name: 'Observation', code: 'O', threshold: 62.5, unit: 'px/m', description: 'Perception of personal attributes (clothing color, carried items) and scene activity monitoring.', color: '#facc15' },
+      { name: 'Detection', code: 'D', threshold: 25, unit: 'px/m', description: 'Reliable detection of human or vehicle presence and perimeter boundary intrusion.', color: '#f59e0b' },
+    ],
+  },
+  oodpcvs: {
+    id: 'oodpcvs',
+    name: 'OODPCVS (IEC 62676-4:2025)',
+    authority: 'IEC 62676-4:2025 Standard Update',
+    domain: 'Visible Light',
+    metricUnit: 'px/m',
+    description: '7-level global evolution of DORI engineered for ultra-high-resolution 4K/8K sensors and AI computer vision algorithms.',
+    tiers: [
+      { name: 'Scrutinize', code: 'S7', threshold: 1500, unit: 'px/m', description: 'Minimum density for modern 3D biometric facial recognition software, forensic iris scans, and micro-defect scrutiny.', color: '#c084fc' },
+      { name: 'Validate', code: 'V6', threshold: 500, unit: 'px/m', description: 'Automated Facial Recognition (AFR) matching against central watchlists under video compression.', color: '#00e5ff' },
+      { name: 'Characterize', code: 'C5', threshold: 250, unit: 'px/m', description: 'Forensic attire details, alphanumeric plate OCR, and tool mark identification.', color: '#38bdf8' },
+      { name: 'Perceive', code: 'P4', threshold: 125, unit: 'px/m', description: 'Industrial PPE safety compliance, worker posture, and hand tool confirmation.', color: '#4ade80' },
+      { name: 'Discern', code: 'D3', threshold: 80, unit: 'px/m', description: 'Vehicle classification (truck vs. sedan) and gross body stance evaluation.', color: '#a3e635' },
+      { name: 'Outline', code: 'O2', threshold: 40, unit: 'px/m', description: 'Silhouette shape recognition and speed/trajectory tracking in open space.', color: '#facc15' },
+      { name: 'Overview', code: 'O1', threshold: 20, unit: 'px/m', description: 'General facility spatial orientation, crowd density, and queue monitoring.', color: '#f59e0b' },
+    ],
+  },
+  johnson: {
+    id: 'johnson',
+    name: "Thermal Johnson's Criteria",
+    authority: 'US Military / Night Vision & Electronic Sensors Directorate (NVESD)',
+    domain: 'Thermal IR',
+    metricUnit: 'line pairs (lp)',
+    description: "Calculates resolution across target object dimension (human 1.8m, vehicle 2.3m) for LWIR/MWIR thermal cores.",
+    tiers: [
+      { name: 'Identification', code: 'J-ID', threshold: 6.0, unit: 'line pairs', description: 'Distinguish specific details within class (e.g., soldier with rifle vs civilian, specific vehicle chassis model). Requires 6-8 line pairs.', color: '#00e5ff' },
+      { name: 'Recognition', code: 'J-REC', threshold: 3.0, unit: 'line pairs', description: 'Distinguish target class (e.g., human vs large dog, forklift vs pickup truck). Requires 3-4 line pairs.', color: '#4ade80' },
+      { name: 'Detection', code: 'J-DET', threshold: 1.0, unit: 'line pairs', description: 'Determine presence of heat signature anomaly vs background thermal clutter (50% probability). Requires 1-1.5 line pairs.', color: '#f59e0b' },
+    ],
+  },
+  dhs_nij: {
+    id: 'dhs_nij',
+    name: 'US DHS / NIJ Standards',
+    authority: 'US Dept of Homeland Security & National Institute of Justice',
+    domain: 'Forensic Video',
+    metricUnit: '% VSH',
+    description: 'Forensic mapping based on target percentage of vertical screen height (% VSH) required for court-admissible forensic evidence.',
+    tiers: [
+      { name: 'High-Security Forensic ID', code: 'DHS-25', threshold: 25, unit: '% VSH', description: 'Full biometric facial forensic admissibility for federal criminal prosecution.', color: '#c084fc' },
+      { name: 'Forensic Evidence ID', code: 'DHS-15', threshold: 15, unit: '% VSH', description: 'Standard courtroom threshold where facial features occupy ≥15% of vertical frame height.', color: '#00e5ff' },
+      { name: 'Vehicle & Body Classification', code: 'DHS-10', threshold: 10, unit: '% VSH', description: 'Target occupies ≥10% VSH, sufficient to classify vehicle make/model and clothing attire.', color: '#4ade80' },
+      { name: 'General Scene Detection', code: 'DHS-5', threshold: 5, unit: '% VSH', description: 'Target occupies 5-10% VSH for broad boundary and queue alert triggers.', color: '#f59e0b' },
+    ],
+  },
+  french: {
+    id: 'french',
+    name: 'French Public Surveillance Standards',
+    authority: 'Ministère de l’Intérieur & CNIL (France / JVSG)',
+    domain: 'Public Municipal',
+    metricUnit: 'px/m',
+    description: 'Strict European regulatory metrics used across French public security installations and JVSG CCTV design tools.',
+    tiers: [
+      { name: 'Contrôle d’Accès Sécurisé', code: 'FR-800', threshold: 800, unit: 'px/m', description: 'Ultra-haute résolution pour contrôle d’accès biométrique et lecture fine de documents officiels.', color: '#c084fc' },
+      { name: 'Identification Stricte', code: 'FR-300', threshold: 300, unit: 'px/m', description: 'Identification judiciaire formelle sur la voie publique (standard français renforcé vs 250 DORI).', color: '#00e5ff' },
+      { name: 'Reconnaissance Publique', code: 'FR-150', threshold: 150, unit: 'px/m', description: 'Reconnaissance fiable des individus et des attributs vestimentaires en espace public (150 px/m vs 125).', color: '#4ade80' },
+      { name: 'Surveillance Générale', code: 'FR-30', threshold: 30, unit: 'px/m', description: 'Surveillance panoramique de flux piétons et détection de présence sur voirie (30 px/m vs 25).', color: '#f59e0b' },
+    ],
+  },
+};
+
+/** Compute multi-standard metrics for any distance & camera optical spec */
+export function computeTargetMetrics(
+  distanceM: number,
+  hpx: number,
+  hfovDeg: number,
+  vfovDeg: number,
+  targetHeightM = 1.8
+) {
+  const d = Math.max(0.1, distanceM);
+  const tanH = Math.tan(rad(hfovDeg) / 2);
+  const tanV = Math.tan(rad(vfovDeg) / 2);
+  const sceneWidthM = 2 * d * tanH;
+  const sceneHeightM = 2 * d * tanV;
+  const ppm = hpx / sceneWidthM;
+
+  // 1. DORI
+  let doriName = 'Blind';
+  let doriLevel = 0;
+  if (ppm >= DORI_PPM.identify) { doriName = 'Identify'; doriLevel = 4; }
+  else if (ppm >= DORI_PPM.recognize) { doriName = 'Recognize'; doriLevel = 3; }
+  else if (ppm >= DORI_PPM.observe) { doriName = 'Observe'; doriLevel = 2; }
+  else if (ppm >= DORI_PPM.detect) { doriName = 'Detect'; doriLevel = 1; }
+
+  // 2. OODPCVS 2025
+  const oodTiers = MAPPING_STANDARDS.oodpcvs.tiers;
+  let oodpcvs = oodTiers[oodTiers.length - 1];
+  for (const tier of oodTiers) {
+    if (ppm >= tier.threshold) {
+      oodpcvs = tier;
+      break;
+    }
+  }
+
+  // 3. Johnson's Criteria (Thermal line pairs across target)
+  // Target width/height ~1.8m human, 1 line pair = 2 pixels (PPM * targetHeightM / 2)
+  const linePairs = (ppm * targetHeightM) / 2;
+  let johnsonLevel = 'Sub-detection';
+  if (linePairs >= 6.0) johnsonLevel = 'Identification (6-8 lp)';
+  else if (linePairs >= 3.0) johnsonLevel = 'Recognition (3-4 lp)';
+  else if (linePairs >= 1.0) johnsonLevel = 'Detection (1-1.5 lp)';
+
+  // 4. US DHS / NIJ (% Vertical Screen Height)
+  const vshPct = Math.min(100, (targetHeightM / sceneHeightM) * 100);
+  let dhsLevel = 'Below 5% VSH';
+  let isForensicLegal = false;
+  if (vshPct >= 25) { dhsLevel = 'High-Security Forensic ID (≥25% VSH)'; isForensicLegal = true; }
+  else if (vshPct >= 15) { dhsLevel = 'Forensic Evidence ID (≥15% VSH)'; isForensicLegal = true; }
+  else if (vshPct >= 10) { dhsLevel = 'Classification (≥10% VSH)'; }
+  else if (vshPct >= 5) { dhsLevel = 'Detection (≥5% VSH)'; }
+
+  // 5. French Standards
+  const frTiers = MAPPING_STANDARDS.french.tiers;
+  let frenchLevel = 'Non Couvert';
+  for (const tier of frTiers) {
+    if (ppm >= tier.threshold) {
+      frenchLevel = `${tier.name} (${tier.threshold} px/m)`;
+      break;
+    }
+  }
+
+  return {
+    distanceM: +d.toFixed(2),
+    ppm: +ppm.toFixed(1),
+    dori: { level: doriLevel, name: doriName },
+    oodpcvs: { code: oodpcvs.code, name: oodpcvs.name, threshold: oodpcvs.threshold },
+    johnson: { linePairs: +linePairs.toFixed(2), level: johnsonLevel },
+    dhsNij: { vshPct: +vshPct.toFixed(1), level: dhsLevel, isForensicLegal },
+    french: { level: frenchLevel },
+  };
+}
+
 export interface SiteSpec {
   length: number;
   width: number;

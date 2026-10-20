@@ -223,56 +223,73 @@
             </tbody>
         </table>
 
-        <h3>IEC EN 62676-4 Camera Mapping &amp; DORI Resolution Standards</h3>
-        <p class="muted">Optical dimensioning benchmarks to guarantee computer vision task success at target inspection elevations:</p>
+        <h3>Multi-Standard Camera Mapping &amp; Resolution Frameworks</h3>
+        <p class="muted">Cross-framework optical and thermal density benchmarks (IEC 62676-4:2025, US Military NVESD, US DHS/NIJ, and French Municipal Code):</p>
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>DORI Level</th>
-                    <th>Minimum Pixel Density (PPM)</th>
-                    <th>Target Operational Goal</th>
-                    <th>Applicable Facility Zones</th>
+                    <th>Standard</th>
+                    <th>Domain</th>
+                    <th>Metric Unit</th>
+                    <th>Resolution Tiers &amp; Thresholds</th>
+                    <th>Analytical Objective &amp; Evidence Benchmark</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td><strong>Identify</strong></td>
-                    <td><strong style="color: #0369a1;">≥ 250 px/m</strong></td>
-                    <td>Facial verification, vehicle license plate extraction (LPR), OCR</td>
-                    <td>Narrow FOV (≤ 60°), Ingress Gates, Weighbridges</td>
+                    <td><strong>DORI (IEC 2015)</strong></td>
+                    <td>Visible Light</td>
+                    <td><strong style="color: #0369a1;">px/m (PPM)</strong></td>
+                    <td>Detect (25), Observe (62.5), Recognize (125), Identify (250)</td>
+                    <td>Standard European security surveillance and human activity classification.</td>
+                </tr>
+                <tr style="background: #f8fafc;">
+                    <td><strong>OODPCVS (IEC 2025)</strong></td>
+                    <td>Ultra-HD / AI</td>
+                    <td><strong style="color: #7c3aed;">px/m (PPM)</strong></td>
+                    <td>Overview (20), Outline (40), Discern (80), Perceive (125), Characterize (250), Validate (500), <strong>Scrutinize (1500)</strong></td>
+                    <td>Designed for 4K/8K sensors. Scrutinize tier guarantees passport-grade biometric facial recognition.</td>
                 </tr>
                 <tr>
-                    <td><strong>Recognize</strong></td>
-                    <td><strong style="color: #15803d;">≥ 125 px/m</strong></td>
-                    <td>PPE compliance (helmets, high-vis vests), personnel identification</td>
-                    <td>Standard FOV (80° - 100°), Storage Aisles, Robot Cells</td>
+                    <td><strong>Johnson's Criteria</strong></td>
+                    <td>Thermal IR</td>
+                    <td><strong style="color: #d97706;">Line Pairs (lp)</strong></td>
+                    <td><strong>Detection (1.0–1.5 lp)</strong>, <strong>Recognition (3.0–4.0 lp)</strong>, <strong>Identification (6.0–8.0 lp)</strong></td>
+                    <td>US Military thermal security equivalent across target critical dimensions (human 1.8m, vehicle 2.3m).</td>
+                </tr>
+                <tr style="background: #f8fafc;">
+                    <td><strong>US DHS / NIJ</strong></td>
+                    <td>Forensic Video</td>
+                    <td><strong style="color: #0284c7;">% Vert Screen Height</strong></td>
+                    <td>General (5%), Classification (10%), <strong>Forensic Evidence ID (≥15% VSH)</strong>, High-Security ID (≥25% VSH)</td>
+                    <td>Forensic court admissibility. A suspect's face must occupy ≥15% of vertical frame height for conviction.</td>
                 </tr>
                 <tr>
-                    <td><strong>Observe</strong></td>
-                    <td><strong style="color: #b45309;">≥ 62.5 px/m</strong></td>
-                    <td>Forklift, pallet, and AGV transit tracking; crowd motion flow</td>
-                    <td>Wide FOV (90° - 110°), Cross-Aisles, Staging Bays</td>
-                </tr>
-                <tr>
-                    <td><strong>Detect</strong></td>
-                    <td><strong style="color: #c2410c;">≥ 25 px/m</strong></td>
-                    <td>Presence of human or vehicle in restricted zone, perimeter alarms</td>
-                    <td>Ultra-Wide FOV (106° - 180°), Outer Fence, Roofs</td>
+                    <td><strong>French Standards</strong></td>
+                    <td>Public Municipal</td>
+                    <td><strong style="color: #475569;">px/m (PPM)</strong></td>
+                    <td>Surveillance (30), Reconnaissance (150), <strong>Identification Stricte (300)</strong>, Contrôle d'Accès (800)</td>
+                    <td>Strict French municipal public surveillance regulation integrated into JVSG CCTV design tools.</td>
                 </tr>
             </tbody>
         </table>
 
-        <h3>Optical Mathematics &amp; 3D Ray Occlusion Modeling</h3>
+        <h3>Mathematical Formulations for Multi-Standard &amp; 3D Bird-Eye Mapping</h3>
         <div style="background: #0f172a; color: #38bdf8; padding: 14px; border-radius: 6px; font-family: monospace; font-size: 11px; line-height: 1.5; margin: 10px 0;">
-            1. Ground Pixel Density Formulation:<br>
+            1. Ground Pixel Density Formulation (PPM):<br>
             &nbsp;&nbsp;&nbsp;PPM(D) = Resolution_Width / [ 2 · D · tan(HFOV / 2) ]<br>
             &nbsp;&nbsp;&nbsp;Where D is line-of-sight slant range to target plane (1.5m AFF).<br><br>
-            2. Under-Camera Blind Zone Trigonometry:<br>
+            2. Thermal Camera Johnson's Criteria Line-Pair Formula:<br>
+            &nbsp;&nbsp;&nbsp;N_lp = [ PPM(D) · H_target ] / 2 = [ Res_W · H_target ] / [ 4 · D · tan(HFOV / 2) ]<br>
+            &nbsp;&nbsp;&nbsp;Thermal cameras measure line pairs resolved across a target object (human 1.8m, vehicle 2.3m).<br>
+            &nbsp;&nbsp;&nbsp;Identification requires 6–8 lp; Recognition requires 3–4 lp; Detection requires 1–1.5 lp.<br><br>
+            3. US DHS / NIJ % Vertical Screen Height Formulation:<br>
+            &nbsp;&nbsp;&nbsp;VSH_% = [ H_target / (2 · D · tan(VFOV / 2)) ] × 100%<br>
+            &nbsp;&nbsp;&nbsp;For court-admissible forensic evidence under NIJ standards, face must occupy ≥15% VSH.<br><br>
+            4. 3D Bird Camera View &amp; Under-Camera Blind Zone Trigonometry:<br>
             &nbsp;&nbsp;&nbsp;D_blind = (Mount_Elevation - Target_Elevation) / tan(Tilt_Angle + VFOV / 2)<br>
-            &nbsp;&nbsp;&nbsp;Ensures zero-deadzone handoff between overlapping camera cones.<br><br>
-            3. 3D Ray-Box Slab Intersect Occlusion Analysis:<br>
-            &nbsp;&nbsp;&nbsp;Physical obstacles (pallet racks, robotic cages, columns) cast geometric shadow<br>
-            &nbsp;&nbsp;&nbsp;cones. Longitudinal aisle alignment eliminates rack shadow occlusions along travel lanes.
+            &nbsp;&nbsp;&nbsp;Top-down 3D bird's-eye projection with 3D ray-box slab intersection testing against physical<br>
+            &nbsp;&nbsp;&nbsp;obstacles. Longitudinal aisle aiming eliminates dead-zone occlusions behind storage racks.
         </div>
     </section>
 {% endif %}

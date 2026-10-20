@@ -352,37 +352,43 @@ def render_docx(project: DetVisionProject) -> bytes:
         
         doc.add_paragraph()
 
-        # DORI Optical Standards & Pixel Density Guarantees
-        add_styled_paragraph(doc, "IEC EN 62676-4 Camera Mapping & DORI Resolution Standards", bold=True, size=12)
-        add_styled_paragraph(doc, "All proposed cameras and optics are dimensioned according to international standard IEC EN 62676-4 to guarantee required detection thresholds at operational target heights:", size=10)
+        # Multi-Standard Camera Mapping Frameworks (DORI, OODPCVS, Johnson's, DHS/NIJ, French)
+        add_styled_paragraph(doc, "Multi-Standard Camera Mapping & Resolution Frameworks", bold=True, size=12)
+        add_styled_paragraph(doc, "All proposed cameras and optics are dimensioned according to international standards (IEC 62676-4:2025, US Military NVESD, US DHS/NIJ, and French Municipal Code) to guarantee analytical and forensic precision:", size=10)
         
-        dori_rows = [
-            ["Identify", "≥ 250 px/m", "Facial recognition, license plate extraction (LPR), container serial OCR", "Narrow FOV (≤ 60°), Entry Gates, Ingress Portals"],
-            ["Recognize", "≥ 125 px/m", "PPE detection (high-vis vests, hardhats), personnel safety verification", "Standard FOV (80° - 100°), Storage Aisles, Assembly Workcells"],
-            ["Observe", "≥ 62.5 px/m", "Forklift, pallet jack, and AGV transit tracking; crowd motion analysis", "Wide FOV (90° - 110°), Cross-Corridors, Loading Docks"],
-            ["Detect", "≥ 25 px/m", "Intrusion presence in restricted zones, perimeter motion alarms", "Ultra-Wide FOV (106° - 180°), Outer Fence Perimeter, Roofs"],
+        standards_rows = [
+            ["DORI (IEC 2015)", "Visible Light", "px/m (PPM)", "Detect (25), Observe (62.5), Recognize (125), Identify (250)", "Baseline European CCTV standard for security surveillance & human activity."],
+            ["OODPCVS (IEC 2025)", "Visible Ultra-HD/AI", "px/m (PPM)", "Overview (20), Outline (40), Discern (80), Perceive (125), Characterize (250), Validate (500), Scrutinize (1500)", "Evolution of DORI for 4K/8K AI sensors. Scrutinize tier guarantees passport-grade biometric facial recognition."],
+            ["Johnson's Criteria", "Thermal IR", "Line Pairs (lp)", "Detection (1.0–1.5 lp), Recognition (3.0–4.0 lp), Identification (6.0–8.0 lp)", "US Military thermal imaging standard across target object dimensions (human 1.8m, vehicle 2.3m)."],
+            ["US DHS / NIJ", "Forensic Video", "% Vert Screen Height", "General (5%), Classification (10%), Forensic Evidence ID (≥15% VSH), High-Security ID (≥25% VSH)", "Forensic court admissibility. A suspect's face must occupy ≥15% of vertical frame height for conviction."],
+            ["French Standards", "Public Municipal", "px/m (PPM)", "Surveillance (30), Reconnaissance (150), Identification Stricte (300), Contrôle d'Accès (800)", "French public safety regulation and JVSG CCTV design tool standard."],
         ]
-        add_table_with_style(doc, ["DORI Level", "Min Resolution (PPM)", "Operational Objective", "Recommended Lens / Zone"], dori_rows, [1.1, 1.3, 3.2, 2.4])
+        add_table_with_style(doc, ["Standard", "Domain", "Metric Unit", "Resolution Tiers & Thresholds", "Analytical Objective & Evidence Level"], standards_rows, [1.3, 1.1, 1.1, 2.3, 2.2])
 
         doc.add_paragraph()
 
-        # Optical Physics & 3D Raycasting Occlusion Formulas
-        add_styled_paragraph(doc, "Optical Mathematics & 3D Physical Ray Occlusion Modeling", bold=True, size=12)
+        # Optical Physics, Thermal Line Pairs, VSH & 3D Raycasting Occlusion Formulas
+        add_styled_paragraph(doc, "Mathematical Formulations for Multi-Standard & 3D Bird-Eye Mapping", bold=True, size=12)
         math_text = (
-            "1. Ground Pixel Density Formulation:\n"
+            "1. Ground Pixel Density Formulation (PPM):\n"
             "   PPM(D) = Resolution_Width / [ 2 · D · tan(HFOV / 2) ]\n"
             "   Where D is line-of-sight slant range to target plane (1.5m AFF).\n\n"
-            "2. Under-Camera Blind Zone Trigonometry:\n"
+            "2. Thermal Camera Johnson's Criteria Line-Pair Formula:\n"
+            "   N_lp = [ PPM(D) · H_target ] / 2 = [ Res_W · H_target ] / [ 4 · D · tan(HFOV / 2) ]\n"
+            "   Thermal cameras measure line pairs resolved across a target object (human 1.8m, vehicle 2.3m).\n"
+            "   Identification requires 6–8 lp; Recognition requires 3–4 lp; Detection requires 1–1.5 lp.\n\n"
+            "3. US DHS / NIJ % Vertical Screen Height Formulation:\n"
+            "   VSH_% = [ H_target / (2 · D · tan(VFOV / 2)) ] × 100%\n"
+            "   For court-admissible forensic evidence under NIJ standards, face must occupy ≥15% VSH.\n\n"
+            "4. 3D Bird Camera View & Under-Camera Blind Zone Trigonometry:\n"
             "   D_blind = (Mount_Elevation - Target_Elevation) / tan(Tilt_Angle + VFOV / 2)\n"
-            "   Guarantees zero-deadzone handoff between overlapping camera cones.\n\n"
-            "3. 3D Ray-Box Slab Intersect Occlusion Analysis:\n"
-            "   Physical obstacles (pallet racks, robotic cages, structural columns) cast geometric shadow\n"
-            "   cones. Longitudinal aisle alignment eliminates rack shadow occlusions along travel lanes."
+            "   Top-down 3D bird's-eye projection with 3D ray-box slab intersection testing against physical\n"
+            "   obstacles. Longitudinal aisle aiming eliminates dead-zone occlusions behind storage racks."
         )
         p_math = doc.add_paragraph()
         run_math = p_math.add_run(math_text)
         run_math.font.name = 'Consolas'
-        run_math.font.size = Pt(9.5)
+        run_math.font.size = Pt(9.0)
         run_math.font.color.rgb = RGBColor(0x03, 0x69, 0xA1)
 
         doc.add_page_break()

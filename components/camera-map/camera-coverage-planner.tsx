@@ -60,11 +60,14 @@ import {
   DORI_PPM,
   LEVEL_NAMES,
   refocusLens,
+  type MappingStandard,
+  MAPPING_STANDARDS,
 } from '@/lib/coverage-engine';
 import {
   TopView,
   SideView,
   PerspectiveView,
+  BirdCameraView,
   camColor,
   CAM_COLORS,
   MOUNT_SYMBOLS
@@ -258,7 +261,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
 
   // UI state
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [activeViewTab, setActiveViewTab] = useState<'top' | 'side' | '3d'>('top');
+  const [activeViewTab, setActiveViewTab] = useState<'top' | 'side' | '3d' | 'bird'>('bird');
+  const [activeStandard, setActiveStandard] = useState<MappingStandard>('dori');
   const [activeDetTab, setActiveDetTab] = useState<'table' | 'list' | 'obstacles' | 'reco' | 'legend'>('table');
   const [heatMode, setHeatMode] = useState<'dori' | 'overlap'>('dori');
   const [isOptimizing, setIsOptimizing] = useState(false);
@@ -571,11 +575,11 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     </div>` : ''}
   </div>
 
-  <!-- PART 0B: OPTICAL DORI STANDARDS & 3D MAPPING TECHNIQUES -->
+  <!-- PART 0B: OPTICAL DORI STANDARDS, THERMAL JOHNSON'S CRITERIA & 3D MAPPING TECHNIQUES -->
   <div class="section-card">
     <div class="section-title">
-      <span>📐 PART 0B: 3D Visualizations &amp; Camera Mapping Techniques</span>
-      <span class="badge badge-green">IEC EN 62676-4 Certified</span>
+      <span>📐 PART 0B: Multi-Standard Optical &amp; Thermal Camera Mapping Frameworks</span>
+      <span class="badge badge-green">IEC 62676-4:2025 · US Military · DHS/NIJ · French Code</span>
     </div>
     
     <!-- Visual DORI Distribution Graph -->
@@ -604,10 +608,63 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       </div>
     </div>
 
-    <!-- Mathematical Formulations -->
+    <!-- Comparative Table of Global CCTV Standards -->
+    <div style="margin-bottom: 12px;">
+      <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 6px;">Global CCTV Standards Matrix &amp; Resolution Criteria:</div>
+      <table style="font-size: 9px; margin: 0;">
+        <thead>
+          <tr style="background: #1e293b; color: #f8fafc;">
+            <th style="padding: 6px;">Standard / Framework</th>
+            <th style="padding: 6px;">Authority &amp; Domain</th>
+            <th style="padding: 6px;">Metric Unit</th>
+            <th style="padding: 6px;">Key Resolution Tiers &amp; Thresholds</th>
+            <th style="padding: 6px;">Application &amp; AI Objectives</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>DORI</strong></td>
+            <td>IEC EN 62676-4:2015 (Visible Light)</td>
+            <td>Pixels / Metre (PPM)</td>
+            <td>Detect (25), Observe (62.5), Recognize (125), Identify (250 px/m)</td>
+            <td>Baseline European CCTV design for security installations &amp; general perimeter monitoring.</td>
+          </tr>
+          <tr style="background: #f8fafc;">
+            <td><strong>OODPCVS (2025)</strong></td>
+            <td>IEC 62676-4:2025 (Ultra-HD / AI)</td>
+            <td>Pixels / Metre (PPM)</td>
+            <td>Overview (20), Outline (40), Discern (80), Perceive (125), Characterize (250), Validate (500), <strong>Scrutinize (1500 px/m)</strong></td>
+            <td>Designed for 4K/8K AI systems. Scrutinize tier guarantees passport-grade 3D biometric facial recognition.</td>
+          </tr>
+          <tr>
+            <td><strong>Johnson's Criteria</strong></td>
+            <td>US Military / NVESD (Thermal IR)</td>
+            <td>Line Pairs (lp) across Target</td>
+            <td><strong>Detection (1.0–1.5 lp)</strong>, <strong>Recognition (3.0–4.0 lp)</strong>, <strong>Identification (6.0–8.0 lp)</strong></td>
+            <td>Military thermal imaging. Evaluates LWIR/MWIR heat signatures across target dimensions (human 1.8m, vehicle 2.3m).</td>
+          </tr>
+          <tr style="background: #f8fafc;">
+            <td><strong>US DHS / NIJ</strong></td>
+            <td>Dept of Homeland Security (Forensic Video)</td>
+            <td>% Vertical Screen Height (% VSH)</td>
+            <td>General (5%), Classification (10%), <strong>Forensic Evidence ID (≥15% VSH)</strong>, High-Security ID (≥25% VSH)</td>
+            <td>Courtroom forensic evidence standard. A suspect's face must occupy ≥15% of vertical frame height for federal prosecution.</td>
+          </tr>
+          <tr>
+            <td><strong>French Standards</strong></td>
+            <td>Ministère de l'Intérieur / CNIL (France)</td>
+            <td>Pixels / Metre (PPM)</td>
+            <td>Surveillance (30), Reconnaissance (150), <strong>Identification Stricte (300)</strong>, Contrôle d'Accès (800 px/m)</td>
+            <td>Strict French municipal public surveillance code and JVSG professional CCTV tool design standard.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Mathematical Formulations Grid -->
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
       <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
-        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">1. IEC EN 62676-4 Pixel Density (PPM) Formula:</div>
+        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">1. Optical Pixel Density (PPM) Formula:</div>
         <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
           PPM(D) = Resolution_W / [ 2 · D · tan(HFOV / 2) ]
         </div>
@@ -617,12 +674,32 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       </div>
 
       <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
-        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">2. 3D Ray-Box Slab Occlusion &amp; Dead-Zone:</div>
+        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">2. Thermal Johnson's Criteria Line-Pair Formula:</div>
+        <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
+          N_lp = [ PPM(D) · H_target ] / 2 = [ Res_W · H_target ] / [ 4 · D · tan(HFOV/2) ]
+        </div>
+        <p style="margin: 0; color: #475569; line-height: 1.4;">
+          Thermal cameras measure line pairs resolved across a target object dimension (human 1.8m, vehicle 2.3m). Identification requires 6–8 line pairs; Recognition requires 3–4 line pairs; Detection requires 1–1.5 line pairs.
+        </p>
+      </div>
+
+      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
+        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">3. US DHS / NIJ % Vertical Screen Height:</div>
+        <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
+          VSH_% = [ H_target / (2 · D · tan(VFOV / 2)) ] × 100%
+        </div>
+        <p style="margin: 0; color: #475569; line-height: 1.4;">
+          Maps camera distance based on vertical frame percentage. For court-admissible forensic evidence under NIJ standards, the target face must occupy at least 15% of the total vertical screen height.
+        </p>
+      </div>
+
+      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
+        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">4. 3D Bird Camera View &amp; Ray-Box Occlusion:</div>
         <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
           D_blind = (Mount_Z - Target_Z) / tan(θ_tilt + VFOV / 2)
         </div>
         <p style="margin: 0; color: #475569; line-height: 1.4;">
-          Computes under-camera blind circles. 3D Ray-slab intersection queries physical bounding boxes (${obstacles.length} obstacles), casting geometric occlusion shadows and eliminating obstructed blind zones through longitudinal aisle aiming.
+          Top-down 3D bird's-eye projection with 3D ray-box slab intersection testing against ${obstacles.length} physical obstacles. Eliminates blind zone occlusions behind storage racks and structural columns via longitudinal aisle aiming.
         </p>
       </div>
     </div>
@@ -1779,6 +1856,17 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
 
                 <div className="flex border-l border-border pl-3 gap-1">
                   <button
+                    onClick={() => setActiveViewTab('bird')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
+                      activeViewTab === 'bird'
+                        ? 'bg-sky-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Bird Camera 3D
+                  </button>
+                  <button
                     onClick={() => setActiveViewTab('top')}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                       activeViewTab === 'top'
@@ -1814,6 +1902,21 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
 
             {/* Canvas Panels */}
             <div className="p-4 bg-slate-100/50">
+              {activeViewTab === 'bird' && (
+                <BirdCameraView
+                  result={result}
+                  poses={poses}
+                  lens={lens}
+                  site={site}
+                  mode={mode}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  heatMode={heatMode}
+                  standard={activeStandard}
+                  onStandardChange={setActiveStandard}
+                />
+              )}
+
               {activeViewTab === 'top' && (
                 <TopView
                   result={result}

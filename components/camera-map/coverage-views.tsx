@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildFrame, sideProfile, clamp, DORI_LEVEL, LEVEL_NAMES,
   type CameraPose, type CoverageResult, type DoriMode, type LensSpec, type Pt, type SiteSpec,
+  type MappingStandard, MAPPING_STANDARDS, computeTargetMetrics, impliedHorizontalPixels,
 } from '@/lib/coverage-engine';
 
 /* ------------------------------------------------------------------ */
@@ -763,6 +764,690 @@ export function PerspectiveView({ result, poses, site, mode, selectedId, heatMod
             {label}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* 3D BIRD CAMERA VIEW — Overhead CCTV Drone Mapping & Animated Visuals*/
+/* ------------------------------------------------------------------ */
+
+function rayIntersectsObstacle(
+  p0: [number, number, number],
+  p1: [number, number, number],
+  o: { x: number; y: number; w: number; d: number; h: number }
+): boolean {
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2];
+  let tmin = 0, tmax = 1;
+  const bmin = [o.x, o.y, 0];
+  const bmax = [o.x + o.w, o.y + o.d, o.h];
+
+  for (let i = 0; i < 3; i++) {
+    const p = p0[i], d = [dx, dy, dz][i];
+    if (Math.abs(d) < 1e-6) {
+      if (p < bmin[i] || p > bmax[i]) return false;
+    } else {
+      const invD = 1 / d;
+      let t1 = (bmin[i] - p) * invD;
+      let t2 = (bmax[i] - p) * invD;
+      if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return false;
+    }
+  }
+  return true;
+}
+
+export function BirdCameraView({
+  result, poses, lens, site, mode, selectedId, onSelect, heatMode,
+  standard: initialStandard = 'dori', onStandardChange,
+}: BaseProps & {
+  heatMode: 'dori' | 'overlap';
+  standard?: MappingStandard;
+  onStandardChange?: (std: MappingStandard) => void;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const width = useElementWidth(wrapRef);
+  const height = width ? clamp(Math.round(width * 0.52), 340, 580) : 380;
+
+  // Camera orientation & view controls
+  const [yaw, setYaw] = useState(-20);
+  const [pitch, setPitch] = useState(68); // High bird's eye tilt
+  const [zoom, setZoom] = useState(1.05);
+  const [isAutoOrbit, setIsAutoOrbit] = useState(false);
+  const [isTargetPatrolling, setIsTargetPatrolling] = useState(true);
+  const [targetType, setTargetType] = useState<'pedestrian' | 'forklift' | 'intruder'>('pedestrian');
+  const [standard, setStandard] = useState<MappingStandard>(initialStandard);
+
+  const L = site.length, W = site.width;
+  const targetH = targetType === 'forklift' ? 2.3 : 1.8;
+  const hpx = useMemo(() => impliedHorizontalPixels(lens), [lens]);
+
+  // Target position state
+  const [targetPos, setTargetPos] = useState<{ x: number; y: number; z: number }>({
+    x: L * 0.35,
+    y: W * 0.45,
+    z: targetH,
+  });
+
+  const dragRef = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
+  const animTimeRef = useRef<number>(0);
+
+  // Sync external standard change
+  useEffect(() => {
+    if (initialStandard && initialStandard !== standard) {
+      setStandard(initialStandard);
+    }
+  }, [initialStandard]);
+
+  const handleStandardSelect = (std: MappingStandard) => {
+    setStandard(std);
+    onStandardChange?.(std);
+  };
+
+  // Find camera with best optical coverage of target
+  const activeCameraTargetInfo = useMemo(() => {
+    let bestCam: CameraPose | null = null;
+    let minOccludedDist = Infinity;
+    let isOccluded = true;
+    let occludingObstacleName: string | null = null;
+
+    poses.forEach(cam => {
+      const dist = Math.hypot(cam.x - targetPos.x, cam.y - targetPos.y, cam.z - targetPos.z);
+      // Raycast test
+      const pCam: [number, number, number] = [cam.x, cam.y, cam.z];
+      const pTar: [number, number, number] = [targetPos.x, targetPos.y, targetPos.z];
+      
+      let occludedBy: string | null = null;
+      for (const obs of site.obstacles) {
+        if (rayIntersectsObstacle(pCam, pTar, obs)) {
+          occludedBy = obs.name;
+          break;
+        }
+      }
+
+      if (!occludedBy && dist < minOccludedDist) {
+        minOccludedDist = dist;
+        bestCam = cam;
+        isOccluded = false;
+        occludingObstacleName = null;
+      } else if (isOccluded && dist < minOccludedDist) {
+        minOccludedDist = dist;
+        bestCam = cam;
+        occludingObstacleName = occludedBy;
+      }
+    });
+
+    const chosenCam = selectedId != null ? (poses.find(p => p.id === selectedId) || bestCam) : bestCam;
+    const chosenDist = chosenCam ? Math.hypot(chosenCam.x - targetPos.x, chosenCam.y - targetPos.y, chosenCam.z - targetPos.z) : 10;
+    
+    // Check occlusion for chosen cam
+    let chosenOccluded = false;
+    let chosenObstacle: string | null = null;
+    if (chosenCam) {
+      const pCam: [number, number, number] = [chosenCam.x, chosenCam.y, chosenCam.z];
+      const pTar: [number, number, number] = [targetPos.x, targetPos.y, targetPos.z];
+      for (const obs of site.obstacles) {
+        if (rayIntersectsObstacle(pCam, pTar, obs)) {
+          chosenOccluded = true;
+          chosenObstacle = obs.name;
+          break;
+        }
+      }
+    }
+
+    const metrics = computeTargetMetrics(chosenDist, hpx, lens.hfovDeg, lens.vfovDeg, targetH);
+    return {
+      camera: chosenCam,
+      distance: chosenDist,
+      isOccluded: chosenOccluded,
+      occludingObstacle: chosenObstacle,
+      metrics,
+    };
+  }, [poses, targetPos, site.obstacles, selectedId, hpx, lens, targetH]);
+
+  // Animation & Rendering Loop
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !width) return;
+    let raf = 0;
+
+    const render = () => {
+      animTimeRef.current += 0.016;
+      const t = animTimeRef.current;
+
+      // Auto flyover orbit
+      if (isAutoOrbit) {
+        setYaw(y => (y + 0.16) % 360);
+      }
+
+      // Automated target patrol route
+      if (isTargetPatrolling) {
+        const pathX = L * 0.5 + Math.sin(t * 0.5) * (L * 0.32);
+        const pathY = W * 0.5 + Math.cos(t * 0.8) * (W * 0.3);
+        setTargetPos({ x: clamp(pathX, 2, L - 2), y: clamp(pathY, 2, W - 2), z: targetH });
+      }
+
+      const ctx = setupCanvas(canvas, width, height);
+      background(ctx, width, height);
+
+      // 3D Projection Matrix
+      const cy = Math.cos(rad(yaw)), sy = Math.sin(rad(yaw));
+      const cp = Math.cos(rad(pitch)), sp = Math.sin(rad(pitch));
+      const zMax = Math.max(site.mountHeight, ...poses.map(p => p.z), ...site.obstacles.map(o => o.h));
+
+      const raw = (x: number, y: number, z: number) => {
+        const X = x - L / 2, Y = y - W / 2;
+        const x1 = X * cy - Y * sy, y1 = X * sy + Y * cy;
+        return { sx: x1, sy: y1 * sp - z * cp, near: -y1 * cp + z * sp };
+      };
+
+      let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+      for (const x of [0, L]) for (const y of [0, W]) for (const z of [0, zMax]) {
+        const q = raw(x, y, z);
+        bx0 = Math.min(bx0, q.sx); bx1 = Math.max(bx1, q.sx); by0 = Math.min(by0, q.sy); by1 = Math.max(by1, q.sy);
+      }
+
+      const scale = Math.min((width - 60) / (bx1 - bx0 || 1), (height - 80) / (by1 - by0 || 1)) * zoom;
+      const ox = width / 2 - ((bx0 + bx1) / 2) * scale, oy = height / 2 + 10 - ((by0 + by1) / 2) * scale;
+      const P = (x: number, y: number, z: number) => {
+        const q = raw(x, y, z);
+        return { x: ox + q.sx * scale, y: oy + q.sy * scale, near: q.near };
+      };
+      const poly = (pts: { x: number; y: number }[]) => {
+        ctx.beginPath();
+        pts.forEach((p, k) => (k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+        ctx.closePath();
+      };
+
+      // 1. Floor grid & subtle heat
+      const bs = Math.max(1, Math.ceil(Math.max(result.cols / 90, result.rows / 40)));
+      for (let j = 0; j < result.rows; j += bs) {
+        for (let i = 0; i < result.cols; i += bs) {
+          const ci = Math.min(result.cols - 1, i + (bs >> 1)), cj = Math.min(result.rows - 1, j + (bs >> 1));
+          const idx = cj * result.cols + ci;
+          const b = result.best[idx];
+          if (b === 255) continue;
+          let col: [number, number, number] = LEVEL_RGB[0], a = 0.22;
+          if (heatMode === 'overlap') {
+            const n = Math.min(3, result.count[idx]);
+            col = OVERLAP_RGB[n]; a = n ? 0.42 : 0.22;
+          } else if (b >= DORI_LEVEL[mode]) {
+            col = LEVEL_RGB[b]; a = 0.45;
+          } else if (b > 0) {
+            col = LEVEL_RGB[b]; a = 0.15;
+          }
+          const x0 = i * result.cellW, y0 = j * result.cellH;
+          const x1 = Math.min(L, (i + bs) * result.cellW), y1 = Math.min(W, (j + bs) * result.cellH);
+          poly([P(x0, y0, 0), P(x1, y0, 0), P(x1, y1, 0), P(x0, y1, 0)]);
+          ctx.fillStyle = rgba(col, a);
+          ctx.fill();
+        }
+      }
+
+      // Floor outline & perimeter boundary
+      poly([P(0, 0, 0), P(L, 0, 0), P(L, W, 0), P(0, W, 0)]);
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Ceiling boundary reference
+      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = 'rgba(148,163,184,0.4)';
+      ctx.lineWidth = 1;
+      for (const [x, y] of [[0, 0], [L, 0], [L, W], [0, W]]) {
+        const a = P(x, y, 0), b = P(x, y, site.mountHeight);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+      poly([P(0, 0, site.mountHeight), P(L, 0, site.mountHeight), P(L, W, site.mountHeight), P(0, W, site.mountHeight)]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Drawables sorted far → near
+      type Drawable = { near: number; draw: () => void };
+      const items: Drawable[] = [];
+
+      // 3D Extruded Obstacles
+      site.obstacles.forEach(o => {
+        const c = P(o.x + o.w / 2, o.y + o.d / 2, o.h / 2);
+        items.push({
+          near: c.near,
+          draw: () => {
+            const x0 = o.x, x1 = o.x + o.w, y0 = o.y, y1 = o.y + o.d, h = o.h;
+            const faces = [
+              { n: [0, 0, 1], pts: [[x0, y0, h], [x1, y0, h], [x1, y1, h], [x0, y1, h]] },
+              { n: [-1, 0, 0], pts: [[x0, y0, 0], [x0, y1, 0], [x0, y1, h], [x0, y0, h]] },
+              { n: [1, 0, 0], pts: [[x1, y0, 0], [x1, y1, 0], [x1, y1, h], [x1, y0, h]] },
+              { n: [0, -1, 0], pts: [[x0, y0, 0], [x1, y0, 0], [x1, y0, h], [x0, y0, h]] },
+              { n: [0, 1, 0], pts: [[x0, y1, 0], [x1, y1, 0], [x1, y1, h], [x0, y1, h]] },
+            ];
+
+            let [bR, bG, bB] = [51, 65, 85];
+            if (o.type === 'rack') [bR, bG, bB] = [30, 41, 59];
+            else if (o.type === 'machine') [bR, bG, bB] = [15, 23, 42];
+            else if (o.type === 'conveyor') [bR, bG, bB] = [14, 116, 144];
+            else if (o.type === 'hazard') [bR, bG, bB] = [159, 18, 57];
+            else if (o.type === 'dock') [bR, bG, bB] = [161, 98, 7];
+
+            faces.forEach(f => {
+              const n1y = f.n[0] * sy + f.n[1] * cy;
+              const facing = -n1y * cp + f.n[2] * sp;
+              if (facing <= 0) return;
+              poly(f.pts.map(([x, y, z]) => P(x, y, z)));
+              const shade = f.n[2] ? 1.35 : 0.7 + 0.3 * facing;
+              ctx.fillStyle = `rgba(${Math.min(255, Math.round(bR * shade))},${Math.min(255, Math.round(bG * shade))},${Math.min(255, Math.round(bB * shade))},0.96)`;
+              ctx.fill();
+              ctx.strokeStyle = f.n[2] ? 'rgba(255,255,255,0.3)' : 'rgba(148,163,184,0.45)';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            });
+          },
+        });
+      });
+
+      // 3D Cameras & Volumetric Radar Cones
+      poses.forEach((p, i) => {
+        const st = result.cameras[i];
+        const col = camColor(p.id);
+        const sel = selectedId == null || selectedId === p.id;
+        const top = P(p.x, p.y, p.z);
+
+        items.push({
+          near: top.near,
+          draw: () => {
+            const fp = st?.footprint ?? [];
+            if (fp.length > 2) {
+              const ring = fp.map(q => P(q.x, q.y, site.targetHeight));
+              poly(ring);
+              ctx.fillStyle = hexA(col, sel ? 0.22 : 0.08);
+              ctx.fill();
+              ctx.strokeStyle = hexA(col, sel ? 0.9 : 0.35);
+              ctx.lineWidth = 1.2;
+              ctx.stroke();
+
+              // Concentric radar scan wave pulse
+              const pulsePhase = (t * 1.5 + i * 0.3) % 1;
+              const midRing = ring.map(q => ({
+                x: top.x + (q.x - top.x) * pulsePhase,
+                y: top.y + (q.y - top.y) * pulsePhase,
+              }));
+              poly(midRing);
+              ctx.strokeStyle = hexA(col, (1 - pulsePhase) * (sel ? 0.8 : 0.4));
+              ctx.lineWidth = 1.5;
+              ctx.stroke();
+
+              // Conical FOV rays
+              const spokes = fp.length > 6 ? ring.filter((_, k) => k % Math.ceil(fp.length / 6) === 0) : ring;
+              ctx.strokeStyle = hexA(col, sel ? 0.45 : 0.15);
+              ctx.lineWidth = 1;
+              spokes.forEach(q => {
+                ctx.beginPath();
+                ctx.moveTo(top.x, top.y);
+                ctx.lineTo(q.x, q.y);
+                ctx.stroke();
+              });
+            }
+
+            // Mount dropper pole
+            const base = P(p.x, p.y, 0);
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(top.x, top.y); ctx.stroke();
+
+            // Camera Housing Dome
+            ctx.save();
+            ctx.shadowBlur = 16;
+            ctx.shadowColor = col;
+            ctx.beginPath();
+            ctx.arc(top.x, top.y, 7.5, 0, Math.PI * 2);
+            ctx.fillStyle = col;
+            ctx.fill();
+            ctx.restore();
+
+            ctx.strokeStyle = selectedId === p.id ? '#ffffff' : '#0f172a';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(top.x, top.y, 7.5, 0, Math.PI * 2); ctx.stroke();
+
+            ctx.fillStyle = '#0b0d12';
+            ctx.font = '700 8px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(p.id), top.x, top.y + 0.5);
+
+            if (selectedId === p.id || poses.length <= 16) {
+              ctx.fillStyle = col;
+              ctx.font = '700 9px ui-monospace, monospace';
+              ctx.fillText(`C${p.id} (${p.z}m)`, top.x, top.y - 12);
+            }
+          },
+        });
+      });
+
+      // Animated Target (Patrolling human / forklift / intruder)
+      const targetProj = P(targetPos.x, targetPos.y, targetPos.z);
+      const targetBase = P(targetPos.x, targetPos.y, 0);
+
+      items.push({
+        near: targetProj.near,
+        draw: () => {
+          // Ground shadow / tracking ring
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(targetBase.x, targetBase.y, 14, 7, 0, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(15,23,42,0.4)';
+          ctx.fill();
+
+          // Pulsing target perimeter ring
+          const ringPulse = (t * 2) % 1;
+          ctx.beginPath();
+          ctx.ellipse(targetBase.x, targetBase.y, 14 + ringPulse * 16, 7 + ringPulse * 8, 0, 0, Math.PI * 2);
+          ctx.strokeStyle = activeCameraTargetInfo.isOccluded ? 'rgba(239,68,68,0.7)' : 'rgba(34,211,238,0.8)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.restore();
+
+          // Target Body Icon & Pin
+          ctx.strokeStyle = '#0284c7';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(targetBase.x, targetBase.y); ctx.lineTo(targetProj.x, targetProj.y); ctx.stroke();
+
+          ctx.save();
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = activeCameraTargetInfo.isOccluded ? '#ef4444' : '#00e5ff';
+          ctx.beginPath();
+          ctx.arc(targetProj.x, targetProj.y, 9, 0, Math.PI * 2);
+          ctx.fillStyle = activeCameraTargetInfo.isOccluded ? '#ef4444' : '#00e5ff';
+          ctx.fill();
+          ctx.restore();
+
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(targetProj.x, targetProj.y, 9, 0, Math.PI * 2); ctx.stroke();
+
+          // Target Symbol
+          ctx.fillStyle = '#0f172a';
+          ctx.font = '10px ui-sans-serif, system-ui';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const symbol = targetType === 'forklift' ? '🚜' : targetType === 'intruder' ? '⚠️' : '👷';
+          ctx.fillText(symbol, targetProj.x, targetProj.y);
+
+          // Target Label Badge
+          ctx.fillStyle = '#0f172a';
+          ctx.font = '700 9px ui-monospace, monospace';
+          ctx.fillText(
+            `TARGET [${targetPos.x.toFixed(1)}m, ${targetPos.y.toFixed(1)}m]`,
+            targetProj.x,
+            targetProj.y - 14
+          );
+        },
+      });
+
+      // Sort & Draw 3D Entities
+      items.sort((a, b) => a.near - b.near).forEach(d => d.draw());
+
+      // 4. Active Raycast Line from Camera to Target
+      if (activeCameraTargetInfo.camera) {
+        const camP = P(
+          activeCameraTargetInfo.camera.x,
+          activeCameraTargetInfo.camera.y,
+          activeCameraTargetInfo.camera.z
+        );
+        const tarP = P(targetPos.x, targetPos.y, targetPos.z);
+
+        ctx.save();
+        if (activeCameraTargetInfo.isOccluded) {
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = 'rgba(239,68,68,0.9)';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(camP.x, camP.y); ctx.lineTo(tarP.x, tarP.y); ctx.stroke();
+
+          // Obstacle warning tag midway
+          const midX = (camP.x + tarP.x) / 2, midY = (camP.y + tarP.y) / 2;
+          ctx.fillStyle = 'rgba(239,68,68,0.95)';
+          ctx.font = '700 8px ui-monospace, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(`OCCLUDED BY ${activeCameraTargetInfo.occludingObstacle || 'OBSTACLE'}`, midX, midY - 6);
+        } else {
+          // Clear line-of-sight laser
+          ctx.strokeStyle = 'rgba(34,211,238,0.95)';
+          ctx.lineWidth = 2.2;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = '#00e5ff';
+          ctx.beginPath(); ctx.moveTo(camP.x, camP.y); ctx.lineTo(tarP.x, tarP.y); ctx.stroke();
+
+          // Laser pulse bead traveling along the ray
+          const laserPhase = (t * 2) % 1;
+          const beadX = camP.x + (tarP.x - camP.x) * laserPhase;
+          const beadY = camP.y + (tarP.y - camP.y) * laserPhase;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(beadX, beadY, 3.5, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // Title & Overview
+      title(
+        ctx,
+        "3D BIRD'S EYE CAMERA MAPPING",
+        `${L}m × ${W}m · H=${site.mountHeight}m · Drag to orbit · Scroll to zoom`,
+        18,
+        22
+      );
+
+      raf = requestAnimationFrame(render);
+    };
+
+    raf = requestAnimationFrame(render);
+    return () => cancelAnimationFrame(raf);
+  }, [
+    width, height, yaw, pitch, zoom, isAutoOrbit, isTargetPatrolling, targetPos,
+    targetType, poses, result, site, selectedId, heatMode, mode, L, W, targetH,
+    activeCameraTargetInfo,
+  ]);
+
+  // Mouse wheel zoom
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom(z => clamp(z * (e.deltaY > 0 ? 0.9 : 1.1), 0.4, 5));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const metrics = activeCameraTargetInfo.metrics;
+  const activeStdDef = MAPPING_STANDARDS[standard] || MAPPING_STANDARDS.dori;
+
+  return (
+    <div ref={wrapRef} className="relative w-full select-none rounded-xl border border-border bg-slate-900 shadow-sm overflow-hidden">
+      {/* Top Tactical Controls Bar */}
+      <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+        {/* Left: Mode indicator & Target Selector */}
+        <div className="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-lg border border-slate-700/60 shadow-md pointer-events-auto">
+          <div className="flex items-center gap-1 px-2 text-[10px] font-mono font-bold text-sky-400">
+            <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+            BIRD 3D
+          </div>
+          <div className="h-3.5 w-px bg-slate-800" />
+          <button
+            type="button"
+            onClick={() => setIsAutoOrbit(v => !v)}
+            className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
+              isAutoOrbit ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            {isAutoOrbit ? '⏸ Orbiting' : '▶ Flyover Orbit'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsTargetPatrolling(v => !v)}
+            className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
+              isTargetPatrolling ? 'bg-emerald-500 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            {isTargetPatrolling ? '⏸ Target Moving' : '▶ Patrol Target'}
+          </button>
+          <div className="h-3.5 w-px bg-slate-800" />
+          <div className="flex gap-1">
+            {(['pedestrian', 'forklift', 'intruder'] as const).map(type => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => setTargetType(type)}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
+                  targetType === type ? 'bg-slate-700 text-white font-bold' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {type === 'pedestrian' ? '👷 Worker' : type === 'forklift' ? '🚜 Forklift' : '⚠️ Intruder'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Right: Standards Framework Switcher */}
+        <div className="flex items-center gap-1 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-lg border border-slate-700/60 shadow-md pointer-events-auto">
+          <span className="text-[10px] font-mono font-bold text-slate-400 px-1">FRAMEWORK:</span>
+          {(['dori', 'oodpcvs', 'johnson', 'dhs_nij', 'french'] as MappingStandard[]).map(s => {
+            const isSel = standard === s;
+            const label = s === 'dori' ? 'DORI' : s === 'oodpcvs' ? 'OODPCVS (2025)' : s === 'johnson' ? "Johnson's Criteria" : s === 'dhs_nij' ? 'US DHS / NIJ' : 'French (FR)';
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => handleStandardSelect(s)}
+                className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
+                  isSel ? 'bg-primary text-primary-foreground shadow-xs' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3D Canvas */}
+      <canvas
+        ref={canvasRef}
+        className="block w-full touch-none cursor-grab active:cursor-grabbing bg-slate-950"
+        onPointerDown={e => {
+          dragRef.current = { x: e.clientX, y: e.clientY, yaw, pitch };
+          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={e => {
+          const d = dragRef.current;
+          if (!d) return;
+          setYaw(d.yaw + (e.clientX - d.x) * 0.4);
+          setPitch(clamp(d.pitch + (e.clientY - d.y) * 0.3, 15, 89));
+        }}
+        onPointerUp={() => { dragRef.current = null; }}
+      />
+
+      {/* Bottom Floating Live Analysis HUD */}
+      <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-end justify-between gap-3 pointer-events-none">
+        {/* Left: Active Camera & Target Resolution HUD */}
+        <div className="bg-slate-950/90 backdrop-blur-md p-3 rounded-xl border border-slate-700/70 shadow-xl max-w-md pointer-events-auto">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-[11px] font-mono font-bold text-slate-200">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${activeCameraTargetInfo.isOccluded ? 'bg-rose-500' : 'bg-emerald-400'}`} />
+              <span>{activeCameraTargetInfo.camera ? `Camera C${activeCameraTargetInfo.camera.id}` : 'No Camera'} → Target</span>
+            </div>
+            <span className="text-slate-400">{activeCameraTargetInfo.distance.toFixed(1)}m slant dist</span>
+          </div>
+
+          {activeCameraTargetInfo.isOccluded ? (
+            <div className="text-[11px] font-mono text-rose-400 flex items-center gap-1.5 py-1">
+              <span>⚠️</span>
+              <span><strong>Line of sight blocked</strong> by {activeCameraTargetInfo.occludingObstacle || 'physical obstacle'}. Dead zone detected!</span>
+            </div>
+          ) : (
+            <div className="space-y-1.5 text-[11px] font-mono">
+              {/* Dynamic metric view depending on selected standard */}
+              {standard === 'dori' && (
+                <div className="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
+                  <span className="text-slate-400">DORI Standard (EN 62676-4):</span>
+                  <span className="font-bold text-sky-400">{metrics.ppm} px/m [{metrics.dori.name.toUpperCase()}]</span>
+                </div>
+              )}
+
+              {standard === 'oodpcvs' && (
+                <div className="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
+                  <span className="text-slate-400">IEC 62676-4:2025 Tier:</span>
+                  <span className="font-bold text-violet-400">{metrics.oodpcvs.code} {metrics.oodpcvs.name} ({metrics.ppm} px/m)</span>
+                </div>
+              )}
+
+              {standard === 'johnson' && (
+                <div className="space-y-1 bg-slate-900/90 p-2 rounded border border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Thermal Johnson's Criteria:</span>
+                    <span className="font-bold text-amber-400">{metrics.johnson.linePairs} line pairs</span>
+                  </div>
+                  <div className="text-[10px] text-slate-300">
+                    Military Thermal Level: <strong className="text-amber-300">{metrics.johnson.level}</strong> (human {targetH}m)
+                  </div>
+                </div>
+              )}
+
+              {standard === 'dhs_nij' && (
+                <div className="space-y-1 bg-slate-900/90 p-2 rounded border border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">US DHS / NIJ VSH %:</span>
+                    <span className={`font-bold ${metrics.dhsNij.isForensicLegal ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {metrics.dhsNij.vshPct}% Vertical Screen Height
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-300">
+                    Forensic Status: {metrics.dhsNij.isForensicLegal ? '✅ Court Admissible Forensic Evidence' : '⚠️ Investigative Lead Only (<15%)'}
+                  </div>
+                </div>
+              )}
+
+              {standard === 'french' && (
+                <div className="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
+                  <span className="text-slate-400">French Surveillance Code:</span>
+                  <span className="font-bold text-sky-300">{metrics.french.level}</span>
+                </div>
+              )}
+
+              <div className="text-[9px] text-slate-500 pt-0.5">
+                {activeStdDef.description}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Camera Angle Presets & Reset */}
+        <div className="flex gap-1 bg-slate-950/85 backdrop-blur-md p-1 rounded-lg border border-slate-700/60 shadow-md pointer-events-auto">
+          {[
+            ['Overhead Nadir (89°)', 0, 89],
+            ['Bird-Eye (68°)', -20, 68],
+            ['Tactical Iso (35°)', -28, 35],
+          ].map(([label, y, p]) => (
+            <button
+              key={label as string}
+              type="button"
+              onClick={() => { setYaw(y as number); setPitch(p as number); setZoom(1.05); }}
+              className="rounded bg-slate-900 border border-slate-800 px-2 py-1 font-mono text-[10px] font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            >
+              {label as string}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => { setZoom(1); setYaw(-20); setPitch(68); }}
+            className="rounded bg-slate-800 px-2 py-1 font-mono text-[10px] font-semibold text-slate-200 hover:text-white"
+            title="Reset Zoom"
+          >
+            Reset
+          </button>
+        </div>
       </div>
     </div>
   );

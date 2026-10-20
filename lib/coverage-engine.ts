@@ -1368,7 +1368,10 @@ export type FacilityPresetType =
   | 'retail_supermarket'
   | 'data_center'
   | 'perimeter_security'
-  | 'corporate_office';
+  | 'corporate_office'
+  | 'airport_terminal'
+  | 'hospital_clinic'
+  | 'cleanroom_lab';
 
 export interface ProceduralFacilityConfig {
   type: FacilityPresetType;
@@ -1642,6 +1645,165 @@ export function generateProceduralObstacles(config: ProceduralFacilityConfig): O
         type: 'rack',
       });
     }
+  } else if (type === 'airport_terminal') {
+    // Luggage baggage claim carousel loops, TSA checkpoint, and boarding desks
+    // Baggage Carousel 1 (loop conveyor)
+    obstacles.push({
+      id: `carousel-1-${obsId++}`,
+      name: 'Baggage Claim Carousel Loop A',
+      x: L * 0.15,
+      y: W * 0.22,
+      w: L * 0.32,
+      d: 4.5,
+      h: 0.95,
+      type: 'conveyor',
+    });
+    // Baggage Carousel 2
+    obstacles.push({
+      id: `carousel-2-${obsId++}`,
+      name: 'Baggage Claim Carousel Loop B',
+      x: L * 0.55,
+      y: W * 0.22,
+      w: L * 0.32,
+      d: 4.5,
+      h: 0.95,
+      type: 'conveyor',
+    });
+    // TSA Security Portal & X-ray baggage scanners
+    obstacles.push({
+      id: `tsa-xray-${obsId++}`,
+      name: 'Baggage X-Ray Scanner & Portal',
+      x: L * 0.35,
+      y: W * 0.65,
+      w: 3.5,
+      d: 6.0,
+      h: 2.2,
+      type: 'machine',
+    });
+    // Passenger stanchion queue dividers
+    obstacles.push({
+      id: `stanchions-${obsId++}`,
+      name: 'Passenger Queue Stanchions',
+      x: L * 0.12,
+      y: W * 0.68,
+      w: L * 0.2,
+      d: 0.4,
+      h: 1.05,
+      type: 'partition',
+    });
+    // Check-in & Customer Service Counter
+    obstacles.push({
+      id: `checkin-counter-${obsId++}`,
+      name: 'Airline Service & Boarding Counter',
+      x: L * 0.65,
+      y: W * 0.68,
+      w: L * 0.25,
+      d: 1.6,
+      h: 1.15,
+      type: 'partition',
+    });
+  } else if (type === 'hospital_clinic') {
+    // Nurse station, triage partitions, emergency diagnostic imaging
+    // Central Nurse Station Command Desk
+    obstacles.push({
+      id: `nurse-station-${obsId++}`,
+      name: 'Central Nurse Station Command Desk',
+      x: L * 0.38,
+      y: W * 0.38,
+      w: 6.0,
+      d: 4.2,
+      h: 1.2,
+      type: 'partition',
+    });
+    // Triage Bed Bays 1 & 2
+    obstacles.push({
+      id: `triage-bay-1-${obsId++}`,
+      name: 'Triage Patient Bay 1',
+      x: L * 0.12,
+      y: W * 0.18,
+      w: 4.5,
+      d: 3.0,
+      h: 1.0,
+      type: 'rack',
+    });
+    obstacles.push({
+      id: `triage-bay-2-${obsId++}`,
+      name: 'Triage Patient Bay 2',
+      x: L * 0.12,
+      y: W * 0.58,
+      w: 4.5,
+      d: 3.0,
+      h: 1.0,
+      type: 'rack',
+    });
+    // Privacy Curtain Partitions
+    obstacles.push({
+      id: `curtain-1-${obsId++}`,
+      name: 'Triage Privacy Partition',
+      x: L * 0.12,
+      y: W * 0.45,
+      w: 5.0,
+      d: 0.2,
+      h: 2.5,
+      type: 'wall',
+    });
+    // Mobile Diagnostic & Crash Cart Station
+    obstacles.push({
+      id: `diag-cart-${obsId++}`,
+      name: 'Mobile Ultrasound & Crash Cart',
+      x: L * 0.72,
+      y: W * 0.42,
+      w: 2.2,
+      d: 2.2,
+      h: 1.8,
+      type: 'machine',
+    });
+  } else if (type === 'cleanroom_lab') {
+    // Semiconductor / pharma cleanroom photolithography, wafer steppers, airlocks
+    // Cleanroom Air Shower & Airlock Vestibule
+    obstacles.push({
+      id: `airlock-${obsId++}`,
+      name: 'Airlock Decontamination Vestibule',
+      x: L * 0.08,
+      y: W * 0.35,
+      w: 3.5,
+      d: 4.5,
+      h: 3.0,
+      type: 'wall',
+    });
+    // Wafer Stepper / Photolithography Tool 1
+    obstacles.push({
+      id: `stepper-1-${obsId++}`,
+      name: 'Automated Photolithography Tool #1',
+      x: L * 0.35,
+      y: W * 0.22,
+      w: 5.5,
+      d: 3.8,
+      h: 2.6,
+      type: 'machine',
+    });
+    // Chemical Fume Hood & Wet Bench
+    obstacles.push({
+      id: `fume-hood-${obsId++}`,
+      name: 'Exhaust Fume Hood & Chemical Bench',
+      x: L * 0.35,
+      y: W * 0.62,
+      w: 6.0,
+      d: 2.4,
+      h: 2.5,
+      type: 'machine',
+    });
+    // Laminar Flow Workstation Line
+    obstacles.push({
+      id: `laminar-bench-${obsId++}`,
+      name: 'Laminar Airflow Workstation Run',
+      x: L * 0.7,
+      y: W * 0.3,
+      w: 3.2,
+      d: 5.5,
+      h: 2.2,
+      type: 'rack',
+    });
   }
 
   return obstacles;

@@ -21,7 +21,13 @@ import {
   Server,
   Shield,
   Briefcase,
+  Plane,
+  HeartPulse,
+  Sparkles,
   ChevronDown,
+  RefreshCw,
+  Box,
+  Compass,
 } from 'lucide-react';
 import {
   clamp,
@@ -33,9 +39,11 @@ import {
   type TargetEvaluation,
   type SiteSpec,
   type LensSpec,
+  type FacilityPresetType,
   evaluateTargetPoint3D,
   computeSensorFov,
   obstaclesTo3D,
+  generateProceduralObstacles,
   AI_MODEL_FEASIBILITY_CRITERIA,
 } from '@/lib/coverage-engine';
 
@@ -46,7 +54,11 @@ export type ScenarioArchetype =
   | 'retail_supermarket'   // Gondola shelving runs & POS registers
   | 'data_center'          // Server rack rows with LED arrays & CRAC units
   | 'perimeter_security'   // Fence line, automated gate & vehicle access
-  | 'corporate_office';    // Reception lobby, glass partitions & turnstiles
+  | 'corporate_office'     // Reception lobby, glass partitions & turnstiles
+  | 'airport_terminal'     // Baggage carousel, security portals & passenger queues
+  | 'hospital_clinic'      // Nurse station, triage bays & diagnostic cart
+  | 'cleanroom_lab'        // Cleanroom fab, airlocks, wafer tools & laminar hoods
+  | 'custom_ai';           // AI-synthesized custom 3D facility
 
 export interface FrustumSpatialInspectorProps {
   site?: SiteSpec;
@@ -61,6 +73,7 @@ export interface FrustumSpatialInspectorProps {
   initialAzimuth?: number;
   resolutionName?: '2MP' | '4MP' | '5MP' | '8MP 4K' | '12MP';
   onSpecsChange?: (specs: { focalMm: number; mountHeight: number; tiltDeg: number; azimuthDeg: number }) => void;
+  onSynthesizeScenario?: (prompt: string) => Promise<void>;
 }
 
 export function FrustumSpatialInspector({
@@ -76,6 +89,7 @@ export function FrustumSpatialInspector({
   initialAzimuth = 45,
   resolutionName = '8MP 4K',
   onSpecsChange,
+  onSynthesizeScenario,
 }: FrustumSpatialInspectorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -85,6 +99,16 @@ export function FrustumSpatialInspector({
   const [activeScenario, setActiveScenario] = useState<ScenarioArchetype>(
     hasProjectObstacles ? 'project' : (facilityType as ScenarioArchetype) || 'logistics_warehouse'
   );
+
+  // Custom AI Scenario Synthesis state
+  const [aiPromptInput, setAiPromptInput] = useState('');
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [customAiObstacles, setCustomAiObstacles] = useState<Obstacle[] | null>(null);
+
+  // Room Dimensions (Adapts directly to user's site)
+  const roomLength = Math.max(12, site?.length ?? 40);
+  const roomWidth = Math.max(8, site?.width ?? 20);
+  const roomCeiling = Math.max(3.2, site?.mountHeight ?? 4.5);
 
   // Sync selected camera from props
   const activeCamera = useMemo(() => {
@@ -100,12 +124,12 @@ export function FrustumSpatialInspector({
   const [tiltDeg, setTiltDeg] = useState<number>(activeCamera?.tiltDeg ?? initialTilt);
   const [azimuthDeg, setAzimuthDeg] = useState<number>(activeCamera?.panDeg ?? initialAzimuth);
 
-  // Synchronize when activeCamera changes
+  // Sync with active camera prop changes
   useEffect(() => {
     if (activeCamera) {
-      setMountHeightM(activeCamera.z);
-      setTiltDeg(activeCamera.tiltDeg);
-      setAzimuthDeg(activeCamera.panDeg);
+      if (activeCamera.z != null) setMountHeightM(activeCamera.z);
+      if (activeCamera.tiltDeg != null) setTiltDeg(activeCamera.tiltDeg);
+      if (activeCamera.panDeg != null) setAzimuthDeg(activeCamera.panDeg);
     }
   }, [activeCamera]);
 
@@ -113,40 +137,50 @@ export function FrustumSpatialInspector({
     if (lens?.focalMm) {
       setFocalLengthMm(lens.focalMm);
     }
-  }, [lens]);
+  }, [lens?.focalMm]);
 
-  // Target & Animation Controls
-  const [targetRole, setTargetRole] = useState<string>('primary');
-  const [targetSpeed, setTargetSpeed] = useState<number>(1.4); // m/s
+  // 3D Orbit Camera Controls
+  const [yaw, setYaw] = useState<number>(42);
+  const [pitch, setPitch] = useState<number>(26);
+  const [zoom, setZoom] = useState<number>(1.0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const lastMousePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Animation & Dynamic Actor state
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  const [showPip, setShowPip] = useState<boolean>(true);
-
-  // 3D Viewport Orbit State
-  const [yaw, setYaw] = useState<number>(-38);
-  const [pitch, setPitch] = useState<number>(24);
-  const [zoom, setZoom] = useState<number>(1.1);
-  const dragRef = useRef<{ x: number; y: number; yaw: number; pitch: number; moved: boolean } | null>(null);
-
-  // Animation timeline
+  const [targetSpeed, setTargetSpeed] = useState<number>(0.65);
   const animTimeRef = useRef<number>(0);
+  const [targetRole, setTargetRole] = useState<'primary' | 'vehicle' | 'intruder'>('primary');
 
-  // Physical Sensor Dimensions
+  // UI Panels state
+  const [showHUD, setShowHUD] = useState<boolean>(true);
+  const [showPiP, setShowPiP] = useState<boolean>(true);
+  const [showFeasibilityMatrix, setShowFeasibilityMatrix] = useState<boolean>(true);
+  const [showAllCamerasIn3D, setShowAllCamerasIn3D] = useState<boolean>(true);
+
+  // Resolution to Sensor Specs Mapping
   const sensorSpec = useMemo(() => {
-    if (resolutionName === '12MP') return { wMm: 7.6, hMm: 5.7, resW: 4000, resH: 3000 };
-    if (resolutionName === '8MP 4K') return { wMm: 7.18, hMm: 4.04, resW: 3840, resH: 2160 };
-    if (resolutionName === '5MP') return { wMm: 5.7, hMm: 4.28, resW: 2592, resH: 1944 };
-    if (resolutionName === '4MP') return { wMm: 5.38, hMm: 3.02, resW: 2688, resH: 1520 };
-    return { wMm: 5.14, hMm: 2.89, resW: 1920, resH: 1080 }; // 2MP
+    switch (resolutionName) {
+      case '2MP':
+        return { resW: 1920, resH: 1080, wMm: 5.37, hMm: 3.02 };
+      case '5MP':
+        return { resW: 2592, resH: 1944, wMm: 5.76, hMm: 4.32 };
+      case '12MP':
+        return { resW: 4000, resH: 3000, wMm: 7.4, hMm: 5.55 };
+      case '8MP 4K':
+      default:
+        return { resW: 3840, resH: 2160, wMm: 6.4, hMm: 3.6 };
+    }
   }, [resolutionName]);
 
-  const fov = useMemo(
-    () => computeSensorFov(sensorSpec.wMm, sensorSpec.hMm, focalLengthMm),
-    [sensorSpec, focalLengthMm]
-  );
+  // Compute Sensor FOV
+  const fov = useMemo(() => {
+    return computeSensorFov(sensorSpec.wMm, sensorSpec.hMm, focalLengthMm);
+  }, [sensorSpec, focalLengthMm]);
 
-  // Camera Specification for Engine
-  const cameraSpec: CameraSpec = useMemo(() => {
-    const pos = activeCamera
+  // Full Camera Specification Object
+  const cameraSpec = useMemo<CameraSpec>(() => {
+    const pos: Vec3 = activeCamera
       ? { x: activeCamera.x, y: activeCamera.y, z: mountHeightM }
       : { x: 3.5, y: 3.5, z: mountHeightM };
 
@@ -164,24 +198,24 @@ export function FrustumSpatialInspector({
     };
   }, [activeCamera, mountHeightM, azimuthDeg, tiltDeg, focalLengthMm, sensorSpec]);
 
-  // Scenario Definitions & Target Options
+  // Scenario Definitions with Rich Contextual Targets
   const scenarioOptions = useMemo(() => [
     {
       id: 'project' as const,
-      name: site?.obstacles && site.obstacles.length > 0 ? `Active Project Plan (${site.obstacles.length} Obstacles)` : 'Active Project Plan',
+      name: site?.obstacles && site.obstacles.length > 0 ? `Active Project Blueprint (${site.obstacles.length} Obstacles)` : 'Active Project Blueprint',
       icon: '📐',
-      description: 'Your real-time customized floor plan obstacles, dimensions, and camera mounts.',
+      description: 'Direct 3D visualization of your uploaded floor plan, custom obstacles, and exact camera mounts.',
       targets: [
         { id: 'primary', label: '👷 Site Worker', icon: '👷', height: 1.7, speed: 1.4 },
         { id: 'vehicle', label: '🚜 Site Equipment', icon: '🚜', height: 2.2, speed: 3.2 },
-        { id: 'intruder', label: '⚠️ Unauthorized Intruder', icon: '⚠️', height: 1.75, speed: 1.8 },
+        { id: 'intruder', label: '⚠️ Unauthorized Person', icon: '⚠️', height: 1.75, speed: 1.8 },
       ],
     },
     {
       id: 'logistics_warehouse' as const,
       name: 'Logistics Warehouse & Distribution',
       icon: '📦',
-      description: 'Dual-bank high-bay pallet racking aisles, AGV transit lanes, and forklift traffic.',
+      description: 'High-bay pallet racks, forklift lanes, loading dock doors, and column grids.',
       targets: [
         { id: 'primary', label: '👷 Warehouse Worker', icon: '👷', height: 1.7, speed: 1.4 },
         { id: 'vehicle', label: '🚜 High-Reach Forklift', icon: '🚜', height: 2.3, speed: 3.5 },
@@ -192,7 +226,7 @@ export function FrustumSpatialInspector({
       id: 'manufacturing_plant' as const,
       name: 'Manufacturing & Robotic Assembly',
       icon: '🏭',
-      description: 'Automated conveyor lines, robotic CNC workcells, and worker safety zones.',
+      description: 'Assembly conveyor lines, enclosed robotic workcells, CNC machines, and safety fences.',
       targets: [
         { id: 'primary', label: '👷 Assembly Operator', icon: '👷', height: 1.7, speed: 1.2 },
         { id: 'vehicle', label: '🤖 Autonomous Mobile Robot', icon: '🤖', height: 1.4, speed: 2.0 },
@@ -203,7 +237,7 @@ export function FrustumSpatialInspector({
       id: 'retail_supermarket' as const,
       name: 'Retail Supermarket & Store',
       icon: '🛒',
-      description: 'Gondola shelving runs, checkout counter bank, and customer queue aisles.',
+      description: 'Multi-tier retail gondolas, checkout POS counters, and customer queue aisles.',
       targets: [
         { id: 'primary', label: '🛒 Store Shopper', icon: '🛒', height: 1.65, speed: 1.1 },
         { id: 'vehicle', label: '👤 Cashier / Staff', icon: '👤', height: 1.6, speed: 0.8 },
@@ -214,7 +248,7 @@ export function FrustumSpatialInspector({
       id: 'data_center' as const,
       name: 'Data Center Server Hall',
       icon: '🖥️',
-      description: 'High-density server cabinets with LED status lights, cold aisle doors, and CRAC cooling.',
+      description: 'High-density 42U server cabinets with status LEDs, cold-aisle containment, and CRAC units.',
       targets: [
         { id: 'primary', label: '🧑‍💻 Systems Engineer', icon: '🧑‍💻', height: 1.72, speed: 1.2 },
         { id: 'vehicle', label: '🤖 Server Cart / Lift', icon: '🤖', height: 1.5, speed: 1.5 },
@@ -223,9 +257,9 @@ export function FrustumSpatialInspector({
     },
     {
       id: 'perimeter_security' as const,
-      name: 'Perimeter & Access Control',
+      name: 'Perimeter Defense & Access Control',
       icon: '🛡️',
-      description: 'Fence boundary tripwire, motorized boom barrier gate, and vehicle entry.',
+      description: 'Chain-link fence lines, automated sliding vehicle gate, guardhouse, and vehicle barrier.',
       targets: [
         { id: 'primary', label: '🚶 Security Officer', icon: '🚶', height: 1.75, speed: 1.5 },
         { id: 'vehicle', label: '🚗 Delivery Vehicle', icon: '🚗', height: 1.9, speed: 4.0 },
@@ -236,11 +270,44 @@ export function FrustumSpatialInspector({
       id: 'corporate_office' as const,
       name: 'Corporate Office & Lobby',
       icon: '🏢',
-      description: 'Speed turnstiles, executive reception desk, and glass conference enclosures.',
+      description: 'Executive reception desk, optical speed turnstiles, glass meeting room, and desk pods.',
       targets: [
         { id: 'primary', label: '💼 Corporate Employee', icon: '💼', height: 1.7, speed: 1.3 },
         { id: 'vehicle', label: '👔 Guest / Visitor', icon: '👔', height: 1.68, speed: 1.0 },
         { id: 'intruder', label: '⚠️ Tailgater / Intruder', icon: '⚠️', height: 1.75, speed: 1.8 },
+      ],
+    },
+    {
+      id: 'airport_terminal' as const,
+      name: 'Airport Concourse & Baggage Claim',
+      icon: '✈️',
+      description: 'Dual carousel baggage claim conveyor loops, TSA security portal, and check-in counters.',
+      targets: [
+        { id: 'primary', label: '🧳 Passenger with Luggage', icon: '🧳', height: 1.72, speed: 1.3 },
+        { id: 'vehicle', label: '👮 TSA Security Officer', icon: '👮', height: 1.78, speed: 1.2 },
+        { id: 'intruder', label: '⚠️ Unattended Baggage / Person', icon: '⚠️', height: 1.7, speed: 1.9 },
+      ],
+    },
+    {
+      id: 'hospital_clinic' as const,
+      name: 'Hospital Emergency Department',
+      icon: '🏥',
+      description: 'Central nurse command station, triage bays with privacy curtains, and diagnostic equipment.',
+      targets: [
+        { id: 'primary', label: '👨‍⚕️ Nurse / Caregiver', icon: '👨‍⚕️', height: 1.7, speed: 1.4 },
+        { id: 'vehicle', label: '🦽 Wheelchair Patient', icon: '🦽', height: 1.35, speed: 0.9 },
+        { id: 'intruder', label: '⚠️ Restricted Ward Trespasser', icon: '⚠️', height: 1.75, speed: 2.1 },
+      ],
+    },
+    {
+      id: 'cleanroom_lab' as const,
+      name: 'Semiconductor / Pharma Cleanroom',
+      icon: '🧪',
+      description: 'Wafer photolithography steppers, air shower vestibule, laminar flow clean benches, and exhaust hoods.',
+      targets: [
+        { id: 'primary', label: '🥼 Cleanroom Operator (Tyvek)', icon: '🥼', height: 1.72, speed: 1.0 },
+        { id: 'vehicle', label: '🤖 FOUP Wafer Transport Robot', icon: '🤖', height: 1.3, speed: 1.6 },
+        { id: 'intruder', label: '⚠️ Contamination Zone Violation', icon: '⚠️', height: 1.75, speed: 1.5 },
       ],
     },
   ], [site]);
@@ -255,8 +322,32 @@ export function FrustumSpatialInspector({
     [currentScenarioDef, targetRole]
   );
 
-  // Generate 3D Obstacle Models based on Active Scenario
+  // Procedural 3D Environment Synthesis (Zero Hardcoded Layouts)
   const { obstacleEntities, visualDetails } = useMemo(() => {
+    let baseObstacles: Obstacle[] = [];
+
+    // 1. If user synthesized a custom AI scenario
+    if (activeScenario === 'custom_ai' && customAiObstacles && customAiObstacles.length > 0) {
+      baseObstacles = customAiObstacles;
+    }
+    // 2. If user is in 'project' mode with active floor plan obstacles
+    else if (activeScenario === 'project' && site?.obstacles && site.obstacles.length > 0) {
+      baseObstacles = site.obstacles;
+    }
+    // 3. Procedural synthesis across room dimensions
+    else {
+      const presetType = activeScenario === 'project' || activeScenario === 'custom_ai'
+        ? 'logistics_warehouse'
+        : (activeScenario as FacilityPresetType);
+
+      baseObstacles = generateProceduralObstacles({
+        type: presetType,
+        length: roomLength,
+        width: roomWidth,
+        mountHeight: roomCeiling,
+      });
+    }
+
     const list: Obstacle3D[] = [];
     const details: Array<{
       id: string;
@@ -268,280 +359,239 @@ export function FrustumSpatialInspector({
       d: number;
       h: number;
       color: string;
+      accentColor: string;
       label: string;
       shelves?: number[];
       boxes?: Array<{ x: number; y: number; z: number; w: number; d: number; h: number; color: string; label: string }>;
+      rollers?: boolean;
+      statusLed?: string;
+      isColumn?: boolean;
+      isGate?: boolean;
     }> = [];
 
-    // Case 1: Active Project Blueprint with custom user obstacles
-    if (activeScenario === 'project' && site?.obstacles && site.obstacles.length > 0) {
-      site.obstacles.forEach(o => {
-        const zb = o.zBase ?? 0;
-        list.push({
-          id: o.id,
-          name: o.name,
-          type: o.type,
-          min: { x: o.x, y: o.y, z: zb },
-          max: { x: o.x + o.w, y: o.y + o.d, z: zb + o.h },
-        });
-
-        // Generate visual detail styling depending on obstacle type
-        const col = o.type === 'rack' ? '#0284c7'
-          : o.type === 'machine' ? '#1e3a8a'
-          : o.type === 'conveyor' ? '#0891b2'
-          : o.type === 'column' ? '#64748b'
-          : o.type === 'partition' ? '#059669'
-          : '#334155';
-
-        const boxes = o.type === 'rack' ? [
-          { x: o.x + 0.2, y: o.y + 0.1, z: zb + 0.2, w: o.w * 0.4, d: o.d * 0.8, h: Math.min(1.0, o.h * 0.4), color: '#f97316', label: 'LOT A' },
-          { x: o.x + o.w * 0.5, y: o.y + 0.1, z: zb + 0.2, w: o.w * 0.4, d: o.d * 0.8, h: Math.min(1.0, o.h * 0.4), color: '#a855f7', label: 'LOT B' },
-        ] : undefined;
-
-        details.push({
-          id: o.id,
-          type: o.type || 'structure',
-          x: o.x,
-          y: o.y,
-          z: zb,
-          w: o.w,
-          d: o.d,
-          h: o.h,
-          color: col,
-          label: o.name,
-          shelves: o.type === 'rack' ? [zb + 0.1, zb + o.h * 0.45, zb + o.h * 0.8] : undefined,
-          boxes,
-        });
+    baseObstacles.forEach((o, idx) => {
+      const zb = o.zBase ?? 0;
+      list.push({
+        id: o.id,
+        name: o.name,
+        type: o.type,
+        min: { x: o.x, y: o.y, z: zb },
+        max: { x: o.x + o.w, y: o.y + o.d, z: zb + o.h },
       });
 
-      return { obstacleEntities: list, visualDetails: details };
-    }
+      // Procedural 3D Geometric Detailing based on structural type
+      const isRack = o.type === 'rack';
+      const isConveyor = o.type === 'conveyor';
+      const isMachine = o.type === 'machine';
+      const isColumn = o.type === 'column';
+      const isPartition = o.type === 'partition';
+      const isWall = o.type === 'wall';
+      const isDock = o.type === 'dock';
+      const isHazard = o.type === 'hazard';
 
-    // Case 2: Logistics Warehouse Archetype
-    if (activeScenario === 'logistics_warehouse') {
-      const rx = 10.0, ry = 8.5, rw = 3.6, rd = 1.2, rh = 4.2;
-      list.push({ id: 'wh-rack-1', name: 'Storage Rack Aisle 1', min: { x: rx, y: ry, z: 0 }, max: { x: rx + rw, y: ry + rd, z: rh }, type: 'rack' });
-      list.push({ id: 'wh-col-1', name: 'Structural Column C1', min: { x: 15.5, y: 13.0, z: 0 }, max: { x: 16.3, y: 13.8, z: 6.0 }, type: 'column' });
+      const color = isRack ? '#0284c7'
+        : isConveyor ? '#0891b2'
+        : isMachine ? '#1e3a8a'
+        : isColumn ? '#475569'
+        : isPartition ? '#059669'
+        : isWall ? '#334155'
+        : isDock ? '#d97706'
+        : isHazard ? '#dc2626'
+        : '#0f172a';
+
+      const accentColor = isRack ? '#38bdf8'
+        : isConveyor ? '#67e8f9'
+        : isMachine ? '#60a5fa'
+        : isColumn ? '#eab308'
+        : isPartition ? '#34d399'
+        : isWall ? '#94a3b8'
+        : isDock ? '#f59e0b'
+        : isHazard ? '#f87171'
+        : '#38bdf8';
+
+      // Shelves for racks
+      const shelves = isRack ? [
+        zb + 0.15,
+        zb + o.h * 0.45,
+        zb + o.h * 0.8,
+      ] : undefined;
+
+      // Realistic Cargo Packages on shelves or conveyors
+      let boxes: Array<{ x: number; y: number; z: number; w: number; d: number; h: number; color: string; label: string }> | undefined;
+
+      if (isRack) {
+        boxes = [
+          {
+            x: o.x + 0.3,
+            y: o.y + 0.15,
+            z: zb + 0.18,
+            w: Math.max(0.8, o.w * 0.4),
+            d: Math.max(0.6, o.d * 0.75),
+            h: Math.min(1.1, o.h * 0.35),
+            color: '#f97316',
+            label: `PALLET ${idx + 1}A`,
+          },
+          {
+            x: o.x + o.w * 0.52,
+            y: o.y + 0.15,
+            z: zb + 0.18,
+            w: Math.max(0.8, o.w * 0.4),
+            d: Math.max(0.6, o.d * 0.75),
+            h: Math.min(1.1, o.h * 0.35),
+            color: '#a855f7',
+            label: `CARGO ${idx + 1}B`,
+          },
+          {
+            x: o.x + 0.4,
+            y: o.y + 0.15,
+            z: zb + o.h * 0.48,
+            w: Math.max(0.7, o.w * 0.35),
+            d: Math.max(0.5, o.d * 0.7),
+            h: Math.min(0.9, o.h * 0.28),
+            color: '#10b981',
+            label: `LOT #${200 + idx}`,
+          },
+        ];
+      } else if (isConveyor) {
+        boxes = [
+          {
+            x: o.x + o.w * 0.2,
+            y: o.y + 0.2,
+            z: zb + o.h,
+            w: Math.min(1.2, o.w * 0.25),
+            d: Math.min(o.d * 0.7, 1.2),
+            h: 0.65,
+            color: '#f59e0b',
+            label: 'PARCEL 1',
+          },
+          {
+            x: o.x + o.w * 0.65,
+            y: o.y + 0.2,
+            z: zb + o.h,
+            w: Math.min(1.1, o.w * 0.22),
+            d: Math.min(o.d * 0.7, 1.2),
+            h: 0.75,
+            color: '#38bdf8',
+            label: 'PARCEL 2',
+          },
+        ];
+      }
 
       details.push({
-        id: 'wh-rack-1',
-        type: 'rack',
-        x: rx, y: ry, z: 0, w: rw, d: rd, h: rh,
-        color: '#0284c7',
-        label: 'STORAGE RACK 01',
-        shelves: [0.15, 1.4, 2.8],
-        boxes: [
-          { x: 10.3, y: 8.6, z: 1.45, w: 1.4, d: 1.0, h: 1.1, color: '#f97316', label: 'CARGO 01' },
-          { x: 11.9, y: 8.65, z: 1.45, w: 1.4, d: 0.95, h: 0.95, color: '#a855f7', label: 'LOT 24' },
-          { x: 10.4, y: 8.6, z: 0.18, w: 1.5, d: 1.0, h: 1.15, color: '#06b6d4', label: 'PALLET A' },
-          { x: 12.0, y: 8.65, z: 0.18, w: 1.3, d: 0.95, h: 1.05, color: '#10b981', label: 'BOX B' },
-        ],
+        id: o.id,
+        type: o.type || 'structure',
+        x: o.x,
+        y: o.y,
+        z: zb,
+        w: o.w,
+        d: o.d,
+        h: o.h,
+        color,
+        accentColor,
+        label: o.name.toUpperCase(),
+        shelves,
+        boxes,
+        rollers: isConveyor,
+        statusLed: isMachine ? '#ef4444' : isRack && activeScenario === 'data_center' ? '#06b6d4' : undefined,
+        isColumn,
+        isGate: isDock,
       });
-
-      details.push({
-        id: 'wh-col-1',
-        type: 'column',
-        x: 15.5, y: 13.0, z: 0, w: 0.8, d: 0.8, h: 6.0,
-        color: '#475569',
-        label: 'COLUMN C1',
-      });
-
-      return { obstacleEntities: list, visualDetails: details };
-    }
-
-    // Case 3: Manufacturing & Robotic Assembly
-    if (activeScenario === 'manufacturing_plant') {
-      // Linear assembly conveyor line
-      list.push({ id: 'mfg-conveyor', name: 'Assembly Conveyor #1', min: { x: 8.0, y: 8.0, z: 0 }, max: { x: 16.0, y: 9.8, z: 1.3 }, type: 'conveyor' });
-      // Robotic workcell station
-      list.push({ id: 'mfg-robot-cell', name: 'Robotic Workcell 2A', min: { x: 11.0, y: 5.5, z: 0 }, max: { x: 14.2, y: 7.6, z: 2.8 }, type: 'machine' });
-      // Safety partition enclosure
-      list.push({ id: 'mfg-barrier', name: 'Safety Laser Barrier', min: { x: 10.8, y: 5.3, z: 0 }, max: { x: 14.4, y: 5.5, z: 2.0 }, type: 'partition' });
-
-      details.push({
-        id: 'mfg-conveyor',
-        type: 'conveyor',
-        x: 8.0, y: 8.0, z: 0, w: 8.0, d: 1.8, h: 1.3,
-        color: '#0891b2',
-        label: 'ASSEMBLY LINE #1',
-        boxes: [
-          { x: 9.0, y: 8.3, z: 1.3, w: 1.0, d: 1.0, h: 0.7, color: '#f59e0b', label: 'UNIT #101' },
-          { x: 11.5, y: 8.3, z: 1.3, w: 1.2, d: 1.0, h: 0.8, color: '#38bdf8', label: 'CHASSIS 2B' },
-          { x: 14.0, y: 8.3, z: 1.3, w: 0.9, d: 1.0, h: 0.6, color: '#10b981', label: 'PACKAGE C' },
-        ],
-      });
-
-      details.push({
-        id: 'mfg-robot-cell',
-        type: 'machine',
-        x: 11.0, y: 5.5, z: 0, w: 3.2, d: 2.1, h: 2.8,
-        color: '#1e3a8a',
-        label: 'ROBOTIC WORKCELL',
-      });
-
-      return { obstacleEntities: list, visualDetails: details };
-    }
-
-    // Case 4: Retail Supermarket & Store
-    if (activeScenario === 'retail_supermarket') {
-      // 2 parallel gondola shelving runs
-      list.push({ id: 'ret-gondola-1', name: 'Shelving Gondola Aisle 1', min: { x: 9.0, y: 7.5, z: 0 }, max: { x: 14.5, y: 8.8, z: 2.1 }, type: 'rack' });
-      // Checkout register bank
-      list.push({ id: 'ret-pos', name: 'Checkout Register Bank', min: { x: 15.0, y: 6.0, z: 0 }, max: { x: 16.2, y: 11.5, z: 1.15 }, type: 'partition' });
-
-      details.push({
-        id: 'ret-gondola-1',
-        type: 'rack',
-        x: 9.0, y: 7.5, z: 0, w: 5.5, d: 1.3, h: 2.1,
-        color: '#0d9488',
-        label: 'RETAIL GONDOLA 1',
-        shelves: [0.15, 0.75, 1.4],
-        boxes: [
-          { x: 9.4, y: 7.6, z: 0.8, w: 1.2, d: 1.0, h: 0.55, color: '#ec4899', label: 'GOODS 1' },
-          { x: 11.2, y: 7.6, z: 0.8, w: 1.3, d: 1.0, h: 0.55, color: '#8b5cf6', label: 'GOODS 2' },
-          { x: 13.0, y: 7.6, z: 0.8, w: 1.1, d: 1.0, h: 0.55, color: '#f59e0b', label: 'GOODS 3' },
-        ],
-      });
-
-      details.push({
-        id: 'ret-pos',
-        type: 'partition',
-        x: 15.0, y: 6.0, z: 0, w: 1.2, d: 5.5, h: 1.15,
-        color: '#047857',
-        label: 'CHECKOUT COUNTERS',
-      });
-
-      return { obstacleEntities: list, visualDetails: details };
-    }
-
-    // Case 5: Data Center Server Hall
-    if (activeScenario === 'data_center') {
-      // Server Rack Row (Cold Aisle Containment)
-      list.push({ id: 'dc-rack-row', name: 'Server Rack Row A (Cold Aisle)', min: { x: 9.0, y: 8.0, z: 0 }, max: { x: 15.5, y: 9.4, z: 2.4 }, type: 'rack' });
-      // CRAC Precision Cooling Unit
-      list.push({ id: 'dc-crac', name: 'CRAC Cooling Unit 1', min: { x: 16.5, y: 6.5, z: 0 }, max: { x: 18.2, y: 8.5, z: 2.8 }, type: 'machine' });
-
-      details.push({
-        id: 'dc-rack-row',
-        type: 'rack',
-        x: 9.0, y: 8.0, z: 0, w: 6.5, d: 1.4, h: 2.4,
-        color: '#0f172a',
-        label: 'SERVER CABINETS (COLD AISLE)',
-        boxes: [
-          { x: 9.2, y: 8.1, z: 0.2, w: 1.2, d: 1.2, h: 2.0, color: '#1e293b', label: 'RACK A1' },
-          { x: 10.7, y: 8.1, z: 0.2, w: 1.2, d: 1.2, h: 2.0, color: '#1e293b', label: 'RACK A2' },
-          { x: 12.2, y: 8.1, z: 0.2, w: 1.2, d: 1.2, h: 2.0, color: '#1e293b', label: 'RACK A3' },
-          { x: 13.7, y: 8.1, z: 0.2, w: 1.2, d: 1.2, h: 2.0, color: '#1e293b', label: 'RACK A4' },
-        ],
-      });
-
-      details.push({
-        id: 'dc-crac',
-        type: 'machine',
-        x: 16.5, y: 6.5, z: 0, w: 1.7, d: 2.0, h: 2.8,
-        color: '#0369a1',
-        label: 'CRAC COOLING UNIT',
-      });
-
-      return { obstacleEntities: list, visualDetails: details };
-    }
-
-    // Case 6: Perimeter & Gate Access
-    if (activeScenario === 'perimeter_security') {
-      // Chain-link perimeter fence line
-      list.push({ id: 'perim-fence', name: 'Perimeter Chain-link Fence', min: { x: 7.0, y: 8.5, z: 0 }, max: { x: 16.5, y: 8.8, z: 3.0 }, type: 'partition' });
-      // Guard Kiosk Booth
-      list.push({ id: 'perim-kiosk', name: 'Security Guard Kiosk', min: { x: 12.0, y: 5.5, z: 0 }, max: { x: 14.5, y: 7.8, z: 2.8 }, type: 'partition' });
-
-      details.push({
-        id: 'perim-fence',
-        type: 'partition',
-        x: 7.0, y: 8.5, z: 0, w: 9.5, d: 0.3, h: 3.0,
-        color: '#475569',
-        label: 'PERIMETER FENCE (3.0m)',
-      });
-
-      details.push({
-        id: 'perim-kiosk',
-        type: 'partition',
-        x: 12.0, y: 5.5, z: 0, w: 2.5, d: 2.3, h: 2.8,
-        color: '#334155',
-        label: 'GUARD KIOSK',
-      });
-
-      return { obstacleEntities: list, visualDetails: details };
-    }
-
-    // Case 7: Corporate Office & Lobby
-    // Optical speed turnstiles & reception desk
-    list.push({ id: 'off-desk', name: 'Executive Reception Desk', min: { x: 10.0, y: 7.5, z: 0 }, max: { x: 14.0, y: 8.8, z: 1.15 }, type: 'partition' });
-    list.push({ id: 'off-glass', name: 'Frosted Glass Partition', min: { x: 14.5, y: 6.0, z: 0 }, max: { x: 14.8, y: 11.0, z: 2.8 }, type: 'wall' });
-
-    details.push({
-      id: 'off-desk',
-      type: 'partition',
-      x: 10.0, y: 7.5, z: 0, w: 4.0, d: 1.3, h: 1.15,
-      color: '#3b82f6',
-      label: 'RECEPTION DESK',
-    });
-
-    details.push({
-      id: 'off-glass',
-      type: 'wall',
-      x: 14.5, y: 6.0, z: 0, w: 0.3, d: 5.0, h: 2.8,
-      color: '#10b981',
-      label: 'GLASS ENCLOSURE',
     });
 
     return { obstacleEntities: list, visualDetails: details };
-  }, [activeScenario, site]);
+  }, [activeScenario, customAiObstacles, site, roomLength, roomWidth, roomCeiling]);
 
-  // Target Patrol Path Generator (Adapts to Active Scenario)
+  // Handle in-inspector AI Scenario Synthesis
+  const handleRunAiSynthesis = async () => {
+    if (!aiPromptInput.trim()) return;
+    setIsSynthesizing(true);
+    try {
+      if (onSynthesizeScenario) {
+        await onSynthesizeScenario(aiPromptInput);
+        setActiveScenario('project');
+      } else {
+        const resp = await fetch('/api/camera/facility-structures', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customPrompt: aiPromptInput,
+            facilityType: activeScenario,
+            dimensions: { length: roomLength, width: roomWidth, height: roomCeiling },
+          }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (Array.isArray(data.obstacles) && data.obstacles.length > 0) {
+            setCustomAiObstacles(data.obstacles);
+            setActiveScenario('custom_ai');
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to synthesize 3D environment:', err);
+    } finally {
+      setIsSynthesizing(false);
+    }
+  };
+
+  // Dynamic Contextual Patrol Spline (Scaled to Room Bounds)
   const getTargetPositionAtTime = useCallback((t: number) => {
-    const speedFactor = 0.25 * targetSpeed;
+    const speedFactor = 0.22 * targetSpeed;
     const progress = (t * speedFactor) % (Math.PI * 2);
 
-    let x = 11.8, y = 9.8;
+    const cx = roomLength * 0.48;
+    const cy = roomWidth * 0.48;
     const targetH = activeTargetOption.height;
 
-    if (activeScenario === 'project' && site) {
-      // Patrol centered in actual project bounds
-      const cx = site.length * 0.45;
-      const cy = site.width * 0.45;
-      x = cx + Math.cos(progress) * (site.length * 0.22);
-      y = cy + Math.sin(progress * 1.5) * (site.width * 0.2);
-    } else if (activeScenario === 'manufacturing_plant') {
-      // Moves along linear conveyor line
-      x = 9.5 + Math.cos(progress) * 3.2;
-      y = 8.8 + Math.sin(progress) * 1.2;
-    } else if (activeScenario === 'retail_supermarket') {
-      // Moves through shopping aisle towards checkout
-      x = 11.0 + Math.cos(progress) * 2.8;
-      y = 8.5 + Math.sin(progress) * 1.6;
-    } else if (activeScenario === 'data_center') {
-      // Patrols down cold aisle
-      x = 10.5 + Math.cos(progress) * 3.0;
-      y = 8.8 + Math.sin(progress) * 0.9;
-    } else if (activeScenario === 'perimeter_security') {
-      // Approaches fence and access gate
-      x = 10.0 + Math.cos(progress) * 3.5;
-      y = 9.2 + Math.sin(progress) * 1.5;
-    } else if (activeScenario === 'corporate_office') {
-      // Approaches turnstiles and reception desk
-      x = 11.5 + Math.cos(progress) * 2.2;
-      y = 9.0 + Math.sin(progress * 1.2) * 1.8;
-    } else {
-      // Logistics Warehouse default
-      x = 11.8 + Math.cos(progress) * 3.8;
-      y = 9.8 + Math.sin(progress * 1.5) * 2.2;
-    }
+    let x = cx + Math.cos(progress) * (roomLength * 0.28);
+    let y = cy + Math.sin(progress * 1.5) * (roomWidth * 0.25);
+
+    // Keep target inside room boundaries
+    x = clamp(x, 1.5, roomLength - 1.5);
+    y = clamp(y, 1.5, roomWidth - 1.5);
 
     return { x, y, z: targetH };
-  }, [activeScenario, site, targetSpeed, activeTargetOption]);
+  }, [roomLength, roomWidth, targetSpeed, activeTargetOption]);
 
-  // Current Target Evaluation
+  // Current Target Evaluation & Physics Telemetry
   const [currentEval, setCurrentEval] = useState<TargetEvaluation | null>(null);
-  const [currentTargetPos, setCurrentTargetPos] = useState<Vec3>({ x: 11.8, y: 9.8, z: 1.7 });
+  const [currentTargetPos, setCurrentTargetPos] = useState<Vec3>({ x: 12, y: 10, z: 1.7 });
+
+  const telemetry = useMemo(() => {
+    if (!currentEval) return null;
+    const headHit = currentEval.rayHits?.find(r => r.anchor === 'head');
+    const torsoHit = currentEval.rayHits?.find(r => r.anchor === 'torso');
+    const ankleHit = currentEval.rayHits?.find(r => r.anchor === 'ankle');
+
+    const headOccluded = Boolean(headHit?.blocked);
+    const torsoOccluded = Boolean(torsoHit?.blocked);
+    const ankleOccluded = Boolean(ankleHit?.blocked);
+    const isOccluded = currentEval.visibilityRatio < 1.0;
+    const fullyOccluded = currentEval.visibilityRatio === 0;
+    const distanceM = currentEval.slantDistanceM;
+    const ppm = currentEval.effectivePpm;
+    const doriCategory = currentEval.doriTier;
+    const verticalAngleDeg = currentEval.verticalDepressionDeg;
+    const faceOccluded = headOccluded || verticalAngleDeg > 45;
+    const facialPixels = Math.round(0.065 * ppm);
+    const impactPoint = currentEval.rayHits?.find(r => r.hitPoint)?.hitPoint;
+
+    return {
+      headOccluded,
+      torsoOccluded,
+      ankleOccluded,
+      isOccluded,
+      fullyOccluded,
+      distanceM,
+      ppm,
+      doriCategory,
+      verticalAngleDeg,
+      faceOccluded,
+      facialPixels,
+      impactPoint,
+      aiFeasibility: currentEval.aiFeasibility,
+    };
+  }, [currentEval]);
 
   // Update specs callback
   const handleFocalChange = (v: number) => {
@@ -556,8 +606,12 @@ export function FrustumSpatialInspector({
     setTiltDeg(v);
     onSpecsChange?.({ focalMm: focalLengthMm, mountHeight: mountHeightM, tiltDeg: v, azimuthDeg });
   };
+  const handleAzimuthChange = (v: number) => {
+    setAzimuthDeg(v);
+    onSpecsChange?.({ focalMm: focalLengthMm, mountHeight: mountHeightM, tiltDeg, azimuthDeg: v });
+  };
 
-  // Main 3D Rendering Canvas Loop
+  // Main 3D Canvas Render Loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -571,10 +625,10 @@ export function FrustumSpatialInspector({
       const t = animTimeRef.current;
 
       const rect = canvas.getBoundingClientRect();
-      const w = Math.round(rect.width);
-      const h = Math.round(rect.height);
+      const dpr = window.devicePixelRatio || 1;
+      const w = rect.width;
+      const h = rect.height;
 
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
       if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
         canvas.width = Math.round(w * dpr);
         canvas.height = Math.round(h * dpr);
@@ -586,19 +640,21 @@ export function FrustumSpatialInspector({
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Deep Dark Tactical Background
-      ctx.fillStyle = '#050811';
+      // Deep Dark Aerospace Virtual Environment Background
+      ctx.fillStyle = '#030712';
       ctx.fillRect(0, 0, w, h);
 
       // 3D Perspective Projection Setup
-      const sceneCenter = site
-        ? { x: site.length * 0.45, y: site.width * 0.45, z: (site.mountHeight || 4.5) * 0.4 }
-        : { x: 11.0, y: 9.0, z: 2.2 };
+      const sceneCenter = {
+        x: roomLength * 0.45,
+        y: roomWidth * 0.45,
+        z: roomCeiling * 0.4,
+      };
 
       const radYaw = (yaw * Math.PI) / 180;
       const radPitch = (pitch * Math.PI) / 180;
 
-      const orbitDist = 26 / zoom;
+      const orbitDist = (Math.max(roomLength, roomWidth) * 0.85) / zoom;
       const eyeX = sceneCenter.x + orbitDist * Math.cos(radPitch) * Math.sin(radYaw);
       const eyeY = sceneCenter.y - orbitDist * Math.cos(radPitch) * Math.cos(radYaw);
       const eyeZ = sceneCenter.z + orbitDist * Math.sin(radPitch);
@@ -625,7 +681,7 @@ export function FrustumSpatialInspector({
         z: rn.x * fn.y - rn.y * fn.x,
       };
 
-      const focalDist = Math.min(w, h) * 0.95;
+      const focalDist = Math.min(w, h) * 1.05;
 
       const project = (px: number, py: number, pz: number) => {
         const dx = px - eyeX;
@@ -644,89 +700,222 @@ export function FrustumSpatialInspector({
         return { x: screenX, y: screenY, depth: cz, valid: true };
       };
 
-      // 1. Draw Glowing Perspective Floor Grid
+      // -------------------------------------------------------------
+      // 1. FULL 3D FLOOR SLAB WITH SCENARIO-SPECIFIC MATERIALS
+      // -------------------------------------------------------------
+      const floorCorners = [
+        project(0, 0, 0),
+        project(roomLength, 0, 0),
+        project(roomLength, roomWidth, 0),
+        project(0, roomWidth, 0),
+      ];
+
+      if (floorCorners.every(c => c.valid)) {
+        // Floor Base Fill
+        ctx.beginPath();
+        ctx.moveTo(floorCorners[0].x, floorCorners[0].y);
+        ctx.lineTo(floorCorners[1].x, floorCorners[1].y);
+        ctx.lineTo(floorCorners[2].x, floorCorners[2].y);
+        ctx.lineTo(floorCorners[3].x, floorCorners[3].y);
+        ctx.closePath();
+
+        // Scenario Themed Flooring Materials
+        const floorGrad = ctx.createLinearGradient(floorCorners[0].x, floorCorners[0].y, floorCorners[2].x, floorCorners[2].y);
+        if (activeScenario === 'manufacturing_plant') {
+          floorGrad.addColorStop(0, '#062820'); // Industrial Epoxy Teal
+          floorGrad.addColorStop(1, '#021813');
+        } else if (activeScenario === 'data_center') {
+          floorGrad.addColorStop(0, '#060f1e'); // Raised Floor Blue
+          floorGrad.addColorStop(1, '#020610');
+        } else if (activeScenario === 'perimeter_security') {
+          floorGrad.addColorStop(0, '#1c1917'); // Asphalt Roadway
+          floorGrad.addColorStop(1, '#0c0a09');
+        } else if (activeScenario === 'retail_supermarket') {
+          floorGrad.addColorStop(0, '#131b2e'); // Commercial Tile
+          floorGrad.addColorStop(1, '#090d18');
+        } else {
+          floorGrad.addColorStop(0, '#0f172a'); // Industrial Slab Concrete
+          floorGrad.addColorStop(1, '#090e17');
+        }
+        ctx.fillStyle = floorGrad;
+        ctx.fill();
+
+        ctx.strokeStyle = '#0284c7';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Floor Perspective Grid Lines & Distance Markings
       ctx.lineWidth = 1;
-      ctx.strokeStyle = 'rgba(14, 165, 233, 0.18)';
+      ctx.strokeStyle = activeScenario === 'data_center'
+        ? 'rgba(6, 182, 212, 0.22)'
+        : activeScenario === 'manufacturing_plant'
+        ? 'rgba(16, 185, 129, 0.18)'
+        : 'rgba(56, 189, 248, 0.16)';
 
-      const gridSpanX = site ? Math.ceil(site.length / 2) * 2 : 24;
-      const gridSpanY = site ? Math.ceil(site.width / 2) * 2 : 24;
-      const step = 2.0;
-
-      for (let gx = 0; gx <= gridSpanX; gx += step) {
+      const step = 4.0;
+      for (let gx = 0; gx <= roomLength; gx += step) {
         const p1 = project(gx, 0, 0);
-        const p2 = project(gx, gridSpanY, 0);
+        const p2 = project(gx, roomWidth, 0);
         if (p1.valid && p2.valid) {
           ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+          // Distance meter badge
+          if (gx % 8 === 0 && p1.valid) {
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
+            ctx.font = '600 8px ui-monospace, monospace';
+            ctx.fillText(`${gx}m`, p1.x - 6, p1.y + 12);
+          }
         }
       }
 
-      for (let gy = 0; gy <= gridSpanY; gy += step) {
+      for (let gy = 0; gy <= roomWidth; gy += step) {
         const p1 = project(0, gy, 0);
-        const p2 = project(gridSpanX, gy, 0);
+        const p2 = project(roomLength, gy, 0);
         if (p1.valid && p2.valid) {
           ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
         }
       }
 
-      // Update Target Position & Evaluate Physics
-      const tar = getTargetPositionAtTime(t);
-      setCurrentTargetPos(tar);
+      // Warehouse Forklift Safety Lines (Yellow Aisles)
+      if (activeScenario === 'logistics_warehouse') {
+        const aisleY1 = project(2, roomWidth * 0.45, 0);
+        const aisleY2 = project(roomLength - 2, roomWidth * 0.45, 0);
+        const aisleY3 = project(2, roomWidth * 0.55, 0);
+        const aisleY4 = project(roomLength - 2, roomWidth * 0.55, 0);
+        if (aisleY1.valid && aisleY2.valid && aisleY3.valid && aisleY4.valid) {
+          ctx.strokeStyle = 'rgba(234, 179, 8, 0.45)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 8]);
+          ctx.beginPath(); ctx.moveTo(aisleY1.x, aisleY1.y); ctx.lineTo(aisleY2.x, aisleY2.y); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(aisleY3.x, aisleY3.y); ctx.lineTo(aisleY4.x, aisleY4.y); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
 
-      const evaluation = evaluateTargetPoint3D(
-        cameraSpec,
-        { x: tar.x, y: tar.y },
-        obstacleEntities,
-        tar.z,
-        activeTargetOption.id === 'vehicle' ? 1.2 : 0.5
-      );
-      setCurrentEval(evaluation);
+      // -------------------------------------------------------------
+      // 2. 3D ARCHITECTURAL BOUNDARY WALLS & ENCLOSURE
+      // -------------------------------------------------------------
+      // Back Wall (Y = roomWidth)
+      const bw1 = project(0, roomWidth, 0);
+      const bw2 = project(roomLength, roomWidth, 0);
+      const bw3 = project(roomLength, roomWidth, roomCeiling);
+      const bw4 = project(0, roomWidth, roomCeiling);
 
-      // Camera Position in 3D
+      if (bw1.valid && bw2.valid && bw3.valid && bw4.valid) {
+        ctx.beginPath();
+        ctx.moveTo(bw1.x, bw1.y);
+        ctx.lineTo(bw2.x, bw2.y);
+        ctx.lineTo(bw3.x, bw3.y);
+        ctx.lineTo(bw4.x, bw4.y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(51, 65, 85, 0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // High-Bay Clerestory Windows on Back Wall
+        for (let wx = 6; wx < roomLength - 6; wx += 12) {
+          const w1 = project(wx, roomWidth, roomCeiling - 1.2);
+          const w2 = project(wx + 5, roomWidth, roomCeiling - 1.2);
+          const w3 = project(wx + 5, roomWidth, roomCeiling - 0.4);
+          const w4 = project(wx, roomWidth, roomCeiling - 0.4);
+          if (w1.valid && w2.valid && w3.valid && w4.valid) {
+            ctx.beginPath();
+            ctx.moveTo(w1.x, w1.y); ctx.lineTo(w2.x, w2.y); ctx.lineTo(w3.x, w3.y); ctx.lineTo(w4.x, w4.y);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Left Side Wall (X = 0) with Elevation Height Markers
+      const lw1 = project(0, 0, 0);
+      const lw2 = project(0, roomWidth, 0);
+      const lw3 = project(0, roomWidth, roomCeiling);
+      const lw4 = project(0, 0, roomCeiling);
+
+      if (lw1.valid && lw2.valid && lw3.valid && lw4.valid) {
+        ctx.beginPath();
+        ctx.moveTo(lw1.x, lw1.y);
+        ctx.lineTo(lw2.x, lw2.y);
+        ctx.lineTo(lw3.x, lw3.y);
+        ctx.lineTo(lw4.x, lw4.y);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(51, 65, 85, 0.6)';
+        ctx.stroke();
+
+        // Elevation meter marks on left wall
+        for (let hz = 1; hz < roomCeiling; hz += 1) {
+          const m1 = project(0, 0.5, hz);
+          const m2 = project(0, 2.5, hz);
+          if (m1.valid && m2.valid) {
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
+            ctx.beginPath(); ctx.moveTo(m1.x, m1.y); ctx.lineTo(m2.x, m2.y); ctx.stroke();
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
+            ctx.font = '600 8px ui-monospace, monospace';
+            ctx.fillText(`${hz}m`, m2.x + 3, m2.y + 3);
+          }
+        }
+
+        // Emergency Exit Glow Sign
+        const exitP = project(0, roomWidth * 0.2, 2.4);
+        if (exitP.valid) {
+          ctx.fillStyle = '#10b981';
+          ctx.fillRect(exitP.x - 14, exitP.y - 7, 28, 14);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '700 8px ui-monospace, monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('EXIT 🟢', exitP.x, exitP.y + 3);
+        }
+      }
+
+      // -------------------------------------------------------------
+      // 3. MULTI-CAMERA 3D NETWORK VISUALIZATION
+      // -------------------------------------------------------------
+      if (showAllCamerasIn3D && poses && poses.length > 0) {
+        poses.forEach(p => {
+          const isSelected = p.id === activeCamera?.id;
+          const cp = project(p.x, p.y, p.z);
+          const bp = project(p.x, p.y, 0);
+
+          if (cp.valid && bp.valid) {
+            // Mounting Pole
+            ctx.strokeStyle = isSelected ? '#00e5ff' : '#475569';
+            ctx.lineWidth = isSelected ? 2.5 : 1.2;
+            ctx.beginPath(); ctx.moveTo(bp.x, bp.y); ctx.lineTo(cp.x, cp.y); ctx.stroke();
+
+            // Pole Base Footing
+            ctx.fillStyle = isSelected ? 'rgba(0, 229, 255, 0.4)' : 'rgba(15, 23, 42, 0.6)';
+            ctx.beginPath(); ctx.ellipse(bp.x, bp.y, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+
+            // Camera Housing
+            ctx.fillStyle = isSelected ? '#00e5ff' : '#f8fafc';
+            ctx.beginPath(); ctx.arc(cp.x, cp.y, isSelected ? 6.5 : 4.5, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#0284c7';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Floating Camera Badge
+            ctx.fillStyle = isSelected ? '#00e5ff' : '#94a3b8';
+            ctx.font = isSelected ? '700 10px ui-monospace, monospace' : '600 8.5px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`C${p.id}`, cp.x, cp.y - (isSelected ? 10 : 8));
+          }
+        });
+      }
+
+      // -------------------------------------------------------------
+      // 4. SELECTED CAMERA DORI VOLUMETRIC FRUSTUM PYRAMID
+      // -------------------------------------------------------------
       const camP = cameraSpec.position;
       const camProj = project(camP.x, camP.y, camP.z);
-      const poleBase = project(camP.x, camP.y, 0);
 
-      // 2. Draw Camera Mount Pole & Housing
-      if (poleBase.valid && camProj.valid) {
-        ctx.beginPath();
-        ctx.ellipse(poleBase.x, poleBase.y, 10, 5, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
-        ctx.fill();
-
-        ctx.strokeStyle = '#475569';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(poleBase.x, poleBase.y);
-        ctx.lineTo(camProj.x, camProj.y);
-        ctx.stroke();
-
-        ctx.fillStyle = '#f8fafc';
-        ctx.beginPath();
-        ctx.arc(camProj.x, camProj.y, 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#0284c7';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        const azRad = (azimuthDeg * Math.PI) / 180;
-        const tiltRad = (tiltDeg * Math.PI) / 180;
-        const dirLen = 0.8;
-        const lensP = project(
-          camP.x + Math.sin(azRad) * Math.cos(tiltRad) * dirLen,
-          camP.y + Math.cos(azRad) * Math.cos(tiltRad) * dirLen,
-          camP.z - Math.sin(tiltRad) * dirLen
-        );
-        if (lensP.valid) {
-          ctx.strokeStyle = '#00e5ff';
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(camProj.x, camProj.y);
-          ctx.lineTo(lensP.x, lensP.y);
-          ctx.stroke();
-        }
-      }
-
-      // 3. Draw 3D Volumetric Frustum Pyramid with Colored DORI Bands
       const azRad = (azimuthDeg * Math.PI) / 180;
       const tiltRad = (tiltDeg * Math.PI) / 180;
       const hfovRad = (fov.hfovDeg * Math.PI) / 180;
@@ -749,13 +938,13 @@ export function FrustumSpatialInspector({
       };
 
       const hpx = sensorSpec.resW;
-      const maxDistDetect = Math.min(22, (hpx / (2 * 25 * Math.tan(hfovRad / 2))));
-      const maxDistObserve = Math.min(16, (hpx / (2 * 62.5 * Math.tan(hfovRad / 2))));
-      const maxDistRecognize = Math.min(11, (hpx / (2 * 125 * Math.tan(hfovRad / 2))));
-      const maxDistIdentify = Math.min(6.5, (hpx / (2 * 250 * Math.tan(hfovRad / 2))));
+      const maxDistDetect = Math.min(roomLength * 0.65, (hpx / (2 * 25 * Math.tan(hfovRad / 2))));
+      const maxDistObserve = Math.min(roomLength * 0.48, (hpx / (2 * 62.5 * Math.tan(hfovRad / 2))));
+      const maxDistRecognize = Math.min(roomLength * 0.32, (hpx / (2 * 125 * Math.tan(hfovRad / 2))));
+      const maxDistIdentify = Math.min(roomLength * 0.18, (hpx / (2 * 250 * Math.tan(hfovRad / 2))));
 
       const frustumTiers = [
-        { dist: maxDistIdentify, fill: 'rgba(0, 229, 255, 0.16)', stroke: 'rgba(0, 229, 255, 0.65)' },
+        { dist: maxDistIdentify, fill: 'rgba(0, 229, 255, 0.16)', stroke: 'rgba(0, 229, 255, 0.7)' },
         { dist: maxDistRecognize, fill: 'rgba(74, 222, 128, 0.12)', stroke: 'rgba(74, 222, 128, 0.55)' },
         { dist: maxDistObserve, fill: 'rgba(250, 204, 21, 0.08)', stroke: 'rgba(250, 204, 21, 0.45)' },
         { dist: maxDistDetect, fill: 'rgba(245, 158, 11, 0.06)', stroke: 'rgba(245, 158, 11, 0.35)' },
@@ -785,23 +974,36 @@ export function FrustumSpatialInspector({
           ctx.lineWidth = 1.2;
           ctx.stroke();
 
+          // Outer Ray Edge Guidelines
           if (i === frustumTiers.length - 1 && camProj.valid) {
-            ctx.setLineDash([3, 3]);
-            ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.3)';
             [c1, c2, c3, c4].forEach(pt => {
-              ctx.beginPath();
-              ctx.moveTo(camProj.x, camProj.y);
-              ctx.lineTo(pt.x, pt.y);
-              ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(camProj.x, camProj.y); ctx.lineTo(pt.x, pt.y); ctx.stroke();
             });
             ctx.setLineDash([]);
           }
         }
       }
 
-      // 4. Draw Scenario 3D Obstacles
-      visualDetails.forEach(obs => {
-        // Draw 3D Box / Structure
+      // Optical Aim Axis Vector Line
+      const opticalP = project(camP.x + cf.x * 2.5, camP.y + cf.y * 2.5, camP.z + cf.z * 2.5);
+      if (camProj.valid && opticalP.valid) {
+        ctx.strokeStyle = '#00e5ff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(camProj.x, camProj.y); ctx.lineTo(opticalP.x, opticalP.y); ctx.stroke();
+      }
+
+      // -------------------------------------------------------------
+      // 5. PROCEDURAL 3D OBSTACLE MODELS (SORTED BY DEPTH)
+      // -------------------------------------------------------------
+      const sortedObstacles = [...visualDetails].sort((a, b) => {
+        const da = Math.hypot(a.x + a.w / 2 - eyeX, a.y + a.d / 2 - eyeY, a.z + a.h / 2 - eyeZ);
+        const db = Math.hypot(b.x + b.w / 2 - eyeX, b.y + b.d / 2 - eyeY, b.z + b.h / 2 - eyeZ);
+        return db - da; // Draw back to front
+      });
+
+      sortedObstacles.forEach(obs => {
         const corners = [
           project(obs.x, obs.y, obs.z),
           project(obs.x + obs.w, obs.y, obs.z),
@@ -822,10 +1024,10 @@ export function FrustumSpatialInspector({
           ctx.lineTo(corners[4].x, corners[4].y);
           ctx.closePath();
           ctx.fillStyle = obs.color;
-          ctx.globalAlpha = 0.85;
+          ctx.globalAlpha = 0.88;
           ctx.fill();
-          ctx.strokeStyle = '#0f172a';
-          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = obs.accentColor;
+          ctx.lineWidth = 1.2;
           ctx.stroke();
 
           // Top Face
@@ -846,19 +1048,40 @@ export function FrustumSpatialInspector({
           ctx.lineTo(corners[6].x, corners[6].y);
           ctx.lineTo(corners[5].x, corners[5].y);
           ctx.closePath();
-          ctx.globalAlpha = 0.75;
+          ctx.globalAlpha = 0.78;
           ctx.fill();
           ctx.stroke();
           ctx.globalAlpha = 1.0;
 
-          // Structure Label
+          // Structural Label
           ctx.fillStyle = '#f8fafc';
-          ctx.font = '700 9px ui-monospace, monospace';
+          ctx.font = '700 8.5px ui-monospace, monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(obs.label, (corners[4].x + corners[6].x) / 2, corners[4].y - 8);
+          ctx.fillText(obs.label, (corners[4].x + corners[6].x) / 2, corners[4].y - 6);
+
+          // Blinking E-Stop / Status LED
+          if (obs.statusLed) {
+            const ledP = project(obs.x + obs.w * 0.5, obs.y, obs.z + obs.h + 0.25);
+            if (ledP.valid) {
+              const blink = Math.sin(t * 6) > 0;
+              ctx.fillStyle = blink ? obs.statusLed : 'rgba(239, 68, 68, 0.3)';
+              ctx.beginPath(); ctx.arc(ledP.x, ledP.y, 4, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+
+          // Column Hazard Base Chevron Wrap
+          if (obs.isColumn) {
+            const cb1 = project(obs.x, obs.y, obs.z + 0.4);
+            const cb2 = project(obs.x + obs.w, obs.y, obs.z + 0.4);
+            if (cb1.valid && cb2.valid) {
+              ctx.strokeStyle = '#eab308';
+              ctx.lineWidth = 3;
+              ctx.beginPath(); ctx.moveTo(cb1.x, cb1.y); ctx.lineTo(cb2.x, cb2.y); ctx.stroke();
+            }
+          }
         }
 
-        // Draw internal shelves if obstacle is a rack
+        // Draw internal shelves for racking
         if (obs.shelves) {
           obs.shelves.forEach(sz => {
             const s1 = project(obs.x, obs.y, sz);
@@ -867,19 +1090,16 @@ export function FrustumSpatialInspector({
             const s4 = project(obs.x, obs.y + obs.d, sz);
             if (s1.valid && s2.valid && s3.valid && s4.valid) {
               ctx.beginPath();
-              ctx.moveTo(s1.x, s1.y);
-              ctx.lineTo(s2.x, s2.y);
-              ctx.lineTo(s3.x, s3.y);
-              ctx.lineTo(s4.x, s4.y);
+              ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.lineTo(s3.x, s3.y); ctx.lineTo(s4.x, s4.y);
               ctx.closePath();
-              ctx.strokeStyle = '#38bdf8';
-              ctx.lineWidth = 1.5;
+              ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+              ctx.lineWidth = 1.2;
               ctx.stroke();
             }
           });
         }
 
-        // Draw boxes / items on shelves or conveyors
+        // Draw Cargo Boxes & Packages
         if (obs.boxes) {
           obs.boxes.forEach(b => {
             const bc = [
@@ -895,16 +1115,19 @@ export function FrustumSpatialInspector({
 
             if (bc.every(c => c.valid)) {
               ctx.beginPath();
-              ctx.moveTo(bc[0].x, bc[0].y);
-              ctx.lineTo(bc[1].x, bc[1].y);
-              ctx.lineTo(bc[5].x, bc[5].y);
-              ctx.lineTo(bc[4].x, bc[4].y);
+              ctx.moveTo(bc[0].x, bc[0].y); ctx.lineTo(bc[1].x, bc[1].y); ctx.lineTo(bc[5].x, bc[5].y); ctx.lineTo(bc[4].x, bc[4].y);
               ctx.closePath();
               ctx.fillStyle = b.color;
-              ctx.globalAlpha = 0.88;
+              ctx.globalAlpha = 0.9;
               ctx.fill();
               ctx.strokeStyle = '#0f172a';
               ctx.lineWidth = 1;
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.moveTo(bc[4].x, bc[4].y); ctx.lineTo(bc[5].x, bc[5].y); ctx.lineTo(bc[6].x, bc[6].y); ctx.lineTo(bc[7].x, bc[7].y);
+              ctx.closePath();
+              ctx.fill();
               ctx.stroke();
               ctx.globalAlpha = 1.0;
             }
@@ -912,104 +1135,131 @@ export function FrustumSpatialInspector({
         }
       });
 
-      // 5. Draw Patrolling Scenario Target
-      const targetBase = project(tar.x, tar.y, 0);
-      const targetTorso = project(tar.x, tar.y, 1.1);
-      const targetHead = project(tar.x, tar.y, activeTargetOption.height);
+      // -------------------------------------------------------------
+      // 6. TARGET EVALUATION & 3-ANCHOR LASER RAYCASTING SUITE
+      // -------------------------------------------------------------
+      const tar = getTargetPositionAtTime(t);
+      setCurrentTargetPos(tar);
 
-      if (targetBase.valid && targetHead.valid) {
-        ctx.beginPath();
-        ctx.ellipse(targetBase.x, targetBase.y, 12, 6, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
-        ctx.fill();
+      const evaluation = evaluateTargetPoint3D(
+        cameraSpec,
+        { x: tar.x, y: tar.y },
+        obstacleEntities,
+        tar.z,
+        activeTargetOption.id === 'vehicle' ? 1.2 : 0.5
+      );
+      setCurrentEval(evaluation);
 
-        const ringPulse = (t * 0.8) % 1;
-        ctx.beginPath();
-        ctx.ellipse(targetBase.x, targetBase.y, 12 + ringPulse * 10, 6 + ringPulse * 5, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = evaluation.visibilityRatio > 0 ? 'rgba(0, 229, 255, 0.7)' : 'rgba(239, 68, 68, 0.7)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+      // Extract raycast and metric properties from evaluation
+      const headHit = evaluation.rayHits?.find(r => r.anchor === 'head');
+      const torsoHit = evaluation.rayHits?.find(r => r.anchor === 'torso');
+      const ankleHit = evaluation.rayHits?.find(r => r.anchor === 'ankle');
 
-        if (targetTorso.valid) {
-          ctx.strokeStyle = activeTargetOption.id === 'vehicle' ? '#10b981' : '#eab308';
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          ctx.moveTo(targetBase.x, targetBase.y);
-          ctx.lineTo(targetTorso.x, targetTorso.y);
-          ctx.stroke();
-        }
+      const headOccluded = Boolean(headHit?.blocked);
+      const torsoOccluded = Boolean(torsoHit?.blocked);
+      const ankleOccluded = Boolean(ankleHit?.blocked);
+      const isOccluded = evaluation.visibilityRatio < 1.0;
+      const fullyOccluded = evaluation.visibilityRatio === 0;
+      const distanceM = evaluation.slantDistanceM;
+      const ppm = evaluation.effectivePpm;
+      const doriCategory = evaluation.doriTier;
+      const impactPoint = evaluation.rayHits?.find(r => r.hitPoint)?.hitPoint;
 
-        ctx.beginPath();
-        ctx.arc(targetHead.x, targetHead.y, 7, 0, Math.PI * 2);
-        ctx.fillStyle = activeTargetOption.id === 'intruder' ? '#ef4444' : '#f59e0b';
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+      // Render 3 Laser Rays (Head, Torso, Ankle) in 3D Canvas
+      const headAnchor = { x: tar.x, y: tar.y, z: tar.z };
+      const torsoAnchor = { x: tar.x, y: tar.y, z: tar.z * 0.65 };
+      const ankleAnchor = { x: tar.x, y: tar.y, z: 0.15 };
 
-        // Target Emoji
-        ctx.fillStyle = '#0f172a';
-        ctx.font = '10px ui-sans-serif, system-ui';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(activeTargetOption.icon, targetHead.x, targetHead.y);
-      }
+      const rays = [
+        { name: 'Head (Biometrics / PPE)', pt: headAnchor, blocked: headOccluded, col: '#00e5ff' },
+        { name: 'Torso (Vest / Pose)', pt: torsoAnchor, blocked: torsoOccluded, col: '#facc15' },
+        { name: 'Ankle (Slip / Fall)', pt: ankleAnchor, blocked: ankleOccluded, col: '#38bdf8' },
+      ];
 
-      // 6. Draw 3 Multi-Height Laser Sightline Rays (Kay-Kajiya Ray-AABB Slab Math)
-      if (camProj.valid && evaluation?.rayHits) {
-        evaluation.rayHits.forEach(ray => {
-          const samplePoint = project(tar.x, tar.y, ray.heightM);
-          if (!samplePoint.valid) return;
-
-          ctx.save();
-          if (ray.blocked && ray.hitPoint) {
-            const hitProj = project(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
-            if (hitProj.valid) {
-              ctx.strokeStyle = 'rgba(239, 68, 68, 0.95)';
+      rays.forEach(r => {
+        const tp = project(r.pt.x, r.pt.y, r.pt.z);
+        if (camProj.valid && tp.valid) {
+          if (r.blocked && impactPoint) {
+            // Laser hits obstacle surface
+            const ip = project(impactPoint.x, impactPoint.y, impactPoint.z);
+            if (ip.valid) {
+              // Solid beam up to collision impact
+              ctx.strokeStyle = r.col;
               ctx.lineWidth = 2;
-              ctx.shadowColor = '#ef4444';
-              ctx.shadowBlur = 8;
+              ctx.beginPath(); ctx.moveTo(camProj.x, camProj.y); ctx.lineTo(ip.x, ip.y); ctx.stroke();
+
+              // Energetic Red Impact Ring on Obstacle Surface
+              ctx.strokeStyle = '#ef4444';
+              ctx.lineWidth = 2.5;
               ctx.beginPath();
-              ctx.moveTo(camProj.x, camProj.y);
-              ctx.lineTo(hitProj.x, hitProj.y);
+              ctx.arc(ip.x, ip.y, 6 + Math.sin(t * 10) * 2, 0, Math.PI * 2);
               ctx.stroke();
 
-              ctx.shadowBlur = 14;
-              ctx.shadowColor = '#ef4444';
-              ctx.fillStyle = '#ef4444';
-              ctx.beginPath();
-              ctx.arc(hitProj.x, hitProj.y, 4.5, 0, Math.PI * 2);
-              ctx.fill();
-
-              ctx.strokeStyle = '#ffffff';
+              // Dashed Occluded Sightline Shadow to Target
+              ctx.setLineDash([4, 4]);
+              ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
               ctx.lineWidth = 1.5;
-              ctx.beginPath();
-              ctx.moveTo(hitProj.x - 3, hitProj.y - 3);
-              ctx.lineTo(hitProj.x + 3, hitProj.y + 3);
-              ctx.moveTo(hitProj.x + 3, hitProj.y - 3);
-              ctx.lineTo(hitProj.x - 3, hitProj.y + 3);
-              ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(ip.x, ip.y); ctx.lineTo(tp.x, tp.y); ctx.stroke();
+              ctx.setLineDash([]);
             }
           } else {
-            ctx.strokeStyle = 'rgba(34, 211, 238, 0.95)';
+            // Unobstructed Direct Sightline
+            ctx.strokeStyle = r.col;
             ctx.lineWidth = 2;
-            ctx.shadowColor = '#00e5ff';
-            ctx.shadowBlur = 10;
-            ctx.beginPath();
-            ctx.moveTo(camProj.x, camProj.y);
-            ctx.lineTo(samplePoint.x, samplePoint.y);
-            ctx.stroke();
-
-            const phase = (t * 0.7 + (ray.heightM / 2)) % 1;
-            const bx = camProj.x + (samplePoint.x - camProj.x) * phase;
-            const by = camProj.y + (samplePoint.y - camProj.y) * phase;
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(bx, by, 3, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.moveTo(camProj.x, camProj.y); ctx.lineTo(tp.x, tp.y); ctx.stroke();
           }
-          ctx.restore();
-        });
+        }
+      });
+
+      // -------------------------------------------------------------
+      // 7. ANIMATED 3D TARGET ACTOR & HUD BOUNDING BOX
+      // -------------------------------------------------------------
+      const targetBase = project(tar.x, tar.y, 0);
+      const targetHead = project(tar.x, tar.y, tar.z);
+
+      if (targetBase.valid && targetHead.valid) {
+        // Target Ground Footprint / Shadow
+        ctx.fillStyle = fullyOccluded
+          ? 'rgba(239, 68, 68, 0.4)'
+          : isOccluded
+          ? 'rgba(245, 158, 11, 0.4)'
+          : 'rgba(0, 229, 255, 0.4)';
+        ctx.beginPath();
+        ctx.ellipse(targetBase.x, targetBase.y, 14, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Target Actor Wireframe Silhouette
+        const bodyH = targetBase.y - targetHead.y;
+        const boxW = Math.max(16, bodyH * 0.45);
+
+        ctx.strokeStyle = fullyOccluded
+          ? '#ef4444'
+          : isOccluded
+          ? '#f59e0b'
+          : '#00e5ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(targetHead.x - boxW / 2, targetHead.y, boxW, bodyH);
+
+        // Target Icon & Label
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(activeTargetOption.icon, targetHead.x, targetHead.y - 18);
+
+        // Real-Time 3D Telemetry Tag
+        ctx.fillStyle = 'rgba(3, 7, 18, 0.85)';
+        ctx.fillRect(targetHead.x - 55, targetHead.y - 14, 110, 14);
+        ctx.strokeStyle = isOccluded ? '#ef4444' : '#00e5ff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(targetHead.x - 55, targetHead.y - 14, 110, 14);
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '600 8.5px ui-monospace, monospace';
+        ctx.fillText(
+          `${distanceM.toFixed(1)}m · ${Math.round(ppm)} PPM · ${doriCategory}`,
+          targetHead.x,
+          targetHead.y - 4
+        );
       }
 
       ctx.restore();
@@ -1019,441 +1269,412 @@ export function FrustumSpatialInspector({
     raf = requestAnimationFrame(render);
     return () => cancelAnimationFrame(raf);
   }, [
+    isPlaying,
     yaw,
     pitch,
     zoom,
-    isPlaying,
-    targetSpeed,
-    targetRole,
-    focalLengthMm,
-    mountHeightM,
-    tiltDeg,
-    azimuthDeg,
+    roomLength,
+    roomWidth,
+    roomCeiling,
+    activeScenario,
     cameraSpec,
-    obstacleEntities,
     visualDetails,
+    obstacleEntities,
+    poses,
+    activeCamera,
+    showAllCamerasIn3D,
+    azimuthDeg,
+    tiltDeg,
     fov,
     sensorSpec,
+    targetRole,
     activeTargetOption,
-    site,
     getTargetPositionAtTime,
   ]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      setZoom(z => clamp(z * (e.deltaY > 0 ? 0.92 : 1.08), 0.4, 4.0));
-    };
-
-    canvas.addEventListener('wheel', onWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', onWheel);
-  }, []);
-
-  const evalData = currentEval || {
-    inFrustum: true,
-    visibilityRatio: 0.66,
-    slantDistanceM: 11.7,
-    groundDistanceM: 9.8,
-    effectivePpm: 244,
-    verticalDepressionDeg: 16.9,
-    doriTier: 'RECOGNIZE' as const,
-    personBBoxPx: { width: 122, height: 427 },
-    aiFeasibility: { personTracking: true, ppeDetection: true, facialRecognition: false },
-    rayHits: [],
+  // Mouse Orbit Drag Controls
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setIsDragging(true);
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
   };
 
-  const isOccluded = evalData.visibilityRatio < 1.0;
-  const rayVisCount = evalData.rayHits
-    ? `${evalData.rayHits.filter(r => !r.blocked).length}/${evalData.rayHits.length} Rays`
-    : '2/3 Rays';
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastMousePos.current.x;
+    const dy = e.clientY - lastMousePos.current.y;
+    lastMousePos.current = { x: e.clientX, y: e.clientY };
+
+    setYaw(prev => (prev + dx * 0.45) % 360);
+    setPitch(prev => clamp(prev - dy * 0.35, 10, 85));
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    setZoom(prev => clamp(prev - e.deltaY * 0.0015, 0.5, 3.0));
+  };
 
   return (
     <div
       ref={containerRef}
-      className="w-full rounded-2xl border border-slate-800 bg-[#070b14] shadow-2xl overflow-hidden flex flex-col text-slate-100 font-sans"
+      className="relative w-full h-[680px] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col font-sans select-none"
     >
-      {/* Header Block with Dynamic Scenario Selector */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 bg-[#0a0f1d] border-b border-slate-800/80">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse shadow-sm shadow-cyan-400" />
-            <h2 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-              CCTV Frustum & DORI Spatial Inspector
-            </h2>
-          </div>
-          <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Multi-Scenario 3D Digital Twin & Optical Telemetry
-          </p>
+      {/* TOP DYNAMIC AI SCENARIO SYNTHESIS TOOLBAR */}
+      <div className="z-20 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+        {/* Scenario Selector Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto max-w-[62%] py-0.5 scrollbar-thin">
+          {scenarioOptions.map(sc => (
+            <button
+              key={sc.id}
+              onClick={() => setActiveScenario(sc.id)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-medium text-[11px] whitespace-nowrap transition-all ${
+                activeScenario === sc.id
+                  ? 'bg-sky-500 text-white font-bold shadow-md shadow-sky-500/20'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700/80 border border-slate-700/50'
+              }`}
+            >
+              <span>{sc.icon}</span>
+              <span>{sc.name.split(' ')[0]}</span>
+            </button>
+          ))}
         </div>
 
-        {/* Dynamic Scenario Switcher Dropdown / Pills */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-mono text-slate-400">Scenario:</span>
-          <select
-            value={activeScenario}
-            onChange={e => setActiveScenario(e.target.value as ScenarioArchetype)}
-            className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-cyan-400"
-          >
-            {scenarioOptions.map(sc => (
-              <option key={sc.id} value={sc.id}>
-                {sc.icon} {sc.name}
-              </option>
-            ))}
-          </select>
-
-          {/* Camera Selection Switcher (if cameras exist in project) */}
-          {poses && poses.length > 0 && (
-            <div className="flex items-center gap-1 pl-2 border-l border-slate-800">
-              <span className="text-[10px] font-mono text-slate-400">Camera:</span>
-              <div className="flex gap-1">
-                {poses.map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => onSelectCamera?.(p.id)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition ${
-                      activeCamera?.id === p.id
-                        ? 'bg-cyan-500 text-slate-950 font-bold ring-1 ring-cyan-300'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    C{p.id}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Live DORI & Occlusion Badges */}
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-mono font-bold tracking-wider uppercase transition shadow-sm ${
-              evalData.doriTier === 'IDENTIFY'
-                ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-500/60 shadow-cyan-900/50'
-                : evalData.doriTier === 'RECOGNIZE'
-                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/60 shadow-emerald-900/50'
-                : evalData.doriTier === 'OBSERVE'
-                ? 'bg-amber-950/80 text-amber-300 border border-amber-500/60'
-                : 'bg-rose-950/80 text-rose-300 border border-rose-500/60'
-            }`}
-          >
-            {evalData.doriTier}
-          </span>
-
-          <span
-            className={`px-3 py-1 rounded-full text-xs font-mono font-bold tracking-wider uppercase transition shadow-sm ${
-              isOccluded
-                ? 'bg-rose-950/90 text-rose-400 border border-rose-600/70 shadow-rose-950'
-                : 'bg-emerald-950/90 text-emerald-400 border border-emerald-600/70 shadow-emerald-950'
-            }`}
-          >
-            {isOccluded ? 'OCCLUDED' : 'CLEAR LOS'}
-          </span>
-
+        {/* AI Prompt Auto-Design Bar */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <input
+            type="text"
+            value={aiPromptInput}
+            onChange={(e) => setAiPromptInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleRunAiSynthesis()}
+            placeholder="Type custom scenario (e.g. Airport, Cleanroom)..."
+            className="w-56 px-2.5 py-1 text-[11px] bg-slate-950 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500"
+          />
           <button
-            type="button"
-            onClick={() => setShowPip(v => !v)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-mono border transition flex items-center gap-1.5 ${
-              showPip
-                ? 'bg-sky-600 text-white border-sky-400 shadow-sm'
-                : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white'
-            }`}
-            title="Toggle Picture-in-Picture Virtual CCTV View"
+            onClick={handleRunAiSynthesis}
+            disabled={isSynthesizing}
+            className="flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-[11px] font-bold rounded-lg shadow transition-all disabled:opacity-50"
           >
-            <Tv className="w-3.5 h-3.5" />
-            <span>Virtual CCTV</span>
+            {isSynthesizing ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5" />
+            )}
+            <span>AI Design 3D</span>
           </button>
         </div>
       </div>
 
-      {/* Main 3D Viewport with Floating AI Telemetry HUD */}
-      <div className="relative w-full h-[540px] bg-[#050811] overflow-hidden select-none">
+      {/* MAIN 3D VIRTUAL ENVIRONMENT CANVAS */}
+      <div className="relative flex-1 w-full h-full overflow-hidden cursor-grab active:cursor-grabbing">
         <canvas
           ref={canvasRef}
-          className="block w-full h-full cursor-grab active:cursor-grabbing touch-none"
-          onPointerDown={e => {
-            dragRef.current = { x: e.clientX, y: e.clientY, yaw, pitch, moved: false };
-            (e.target as HTMLElement).setPointerCapture(e.pointerId);
-          }}
-          onPointerMove={e => {
-            const d = dragRef.current;
-            if (!d) return;
-            if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3) d.moved = true;
-            setYaw(d.yaw + (e.clientX - d.x) * 0.35);
-            setPitch(clamp(d.pitch + (e.clientY - d.y) * 0.25, 5, 85));
-          }}
-          onPointerUp={() => {
-            dragRef.current = null;
-          }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
+          className="w-full h-full block"
         />
 
-        {/* Floating AI TELEMETRY HUD */}
-        <div className="absolute top-4 right-4 w-72 rounded-xl bg-[#090d19]/90 border border-slate-700/80 p-3.5 shadow-2xl backdrop-blur-md space-y-2.5">
-          <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
-            <span className="text-[11px] font-mono font-bold tracking-wider text-cyan-400">
-              AI TELEMETRY HUD
-            </span>
-            <span className="text-[10px] font-mono text-cyan-300 font-bold px-1.5 py-0.5 rounded bg-cyan-950/70 border border-cyan-800/80">
-              {resolutionName}
-            </span>
-          </div>
-
-          <div className="space-y-1.5 text-xs font-mono">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Active Scenario:</span>
-              <span className="font-bold text-slate-200">{currentScenarioDef.name.split('&')[0]}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Effective PPM:</span>
-              <span className="font-bold text-white tracking-wide">{evalData.effectivePpm} px/m</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Slant Range:</span>
-              <span className="font-bold text-white">{evalData.slantDistanceM} m</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Depression Angle:</span>
-              <span className="font-bold text-white">{evalData.verticalDepressionDeg}°</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Est. Target Box:</span>
-              <span className="font-bold text-white">
-                {evalData.personBBoxPx.width}x{evalData.personBBoxPx.height} px
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Ray Visibility:</span>
-              <span
-                className={`font-bold ${
-                  evalData.visibilityRatio === 1
-                    ? 'text-emerald-400'
-                    : evalData.visibilityRatio > 0
-                    ? 'text-amber-400'
-                    : 'text-rose-400'
-                }`}
-              >
-                {rayVisCount}
-              </span>
-            </div>
-          </div>
-
-          {/* AI Task Status Badges */}
-          <div className="pt-2 border-t border-slate-800 grid grid-cols-3 gap-1.5 text-center">
-            <div>
-              <div className="text-[9px] font-mono text-slate-500 mb-0.5">FACE ID</div>
-              <span
-                className={`block py-1 rounded text-[10px] font-mono font-bold ${
-                  evalData.aiFeasibility.facialRecognition
-                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                    : 'bg-rose-950/90 text-rose-400 border border-rose-800'
-                }`}
-              >
-                {evalData.aiFeasibility.facialRecognition ? 'PASS' : 'FAIL'}
-              </span>
-            </div>
-
-            <div>
-              <div className="text-[9px] font-mono text-slate-500 mb-0.5">PPE SAFETY</div>
-              <span
-                className={`block py-1 rounded text-[10px] font-mono font-bold ${
-                  evalData.aiFeasibility.ppeDetection
-                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                    : 'bg-rose-950/90 text-rose-400 border border-rose-800'
-                }`}
-              >
-                {evalData.aiFeasibility.ppeDetection ? 'PASS' : 'FAIL'}
-              </span>
-            </div>
-
-            <div>
-              <div className="text-[9px] font-mono text-slate-500 mb-0.5">BYTETRACK</div>
-              <span
-                className={`block py-1 rounded text-[10px] font-mono font-bold ${
-                  evalData.aiFeasibility.personTracking
-                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                    : evalData.visibilityRatio > 0
-                    ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                    : 'bg-rose-950/90 text-rose-400 border border-rose-800'
-                }`}
-              >
-                {evalData.aiFeasibility.personTracking
-                  ? 'LOCKED'
-                  : evalData.visibilityRatio > 0
-                  ? 'DEGRADED'
-                  : 'LOST'}
-              </span>
-            </div>
-          </div>
+        {/* 3D CAMERA ORBIT CONTROLS HUD OVERLAY */}
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-slate-800 text-slate-300 text-[11px]">
+          <span className="font-semibold text-sky-400">Orbit 3D:</span>
+          <span>Yaw {Math.round(yaw)}°</span>
+          <span>·</span>
+          <span>Pitch {Math.round(pitch)}°</span>
+          <span>·</span>
+          <span>Zoom {zoom.toFixed(1)}x</span>
+          <button
+            onClick={() => { setYaw(42); setPitch(26); setZoom(1.0); }}
+            title="Reset Orbit View"
+            className="p-1 hover:text-white rounded hover:bg-slate-800 ml-1"
+          >
+            <RotateCcw className="w-3 h-3" />
+          </button>
         </div>
 
-        {/* Floating Picture-in-Picture Virtual CCTV Monitor */}
-        {showPip && (
-          <div className="absolute bottom-10 left-4 w-60 rounded-xl bg-slate-950/90 border border-cyan-800/70 p-2.5 shadow-2xl backdrop-blur-md">
-            <div className="flex items-center justify-between pb-1 mb-1.5 border-b border-slate-800 text-[10px] font-mono">
-              <span className="text-cyan-400 font-bold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                {activeCamera ? `CAM-0${activeCamera.id} LIVE RTSP` : 'CAM-01 LIVE RTSP'}
-              </span>
-              <span className="text-slate-400">{evalData.slantDistanceM}m</span>
-            </div>
-
-            {/* Synthetic Perspective Viewport of Target */}
-            <div className="relative w-full h-28 bg-[#0a0f1d] rounded border border-slate-800 flex items-center justify-center overflow-hidden">
-              <div className="absolute top-1 left-1.5 text-[8px] font-mono text-slate-500">
-                REC [H.265+] {sensorSpec.resW}x{sensorSpec.resH}
-              </div>
-
-              {/* Bounding Box Overlay */}
-              {evalData.inFrustum ? (
-                <div
-                  className={`relative flex flex-col items-center justify-center transition-all ${
-                    evalData.visibilityRatio === 1
-                      ? 'border-2 border-emerald-400'
-                      : evalData.visibilityRatio > 0
-                      ? 'border-2 border-amber-400 border-dashed'
-                      : 'border-2 border-rose-500 border-dotted'
-                  }`}
-                  style={{
-                    width: `${clamp(Math.round(evalData.personBBoxPx.width * 0.35), 28, 90)}px`,
-                    height: `${clamp(Math.round(evalData.personBBoxPx.height * 0.35), 45, 95)}px`,
-                  }}
-                >
-                  <span className="absolute -top-3.5 left-0 text-[8px] font-mono font-bold bg-slate-900 px-1 rounded text-cyan-300">
-                    {activeTargetOption.label.split(' ')[1] || 'TARGET'} {(evalData.visibilityRatio * 100).toFixed(0)}%
-                  </span>
-                  <div className="text-[9px] font-bold text-center">
-                    {activeTargetOption.icon}
-                  </div>
-                  <span className="absolute -bottom-3 text-[7px] font-mono text-slate-400">
-                    {evalData.effectivePpm} px/m
-                  </span>
-                </div>
-              ) : (
-                <span className="text-[10px] font-mono text-slate-500">Target Outside FOV</span>
-              )}
-            </div>
+        {/* MULTI-CAMERA SWITCHER BAR */}
+        {poses && poses.length > 1 && (
+          <div className="absolute top-3 left-64 z-10 flex items-center gap-1 bg-slate-900/85 backdrop-blur-md px-2 py-1 rounded-lg border border-slate-800 text-[10px]">
+            <span className="text-slate-400 font-semibold mr-1">Inspect Cam:</span>
+            {poses.map(p => (
+              <button
+                key={p.id}
+                onClick={() => onSelectCamera?.(p.id)}
+                className={`px-2 py-0.5 rounded font-mono font-bold transition-all ${
+                  p.id === activeCamera?.id
+                    ? 'bg-sky-500 text-white shadow'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                C{p.id}
+              </button>
+            ))}
           </div>
         )}
 
-        {/* Viewport Orbit & Zoom Navigation Hint */}
-        <div className="absolute bottom-2 right-4 text-[11px] font-mono text-slate-500">
-          Drag to orbit scene | Scroll to zoom
-        </div>
-      </div>
+        {/* DYNAMIC TARGET ROLE SELECTOR & PLAYBACK */}
+        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-800 shadow-lg text-xs">
+          <button
+            onClick={() => setIsPlaying(!isPlaying)}
+            className="p-1.5 bg-sky-500 hover:bg-sky-400 text-white rounded-lg transition-colors"
+          >
+            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+          </button>
 
-      {/* Bottom Interactive Control Sliders */}
-      <div className="p-5 bg-[#0a0f1d] border-t border-slate-800 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Slider 1: Focal Length */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-300 font-medium">Focal Length</span>
-              <span className="font-bold text-cyan-400">{focalLengthMm.toFixed(1)} mm</span>
-            </div>
-            <input
-              type="range"
-              min="2.8"
-              max="12.0"
-              step="0.1"
-              value={focalLengthMm}
-              onChange={e => handleFocalChange(parseFloat(e.target.value))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-            />
-            <div className="flex justify-between text-[9px] font-mono text-slate-500">
-              <span>2.8mm (Wide {fov.hfovDeg}°)</span>
-              <span>12.0mm (Tele)</span>
-            </div>
-          </div>
+          <div className="h-4 w-px bg-slate-700" />
 
-          {/* Slider 2: Mount Height */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-300 font-medium">Mount Height</span>
-              <span className="font-bold text-cyan-400">{mountHeightM.toFixed(1)} m</span>
-            </div>
-            <input
-              type="range"
-              min="2.0"
-              max="12.0"
-              step="0.1"
-              value={mountHeightM}
-              onChange={e => handleHeightChange(parseFloat(e.target.value))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-            />
-            <div className="flex justify-between text-[9px] font-mono text-slate-500">
-              <span>2.0m (Eye-level)</span>
-              <span>12.0m (High-Bay)</span>
-            </div>
-          </div>
-
-          {/* Slider 3: Down-Tilt Angle */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-300 font-medium">Down-Tilt Angle</span>
-              <span className="font-bold text-cyan-400">{tiltDeg}°</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="80"
-              step="1"
-              value={tiltDeg}
-              onChange={e => handleTiltChange(parseInt(e.target.value, 10))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-            />
-            <div className="flex justify-between text-[9px] font-mono text-slate-500">
-              <span>0° (Horizon)</span>
-              <span>80° (Nadir Cutoff)</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Secondary Navigation & Patrol Toolbar */}
-        <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">Patrol Actor:</span>
+          <div className="flex items-center gap-1">
             {currentScenarioDef.targets.map(t => (
               <button
                 key={t.id}
-                type="button"
-                onClick={() => setTargetRole(t.id)}
-                className={`px-2.5 py-1 rounded-md transition ${
+                onClick={() => setTargetRole(t.id as any)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all ${
                   targetRole === t.id
-                    ? 'bg-sky-600 text-white font-bold'
-                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    ? 'bg-slate-700 text-sky-400 font-bold border border-sky-500/40'
+                    : 'text-slate-400 hover:bg-slate-800'
                 }`}
               >
-                {t.label}
+                <span>{t.icon}</span>
+                <span>{t.label.split(' ')[1] || t.label}</span>
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setIsPlaying(p => !p)}
-              className="px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center gap-1.5 border border-slate-700"
-            >
-              {isPlaying ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
-              <span>{isPlaying ? 'Pause Patrol' : 'Play Patrol'}</span>
-            </button>
+          <div className="h-4 w-px bg-slate-700" />
 
-            <button
-              type="button"
-              onClick={() => {
-                setYaw(-38);
-                setPitch(24);
-                setZoom(1.1);
-              }}
-              className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800"
-              title="Reset 3D Viewport"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+          <div className="flex items-center gap-1 text-[10px] text-slate-400">
+            <span>Speed:</span>
+            <input
+              type="range"
+              min="0.2"
+              max="2.0"
+              step="0.1"
+              value={targetSpeed}
+              onChange={(e) => setTargetSpeed(parseFloat(e.target.value))}
+              className="w-16 accent-sky-400"
+            />
           </div>
         </div>
+
+        {/* RIGHT SIDEBAR: REAL-TIME AI TELEMETRY & PHYSICAL CONTROLS */}
+        {showHUD && (
+          <div className="absolute top-3 right-3 z-10 w-80 max-h-[92%] overflow-y-auto space-y-2 scrollbar-thin scrollbar-thumb-slate-700 pr-1">
+            {/* 1. DORI & IEC 62676-4 OPTICAL TELEMETRY CARD */}
+            <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 p-3 rounded-xl shadow-xl space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-200">
+                <span className="flex items-center gap-1 text-sky-400">
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>IEC 62676-4 AI Telemetry</span>
+                </span>
+                <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-bold">
+                  {telemetry?.doriCategory.toUpperCase() || 'IDENTIFY'}
+                </span>
+              </div>
+
+              {/* PPM & Distance Metrics */}
+              <div className="grid grid-cols-2 gap-2 text-[10.5px] font-mono">
+                <div className="bg-slate-950/80 p-2 rounded-lg border border-slate-800">
+                  <div className="text-slate-400 text-[9.5px]">SLANT DISTANCE</div>
+                  <div className="text-white font-bold text-sm">
+                    {telemetry ? `${telemetry.distanceM.toFixed(2)} m` : '--'}
+                  </div>
+                </div>
+                <div className="bg-slate-950/80 p-2 rounded-lg border border-slate-800">
+                  <div className="text-slate-400 text-[9.5px]">PIXELS / METER</div>
+                  <div className="text-emerald-400 font-bold text-sm">
+                    {telemetry ? `${Math.round(telemetry.ppm)} PPM` : '--'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Forensic Biometric Facial Recognition IPD & Angle */}
+              <div className="bg-slate-950/80 p-2.5 rounded-lg border border-slate-800 space-y-1.5 text-[11px] font-mono">
+                <div className="flex justify-between items-center text-slate-300">
+                  <span className="text-[10px]">Interpupillary Dist (IPD):</span>
+                  <span className="font-bold text-sky-300">
+                    {telemetry ? `${Math.round(telemetry.facialPixels)} px` : '--'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-300">
+                  <span className="text-[10px]">Forensic Down-Tilt:</span>
+                  <span className={`font-bold ${
+                    telemetry && telemetry.verticalAngleDeg <= 25
+                      ? 'text-emerald-400'
+                      : telemetry && telemetry.verticalAngleDeg <= 35
+                      ? 'text-amber-400'
+                      : 'text-rose-400'
+                  }`}>
+                    {telemetry ? `${telemetry.verticalAngleDeg.toFixed(1)}°` : '--'}
+                  </span>
+                </div>
+                <div className="text-[9.5px] text-slate-400 pt-1 border-t border-slate-800/80 flex items-center justify-between">
+                  <span>Face Biometrics:</span>
+                  <span className={telemetry?.faceOccluded ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                    {telemetry?.faceOccluded ? 'BLOCKED' : telemetry && telemetry.ppm >= 250 ? 'MATCH FEASIBLE (98%)' : 'RECOGNITION ONLY'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 3-Anchor Laser Ray Occlusion Status */}
+              <div className="space-y-1 text-[10px] font-mono">
+                <div className="flex items-center justify-between p-1.5 rounded bg-slate-950 border border-slate-800">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                    <span>Head Ray (Biometrics):</span>
+                  </span>
+                  <span className={telemetry?.headOccluded ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                    {telemetry?.headOccluded ? 'OCCLUDED' : 'CLEAR LOS'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-1.5 rounded bg-slate-950 border border-slate-800">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-yellow-400" />
+                    <span>Torso Ray (PPE Vest):</span>
+                  </span>
+                  <span className={telemetry?.torsoOccluded ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                    {telemetry?.torsoOccluded ? 'OCCLUDED' : 'CLEAR LOS'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between p-1.5 rounded bg-slate-950 border border-slate-800">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-sky-400" />
+                    <span>Ankle Ray (Fall/Contact):</span>
+                  </span>
+                  <span className={telemetry?.ankleOccluded ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                    {telemetry?.ankleOccluded ? 'OCCLUDED' : 'CLEAR LOS'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. REAL-TIME PHYSICAL CAMERA SPECS & POSE CONTROLS */}
+            <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 p-3 rounded-xl shadow-xl space-y-2.5 text-xs">
+              <div className="flex items-center justify-between font-bold text-slate-200">
+                <span className="flex items-center gap-1 text-sky-400">
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Optical & Mount Controls</span>
+                </span>
+                <span className="font-mono text-[10px] text-slate-400">{resolutionName}</span>
+              </div>
+
+              {/* Focal Length Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px] text-slate-300 font-mono">
+                  <span>Focal Length (f):</span>
+                  <span className="text-sky-300 font-bold">{focalLengthMm.toFixed(1)} mm</span>
+                </div>
+                <input
+                  type="range"
+                  min="2.8"
+                  max="16.0"
+                  step="0.4"
+                  value={focalLengthMm}
+                  onChange={(e) => handleFocalChange(parseFloat(e.target.value))}
+                  className="w-full accent-sky-400 h-1 bg-slate-800 rounded-lg cursor-pointer"
+                />
+              </div>
+
+              {/* Mount Height Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px] text-slate-300 font-mono">
+                  <span>Mount Height (Z):</span>
+                  <span className="text-sky-300 font-bold">{mountHeightM.toFixed(1)} m</span>
+                </div>
+                <input
+                  type="range"
+                  min="2.0"
+                  max={roomCeiling}
+                  step="0.2"
+                  value={mountHeightM}
+                  onChange={(e) => handleHeightChange(parseFloat(e.target.value))}
+                  className="w-full accent-sky-400 h-1 bg-slate-800 rounded-lg cursor-pointer"
+                />
+              </div>
+
+              {/* Down-Tilt Angle Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px] text-slate-300 font-mono">
+                  <span>Down-Tilt Angle (θ):</span>
+                  <span className="text-sky-300 font-bold">{Math.round(tiltDeg)}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="75"
+                  step="1"
+                  value={tiltDeg}
+                  onChange={(e) => handleTiltChange(parseInt(e.target.value))}
+                  className="w-full accent-sky-400 h-1 bg-slate-800 rounded-lg cursor-pointer"
+                />
+              </div>
+
+              {/* Pan Azimuth Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px] text-slate-300 font-mono">
+                  <span>Pan Azimuth (φ):</span>
+                  <span className="text-sky-300 font-bold">{Math.round(azimuthDeg)}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  step="5"
+                  value={azimuthDeg}
+                  onChange={(e) => handleAzimuthChange(parseInt(e.target.value))}
+                  className="w-full accent-sky-400 h-1 bg-slate-800 rounded-lg cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* 3. VIRTUAL CCTV PiP CAMERA FEED (SIMULATED SENSOR) */}
+            {showPiP && (
+              <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 p-2.5 rounded-xl shadow-xl space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-200">
+                  <span className="flex items-center gap-1 text-emerald-400">
+                    <Video className="w-3.5 h-3.5" />
+                    <span>Virtual CCTV PiP Feed</span>
+                  </span>
+                  <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-800">
+                    LIVE
+                  </span>
+                </div>
+
+                <div className="relative w-full h-28 bg-black rounded-lg overflow-hidden border border-slate-800 flex items-center justify-center">
+                  {/* PiP Reticle & Target HUD */}
+                  <div className="absolute inset-0 opacity-20 pointer-events-none grid grid-cols-3 grid-rows-3 border border-sky-400" />
+                  
+                  {/* Simulated PiP Target */}
+                  <div className="text-center font-mono space-y-1">
+                    <div className="text-xl">{activeTargetOption.icon}</div>
+                    <div className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                      telemetry?.fullyOccluded
+                        ? 'bg-rose-950 text-rose-300'
+                        : telemetry?.isOccluded
+                        ? 'bg-amber-950 text-amber-300'
+                        : 'bg-emerald-950 text-emerald-300'
+                    }`}>
+                      {telemetry?.fullyOccluded
+                        ? 'SIGNAL OCCLUDED'
+                        : telemetry?.isOccluded
+                        ? 'PARTIAL SIGHTLINE'
+                        : 'TARGET TRACK LOCKED'}
+                    </div>
+                  </div>
+
+                  {/* Corner OSD */}
+                  <div className="absolute top-1 left-1.5 text-[8.5px] font-mono text-slate-400">
+                    CAM {activeCamera?.id || 1} · {focalLengthMm.toFixed(1)}mm
+                  </div>
+                  <div className="absolute bottom-1 right-1.5 text-[8.5px] font-mono text-emerald-400">
+                    {telemetry ? `${Math.round(telemetry.ppm)} PPM` : ''}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

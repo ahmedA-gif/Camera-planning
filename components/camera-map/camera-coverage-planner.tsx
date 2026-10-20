@@ -2677,6 +2677,7 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                       setLens(refocusLens(lens, specs.focalMm));
                     }
                   }}
+                  onSynthesizeScenario={handleSynthesizeFacility}
                 />
               )}
 

@@ -26,6 +26,10 @@ export interface DetVisionProject {
   layout_sections?: string[];
   detection_coverage_target?: number;
   output_scope?: string[];
+  facility_width_m?: number;
+  facility_length_m?: number;
+  facility_height_m?: number;
+  facility_type?: string;
   safety_plan?: SafetyPlanDocument;
   revisions?: ProjectRevision[];
 }
@@ -97,6 +101,12 @@ export interface LayoutElement {
   name: string;
   type: 'wall' | 'obstacle' | 'entrance';
   points: Point[];
+  x_m?: number;
+  y_m?: number;
+  width_m?: number;
+  depth_m?: number;
+  height_m?: number;
+  obstacle_type?: string;
 }
 
 export interface Point {

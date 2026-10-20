@@ -83,6 +83,27 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
     }
   };
 
+  const handleExportDocx = async () => {
+    try {
+      const resp = await fetch('/api/report/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, format: 'docx' }),
+      });
+      if (!resp.ok) throw new Error('DOCX export failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(project.name || 'Plan_Vision').replace(/\s+/g, '_')}_Blueprint.doc`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('Unable to generate DOCX report.');
+    }
+  };
+
   return (
     <div className="flex flex-1 min-h-0 bg-gray-50 max-lg:flex-col">
       {/* Sidebar Navigation */}
@@ -113,6 +134,10 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 <button onClick={onPrint} className="px-3 py-1.5 bg-primary text-primary-foreground rounded text-sm flex items-center gap-1 hover:bg-primary/90">
                   <Printer className="w-4 h-4" />
                   Print / Save as PDF
+                </button>
+                <button onClick={handleExportDocx} className="px-3 py-1.5 border border-indigo-200 bg-indigo-50 text-indigo-700 rounded text-sm hover:bg-indigo-100 flex items-center gap-1 font-medium transition-colors">
+                  <FileText className="w-4 h-4 text-indigo-600" />
+                  Export DOCX
                 </button>
                 <button onClick={onExportJSON} className="px-3 py-1.5 border border-input rounded text-sm hover:bg-muted flex items-center gap-1">
                   <Download className="w-4 h-4" />
@@ -616,7 +641,10 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                       {project.cameras.map((cam, idx) => {
                         const mount = cam.y < 0.1 ? 'wall-v' : (cam.y > 0.9 ? 'wall-h' : (cam.x < 0.1 || cam.x > 0.9 ? 'cross' : 'roof-tilt'));
                         const symbols: Record<string, string> = { 'wall-h': '■', 'wall-v': '▼', 'roof-nadir': '●', 'roof-tilt': '◆', 'corner': '▲', 'cross': '◀▶', 'pole360': '⊕' };
-                        const estDistM = Math.round((cam.x * 60 + cam.y * 25) * 1.25 + 15);
+                        const fw = project.facility_width_m || 60;
+                        const fl = project.facility_length_m || 25;
+                        const fh = project.facility_height_m || 4.5;
+                        const estDistM = Math.round((cam.x * fw + cam.y * fl) * 1.25 + 15);
                         return (
                           <tr key={cam.id} className="hover:bg-slate-50">
                             <td className="p-3 font-bold text-slate-900">
@@ -629,9 +657,9 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                               </span>
                             </td>
                             <td className="p-3 text-slate-700">
-                              X: {(cam.x * 60).toFixed(1)}m<br />
-                              Y: {(cam.y * 25).toFixed(1)}m<br />
-                              Z: 4.5m
+                              X: {(cam.x * fw).toFixed(1)}m<br />
+                              Y: {(cam.y * fl).toFixed(1)}m<br />
+                              Z: {fh.toFixed(1)}m
                             </td>
                             <td className="p-3">
                               <span className="font-semibold text-primary">{cam.orientation_degrees}° Azimuth</span><br />

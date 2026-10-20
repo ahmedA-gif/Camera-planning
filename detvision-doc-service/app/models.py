@@ -107,6 +107,12 @@ class StructureElement(BaseModel):
     name: str
     type: str
     points: List[Point] = Field(default_factory=list)
+    x_m: Optional[float] = None
+    y_m: Optional[float] = None
+    width_m: Optional[float] = None
+    depth_m: Optional[float] = None
+    height_m: Optional[float] = None
+    obstacle_type: Optional[str] = None
 
 
 class WorkflowNode(BaseModel):
@@ -156,6 +162,10 @@ class DetVisionProject(BaseModel):
     layout_sections: List[str] = Field(default_factory=list)
     detection_coverage_target: Optional[int] = None
     output_scope: List[str] = Field(default_factory=list)
+    facility_width_m: Optional[float] = None
+    facility_length_m: Optional[float] = None
+    facility_height_m: Optional[float] = None
+    facility_type: Optional[str] = None
 
 
 class ReportRequest(BaseModel):

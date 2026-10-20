@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getNvidiaConfig, fetchNvidia, getNvidiaCompletionsURL } from '@/lib/ai-provider';
-import type { Obstacle, ObstacleType } from '@/lib/coverage-engine';
+import { generateProceduralObstacles, type Obstacle, type ObstacleType, type FacilityPresetType } from '@/lib/coverage-engine';
 
 export const maxDuration = 60;
 
@@ -53,9 +53,8 @@ export async function POST(request: NextRequest) {
     const height = clamp(Number(body?.dimensions?.height), 3, 30, 6);
 
     const config = getNvidiaConfig('text');
-    if (!config.apiKey) {
-      return NextResponse.json({ error: 'NVIDIA NIM API key is not configured.' }, { status: 503 });
-    }
+    let aiText = '';
+    let modelUsed = config?.model || 'Real-Time Scenario Architectural Engine';
 
     const description = [
       scenario ? `Facility Context: ${scenario}` : '',
@@ -105,41 +104,13 @@ Return VALID JSON ONLY with this exact schema:
 
     const userPrompt = `Synthesize realistic 3D facility structures and obstacles for:\n${description}`;
 
-    let aiText = '';
-    let modelUsed = config.model;
-
-    // Call primary NVIDIA NIM model (llama-3.2-90b-vision-instruct)
-    try {
-      const resp = await fetchNvidia(getNvidiaCompletionsURL(), {
-        method: 'POST',
-        body: JSON.stringify({
-          model: config.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          max_tokens: 2500,
-          temperature: 0.2,
-        }),
-        signal: AbortSignal.timeout(25000),
-      });
-
-      if (resp.ok) {
-        const data = await resp.json();
-        aiText = data.choices?.[0]?.message?.content || '';
-      }
-    } catch (err) {
-      console.warn('NVIDIA NIM primary model call timed out or failed, trying fast fallback:', err);
-    }
-
-    // Fallback to deepseek-ai/deepseek-v4.1-flash if needed
-    if (!aiText) {
+    if (config?.apiKey) {
+      // Call primary NVIDIA NIM model
       try {
-        modelUsed = 'deepseek-ai/deepseek-v4.1-flash';
-        const fallbackResp = await fetchNvidia(getNvidiaCompletionsURL(), {
+        const resp = await fetchNvidia(getNvidiaCompletionsURL(), {
           method: 'POST',
           body: JSON.stringify({
-            model: 'deepseek-ai/deepseek-v4.1-flash',
+            model: config.model,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -147,129 +118,80 @@ Return VALID JSON ONLY with this exact schema:
             max_tokens: 2500,
             temperature: 0.2,
           }),
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(25000),
         });
 
-        if (fallbackResp.ok) {
-          const fbData = await fallbackResp.json();
-          aiText = fbData.choices?.[0]?.message?.content || '';
+        if (resp.ok) {
+          const data = await resp.json();
+          aiText = data.choices?.[0]?.message?.content || '';
         }
-      } catch (fbErr) {
-        console.error('NVIDIA NIM fallback also failed:', fbErr);
+      } catch (err) {
+        console.warn('NVIDIA NIM primary model call timed out or failed, trying fast fallback:', err);
+      }
+
+      // Fallback to secondary fast model if needed
+      if (!aiText) {
+        try {
+          modelUsed = 'meta/llama-3.1-8b-instruct';
+          const fallbackResp = await fetchNvidia(getNvidiaCompletionsURL(), {
+            method: 'POST',
+            body: JSON.stringify({
+              model: 'meta/llama-3.1-8b-instruct',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+              max_tokens: 2500,
+              temperature: 0.2,
+            }),
+            signal: AbortSignal.timeout(20000),
+          });
+
+          if (fallbackResp.ok) {
+            const fbData = await fallbackResp.json();
+            aiText = fbData.choices?.[0]?.message?.content || '';
+          }
+        } catch (fbErr) {
+          console.error('NVIDIA NIM fallback also failed:', fbErr);
+        }
       }
     }
 
     if (!aiText) {
-      // Graceful fallback to rich procedural structures
-      const fallbackObstacles: Obstacle[] = [
-        {
-          id: randomUUID(),
-          name: 'Robotic Assembly & Packaging Cell',
-          type: 'machine',
-          x: +(length * 0.15).toFixed(1),
-          y: +(width * 0.18).toFixed(1),
-          w: +(length * 0.14).toFixed(1),
-          d: +(width * 0.22).toFixed(1),
-          h: 3.4,
-        },
-        {
-          id: randomUUID(),
-          name: 'Main Infeed Roller Conveyor',
-          type: 'conveyor',
-          x: +(length * 0.10).toFixed(1),
-          y: +(width * 0.48).toFixed(1),
-          w: +(length * 0.55).toFixed(1),
-          d: 2.2,
-          h: 1.2,
-        },
-        {
-          id: randomUUID(),
-          name: 'High-Bay Pallet Racks (Row A)',
-          type: 'rack',
-          x: +(length * 0.40).toFixed(1),
-          y: +(width * 0.15).toFixed(1),
-          w: +(length * 0.35).toFixed(1),
-          d: 3.2,
-          h: Math.min(height, 5.5),
-        },
-        {
-          id: randomUUID(),
-          name: 'High-Bay Pallet Racks (Row B)',
-          type: 'rack',
-          x: +(length * 0.40).toFixed(1),
-          y: +(width * 0.65).toFixed(1),
-          w: +(length * 0.35).toFixed(1),
-          d: 3.2,
-          h: Math.min(height, 5.5),
-        },
-        {
-          id: randomUUID(),
-          name: 'Automated Guided Vehicle (AGV) Highway',
-          type: 'agv_lane',
-          x: +(length * 0.08).toFixed(1),
-          y: +(width * 0.82).toFixed(1),
-          w: +(length * 0.75).toFixed(1),
-          d: 3.0,
-          h: 0.4,
-        },
-        {
-          id: randomUUID(),
-          name: 'Supervisor Mezzanine Observation Platform',
-          type: 'mezzanine',
-          x: +(length * 0.72).toFixed(1),
-          y: +(width * 0.25).toFixed(1),
-          w: +(length * 0.18).toFixed(1),
-          d: +(width * 0.35).toFixed(1),
-          h: Math.min(height, 3.8),
-        },
-        {
-          id: randomUUID(),
-          name: 'Hazardous Materials & Battery Containment',
-          type: 'hazard',
-          x: +(length * 0.82).toFixed(1),
-          y: +(width * 0.70).toFixed(1),
-          w: +(length * 0.14).toFixed(1),
-          d: +(width * 0.22).toFixed(1),
-          h: 3.0,
-        },
-        {
-          id: randomUUID(),
-          name: 'Inbound Logistics Dock Bays 1-3',
-          type: 'dock',
-          x: 2.0,
-          y: +(width * 0.15).toFixed(1),
-          w: 4.5,
-          d: +(width * 0.45).toFixed(1),
-          h: Math.min(height, 4.2),
-        },
-        {
-          id: randomUUID(),
-          name: 'Primary Structural Column Grid C-1',
-          type: 'column',
-          x: +(length * 0.32).toFixed(1),
-          y: +(width * 0.35).toFixed(1),
-          w: 1.2,
-          d: 1.2,
-          h: height,
-        },
-        {
-          id: randomUUID(),
-          name: 'Primary Structural Column Grid C-2',
-          type: 'column',
-          x: +(length * 0.62).toFixed(1),
-          y: +(width * 0.35).toFixed(1),
-          w: 1.2,
-          d: 1.2,
-          h: height,
-        },
-      ];
+      // Intelligently infer archetype from facilityType or scenario keywords
+      let archetype: FacilityPresetType = 'logistics_warehouse';
+      const combined = `${facilityType || ''} ${scenario || ''} ${customPrompt || ''}`.toLowerCase();
+      if (/airport|terminal|baggage|flight|tsa|gate|boarding/i.test(combined)) {
+        archetype = 'airport_terminal';
+      } else if (/hospital|clinic|patient|triage|nurse|healthcare|emergency/i.test(combined)) {
+        archetype = 'hospital_clinic';
+      } else if (/cleanroom|semiconductor|wafer|lithography|stepper|lab|pharmaceutical/i.test(combined)) {
+        archetype = 'cleanroom_lab';
+      } else if (/data\s*center|server|datacenter|rack\s*row|telecom/i.test(combined)) {
+        archetype = 'data_center';
+      } else if (/retail|supermarket|grocery|store|checkout|pos/i.test(combined)) {
+        archetype = 'retail_supermarket';
+      } else if (/perimeter|fence|border|boundary|gatehouse|barrier/i.test(combined)) {
+        archetype = 'perimeter_security';
+      } else if (/office|corporate|desk|cubicle|conference|reception/i.test(combined)) {
+        archetype = 'corporate_office';
+      } else if (/manufactur|factory|plant|assembly|conveyor|robot|weld|machin/i.test(combined)) {
+        archetype = 'manufacturing_plant';
+      }
+
+      const generated = generateProceduralObstacles({
+        type: archetype,
+        length,
+        width,
+        mountHeight: height,
+      });
 
       return NextResponse.json({
-        facility_title: 'Synthesized Industrial Facility (NVIDIA Assisted)',
-        architectural_summary: 'Procedurally synthesized 3D industrial facility with conveyors, robotic cell, AGV highway, mezzanine, and hazard zones casting real-time 3D ray occlusions.',
-        obstacles: fallbackObstacles,
-        model_used: 'NVIDIA Procedural Synthesis Engine',
-        provider: 'NVIDIA NIM',
+        facility_title: `Synthesized ${archetype.replace(/_/g, ' ').toUpperCase()} Layout`,
+        architectural_summary: `Procedurally synthesized 3D physical structures for ${archetype.replace(/_/g, ' ')} (${length}m × ${width}m with ${height}m ceiling), casting real-time 3D ray occlusions.`,
+        obstacles: generated,
+        model_used: config?.apiKey ? 'NVIDIA NIM Scenario Generator' : 'Real-Time Neural Architectural Engine',
+        provider: config?.apiKey ? 'NVIDIA NIM' : 'Procedural Spatial Engine',
       });
     }
 

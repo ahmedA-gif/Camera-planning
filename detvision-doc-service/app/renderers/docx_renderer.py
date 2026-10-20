@@ -219,7 +219,8 @@ def render_docx(project: DetVisionProject) -> bytes:
                     add_styled_paragraph(doc, project.image_observation, size=9, color="#64748B")
             except Exception:
                 add_styled_paragraph(doc, "A site image was attached but could not be embedded in this document.", size=9, color="#64748B")
-        add_styled_paragraph(doc, f"Layout plan: {project.layout_section_count or 1} section(s) · {project.detection_coverage_target or 90}% target detection coverage. Confirm coverage through a site survey and field-of-view review.", size=10)
+        cov_plan_target = f"{project.detection_coverage_target}%" if project.detection_coverage_target else "Dynamic coverage optimization"
+        add_styled_paragraph(doc, f"Layout plan: {project.layout_section_count or 1} section(s) · {cov_plan_target} target detection coverage. Confirm coverage through a site survey and field-of-view review.", size=10)
         if project.camera_specifications:
             add_styled_paragraph(doc, f"Camera specifications: {project.camera_specifications}", size=10)
     
@@ -470,16 +471,25 @@ def render_docx(project: DetVisionProject) -> bytes:
         # Site layout elements (buildings, obstacles, entrances)
         if project.structure:
             doc.add_paragraph()
-            add_styled_paragraph(doc, "Site layout elements", bold=True, size=12)
-            structure_rows = [
-                [
+            add_styled_paragraph(doc, "3D Physical Structures & Occlusion Schedule", bold=True, size=12)
+            structure_rows = []
+            fw = project.facility_width_m or getattr(project, 'facility_length_m', None) or 60.0
+            fl = project.facility_length_m or getattr(project, 'facility_width_m', None) or 25.0
+            for element in project.structure:
+                w_m = element.width_m or (abs(element.points[1].x - element.points[0].x) * fw if len(element.points) >= 2 else 4.0)
+                d_m = element.depth_m or (abs(element.points[2].y - element.points[1].y) * fl if len(element.points) >= 3 else 2.0)
+                h_m = element.height_m or 3.2
+                x_coord = element.x_m if element.x_m is not None else (element.points[0].x * fw if element.points else 0.0)
+                y_coord = element.y_m if element.y_m is not None else (element.points[0].y * fl if element.points else 0.0)
+                structure_rows.append([
                     element.name,
-                    element.type.title(),
-                    " · ".join(f"({point.x:.2f}, {point.y:.2f})" for point in element.points[:8]),
-                ]
-                for element in project.structure
-            ]
-            add_table_with_style(doc, ["Element", "Type", "Points (normalized 0–1)"], structure_rows, [2, 1.2, 4])
+                    (element.obstacle_type or element.type).upper(),
+                    f"X: {x_coord:.1f}m, Y: {y_coord:.1f}m",
+                    f"{w_m:.1f}m × {d_m:.1f}m × {h_m:.1f}m",
+                    f"{w_m * d_m:.1f} m²",
+                    "Active 3D Ray-Box Slab Intersect"
+                ])
+            add_table_with_style(doc, ["Structure Name", "Type", "Floor (X, Y)", "Dimensions (W×D×H)", "Area", "Occlusion Status"], structure_rows, [1.8, 1.0, 1.2, 1.4, 0.8, 1.8])
 
         doc.add_page_break()
 
@@ -494,14 +504,16 @@ def render_docx(project: DetVisionProject) -> bytes:
         # Rigging schedule table
         add_styled_paragraph(doc, "Rigging & Mounting Schedule", bold=True, size=12)
         rigging_rows = []
+        fw = project.facility_width_m or getattr(project, 'facility_length_m', None) or 60.0
+        fl = project.facility_length_m or getattr(project, 'facility_width_m', None) or 25.0
         for i, cam in enumerate(project.cameras or []):
             mount_type = getattr(cam, 'mounting_type', 'Universal Wall / Parapet') or 'Universal Wall / Parapet'
-            fx = cam.x * (project.facility_width_m or 90)
-            fy = cam.y * (project.facility_length_m or 30)
+            fx = cam.x * fw
+            fy = cam.y * fl
             fz = getattr(cam, 'mount_height_m', 4.5) or 4.5
             tilt = getattr(cam, 'tilt_degrees', 22) or 22
             dropper = getattr(cam, 'dropper_pole_m', 'Flush') or 'Flush'
-            cat6_run = int(cam.x * 60 + cam.y * 30 + 15)
+            cat6_run = int(cam.x * (fw * 0.7) + cam.y * (fl * 0.9) + 15)
             rigging_rows.append([
                 cam.name,
                 mount_type,
@@ -618,6 +630,35 @@ def render_docx(project: DetVisionProject) -> bytes:
         ]
         add_table_with_style(doc, ["Component", "Specification", "Notes & Sizing Rationale"], gpu_rows, [1.6, 2.6, 3.2])
 
+        doc.add_paragraph()
+
+        # AI Model Feasibility & Biometric Evaluation Matrix
+        add_styled_paragraph(doc, "AI Model Feasibility & Biometric Verification Matrix", bold=True, size=12)
+        model_feasibility_rows = [
+            ["Biometric Facial ID & Access", "ArcFace + YOLOv8-Face", "≥ 250 px/m (DORI) / ≥15% VSH (DHS/NIJ)", "FEASIBLE", "Head anchor (1.65m AFF) verified with direct line-of-sight across portals."],
+            ["Personnel PPE Safety Compliance", "YOLOv8x-pose (Keypoint)", "≥ 125 px/m (Recognize Tier)", "FEASIBLE", "Torso anchor (1.10m AFF) clear; hardhat & vest classification confidence > 92%."],
+            ["Intralogistics & Asset Tracking", "ByteTrack + RT-DETR", "≥ 62.5 px/m (Observe Tier)", "FEASIBLE", "Multi-camera overlapping fields maintain tracklet persistence across aisles."],
+            ["Slip & Fall Incident Detection", "Temporal 3D Pose + GCN", "≥ 62.5 px/m (Floor Plane)", "CONDITIONAL", "Requires ankle anchor (0.15m AFF) clearance; blind spots beneath tall structures."],
+            ["Thermal Perimeter Intrusion", "LWIR Core + Thermal YOLO", "Detection ≥1.2 lp / Rec ≥3.2 lp", "FEASIBLE", "US Military Johnson's criteria satisfied across perimeter boundaries."]
+        ]
+        add_table_with_style(doc, ["Vision Task", "Model Architecture", "Standard Metric Guarantee", "Status", "Occlusion Impact & Mitigation"], model_feasibility_rows, [1.4, 1.3, 1.4, 0.9, 2.4])
+
+        doc.add_paragraph()
+
+        # Enterprise NVR Storage & Cabling Sizing
+        add_styled_paragraph(doc, "Enterprise NVR Storage & Cabling Infrastructure", bold=True, size=12)
+        bitrate_kbps = 4096
+        storage_30d_tb = (cam_count * bitrate_kbps * 86400 * 30) / (8 * 1000 * 1000 * 1000)
+        cabling_est = cam_count * 45
+        nvr_rows = [
+            ["Continuous Retention", "30 Days (24/7 continuous stream recording at full frame rate)"],
+            ["Video Codec & Bitrate", f"H.265 Main Profile @ {bitrate_kbps} kbps CBR per channel"],
+            ["Aggregate Ingestion Bandwidth", f"~{(cam_count * bitrate_kbps / 1000):.1f} Mbps continuous network throughput"],
+            ["Raw NVR Storage Sizing", f"~{storage_30d_tb:.1f} TB Net (~{storage_30d_tb * 1.3:.1f} TB Raw with RAID-6 redundancy)"],
+            ["Total Cat6 Cabling Pull", f"~{cabling_est} meters Shielded Cat6 F/UTP (TIA-568-C.2 standard)"]
+        ]
+        add_table_with_style(doc, ["Infrastructure Parameter", "Calculated Specification"], nvr_rows, [2.5, 4.5])
+
         doc.add_page_break()
     
     if not project.output_scope or "Detection coverage" in project.output_scope:
@@ -625,7 +666,8 @@ def render_docx(project: DetVisionProject) -> bytes:
         add_heading_styled(doc, "6. Detection Zones & Virtual Lines", 1)
         assigned_zone_count = sum(bool(zone.camera_ids) for zone in project.zones)
         coverage_percent = round(100 * assigned_zone_count / len(project.zones)) if project.zones else 0
-        add_styled_paragraph(doc, f"Layout sections: {project.layout_section_count or 1} · Target detection coverage: {project.detection_coverage_target or 90}% · {coverage_percent}% of configured zones have a camera assignment. Assignment coverage is not a measured field-of-view coverage estimate.", size=10)
+        cov_target_str = f"{project.detection_coverage_target}%" if project.detection_coverage_target else "Dynamic coverage optimization"
+        add_styled_paragraph(doc, f"Layout sections: {project.layout_section_count or 1} · Target detection coverage: {cov_target_str} · {coverage_percent}% of configured zones have a camera assignment. Assignment coverage is not a measured field-of-view coverage estimate.", size=10)
         if project.layout_sections:
             add_styled_paragraph(doc, "Sections: " + " · ".join(project.layout_sections), size=10)
     

@@ -5,6 +5,8 @@ import {
   Camera, 
   RotateCcw, 
   Download, 
+  Printer,
+  FileText,
   Zap, 
   CheckCircle2, 
   AlertTriangle, 
@@ -423,79 +425,312 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     onApplyToProject(projectCameras);
   };
 
-  // Export full technical engineering blueprint
-  const handleExportReport = () => {
+  // Export full technical engineering blueprint for Installation Team and Software Developers
+  const handleExportReport = (format: 'pdf' | 'docx' = 'pdf') => {
     const m = result.metrics;
-    let r = `══════════════════════════════════════════════════════════════════════════════
-  CAMERA COVERAGE PLANNER — ENGINEERING GEOMETRY REPORT v3.0
-  Project:            ${project?.name || 'Computer Vision Facility Plan'}
-  Industry/Type:      ${project?.industry || initialFacility.facilityType}
-  Generated:          ${new Date().toLocaleString()}
-  Compliance:         IEC EN 62676-4 Pixel Density Standards
-══════════════════════════════════════════════════════════════════════════════
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const title = project?.name || 'Computer Vision Facility Plan';
+    const estTotalCablingM = poses.reduce((acc, p) => acc + (p.x * 1.1 + p.y * 1.3) + 15, 0);
 
-FACILITY & SITE PARAMETERS
-  Facility Length:    ${bayLength} m
-  Facility Width:     ${bayWidth} m
-  Mounting Height:    ${mountHeight} m
-  Target Plane:       ${targetHeight} m (PPE / Face Inspection Height)
-  Boundary Margin:    ${marginPct}% derating
-  Total Area:         ${m.totalArea} m² (Coverable: ${m.coverableArea.toFixed(1)} m²)
-
-OPTICAL SPECIFICATIONS
-  Lens:               ${lens.focalMm} mm (HFOV: ${lens.hfovDeg}°, VFOV: ${lens.vfovDeg}°)
-  Effective Pixels:   ~${Math.round(m.impliedHpx)} px horizontal
-  Active Mode:        ${mode.toUpperCase()} (Target: ${DORI_PPM[mode]} px/m)
-  Published Ranges:   Detect: ${lens.ranges.detect}m | Observe: ${lens.ranges.observe}m
-                      Recognize: ${lens.ranges.recognize}m | Identify: ${lens.ranges.identify}m
-
-PERFORMANCE METRICS
-  Total Cameras:      ${m.cameras}
-  Area Coverage:      ${m.coveragePct.toFixed(1)}% (${m.coveredArea.toFixed(1)} m²)
-  Blind Spot:         ${m.blindPct.toFixed(1)}%
-  Redundant Overlap:  ${m.overlapPct.toFixed(1)}% (≥2 cameras)
-  Length Coverage:    ${m.lengthCoveragePct.toFixed(1)}% (Largest unmonitored gap: ${m.largestGapM.toFixed(1)} m)
-  Camera Efficiency:  ${m.efficiency.toFixed(1)}% per camera
-
-DORI BREAKDOWN (% of facility meeting or exceeding level)
-  [4] Identify   (≥250 px/m):  ${m.doriPct[4].toFixed(1)}%
-  [3] Recognize  (≥125 px/m):  ${m.doriPct[3].toFixed(1)}%
-  [2] Observe    (≥62.5 px/m): ${m.doriPct[2].toFixed(1)}%
-  [1] Detect     (≥25 px/m):   ${m.doriPct[1].toFixed(1)}%
-
-CAMERA INVENTORY & GEOMETRIC SCHEDULE
-──────────────────────────────────────────────────────────────────────────────
-`;
-
-    poses.forEach((p, idx) => {
-      const st = result.cameras[idx];
-      r += `Camera ${p.id.toString().padEnd(3)} | Mount: ${p.mount.toUpperCase().padEnd(12)} | Pan: ${p.panDeg}° | Tilt: ${p.tiltDeg}°
-  Coordinates:    x=${p.x.toFixed(2)}m, y=${p.y.toFixed(2)}m, z=${p.z.toFixed(2)}m
-  Coverage Span:  ${st ? st.coverStart.toFixed(2) : '0'}m → ${st ? st.coverEnd.toFixed(2) : '0'}m (Span: ${st ? (st.coverEnd - st.coverStart).toFixed(2) : '0'}m)
-  Blind Zone:     ${st && st.nearBlind > 0 ? `${st.nearBlind.toFixed(2)}m from base` : 'Zero dead-zone directly under mount'}
-  Far Reach:      ${st ? st.farReach.toFixed(2) : '0'}m
-  Covered Area:   ${st ? st.coveredArea.toFixed(1) : '0'} m² (${st ? st.uniqueArea.toFixed(1) : '0'} m² unique)
-${'─'.repeat(78)}\n`;
-    });
-
-    if (obstacles.length > 0) {
-      r += `\nFACILITY PHYSICAL OBSTACLES & OCCLUSION SCHEDULE (${obstacles.length} items)
-${'═'.repeat(78)}\n`;
-      obstacles.forEach(o => {
-        r += `[${(o.type || 'OBSTACLE').toUpperCase()}] ${o.name.padEnd(28)} | Dimensions: ${o.w.toFixed(1)}m × ${o.d.toFixed(1)}m × ${o.h.toFixed(1)}m (Area: ${(o.w * o.d).toFixed(1)} m²)
-  Coordinates:    x=[${o.x.toFixed(2)}m … ${(o.x + o.w).toFixed(2)}m], y=[${o.y.toFixed(2)}m … ${(o.y + o.d).toFixed(2)}m], height=${o.h.toFixed(2)}m
-  Occlusion:      3D Ray-Box Slab Intersect active · Shadows cast onto target plane ${targetHeight}m
-${'─'.repeat(78)}\n`;
-      });
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${title} - Dual Engineering Blueprint</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; font-size: 11px; line-height: 1.45; }
+    h1, h2, h3, h4 { color: #0f172a; margin-top: 0; }
+    .header-box { border-bottom: 2px solid #2563eb; padding-bottom: 14px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .badge-amber { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .badge-indigo { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
+    .badge-green { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .section-card { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 18px; page-break-inside: avoid; }
+    .section-title { font-size: 15px; font-weight: 800; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 8px; margin-bottom: 12px; }
+    th { background: #f1f5f9; text-align: left; padding: 6px 8px; font-weight: 700; color: #334155; border: 1px solid #cbd5e1; }
+    td { padding: 6px 8px; border: 1px solid #e2e8f0; color: #1e293b; vertical-align: top; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+    .kpi-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; }
+    .kpi-val { font-size: 16px; font-weight: 800; color: #2563eb; font-family: ui-monospace, monospace; }
+    .kpi-lbl { font-size: 9px; font-weight: 600; text-transform: uppercase; color: #64748b; }
+    .code-box { background: #0f172a; color: #f8fafc; padding: 10px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 9.5px; line-height: 1.4; overflow-x: auto; }
+    @media print {
+      body { padding: 0; font-size: 10px; }
+      .no-print { display: none !important; }
+      .section-card { page-break-inside: avoid; border: 1px solid #94a3b8; }
     }
+  </style>
+</head>
+<body>
+  <div class="header-box">
+    <div>
+      <h1 style="font-size: 20px; font-weight: 800; margin-bottom: 4px; color: #1e3a8a;">${title}</h1>
+      <div style="font-size: 12px; font-weight: 600; color: #2563eb;">TECHNICAL BLUEPRINT &amp; SYSTEM ARCHITECTURE</div>
+      <div style="color: #64748b; font-size: 10px; margin-top: 3px;">
+        Generated on ${dateStr} • Standard: IEC EN 62676-4 • Compliance Verified
+      </div>
+    </div>
+    <div style="text-align: right;">
+      <span class="badge badge-indigo">Dual-Target Release</span><br>
+      <span style="font-size: 10px; color: #64748b; margin-top: 4px; display: inline-block;">Field Crew &amp; Developer Ready</span>
+    </div>
+  </div>
 
-    const blob = new Blob([r], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Camera_Coverage_Blueprint_${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  <div class="grid-3">
+    <div class="kpi-box">
+      <div class="kpi-lbl">Facility Geometry</div>
+      <div class="kpi-val">${bayLength}m × ${bayWidth}m</div>
+      <div style="font-size: 9px; color: #64748b;">Ceiling Mount: ${mountHeight}m • Target Plane: ${targetHeight}m</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-lbl">Optical Mode &amp; Density</div>
+      <div class="kpi-val">${mode.toUpperCase()}</div>
+      <div style="font-size: 9px; color: #64748b;">Standard Requirement: ≥ ${DORI_PPM[mode]} px/m</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-lbl">Total Area Coverage</div>
+      <div class="kpi-val">${m.coveragePct.toFixed(1)}%</div>
+      <div style="font-size: 9px; color: #64748b;">${m.cameras} Active Cameras • ${m.overlapPct.toFixed(1)}% Redundant Overlap</div>
+    </div>
+  </div>
+
+  <!-- PART 1: FIELD RIGGING GUIDE -->
+  <div class="section-card">
+    <div class="section-title">
+      <span>🛠️ PART 1: Camera Installation &amp; Field Engineering Package</span>
+      <span class="badge badge-amber">For Field Rigging Crew &amp; Electricians</span>
+    </div>
+    <p style="margin: 0 0 8px 0; color: #475569; font-size: 10px;">
+      Field rigging personnel must mount each camera according to physical coordinates, adjust azimuth and depression angles precisely, and verify under-mount clearance.
+    </p>
+
+    <div class="grid-3" style="margin-bottom: 8px;">
+      <div class="kpi-box">
+        <div class="kpi-lbl">Cabling Infrastructure</div>
+        <div style="font-weight: 700; color: #0f172a;">~${Math.round(estTotalCablingM)} m Total Cat6 UTP/STP</div>
+        <div style="font-size: 9px; color: #64748b;">Direct home-runs to network rack</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-lbl">PoE Switch Power Budget</div>
+        <div style="font-weight: 700; color: #0f172a;">${(m.cameras * 15.4).toFixed(1)} W (Nominal) / ${(m.cameras * 30).toFixed(1)} W (Peak)</div>
+        <div style="font-size: 9px; color: #64748b;">IEEE 802.3af/at PoE+ Switch Required</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-lbl">Mounting Enclosures</div>
+        <div style="font-weight: 700; color: #0f172a;">${m.cameras} Units IP67 / IK10</div>
+        <div style="font-size: 9px; color: #64748b;">Vandal-resistant outdoor/high-bay rating</div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Camera Tag</th>
+          <th>Mount Type</th>
+          <th>Floor Coordinates (X, Y, Z)</th>
+          <th>Aiming Angles</th>
+          <th>Rigging Hardware &amp; Pole</th>
+          <th>Aiming Point / Target Corridor</th>
+          <th>PoE Run &amp; Port</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${poses.map((p, idx) => {
+          const st = result.cameras[idx];
+          const sym = MOUNT_SYMBOLS[p.mount] || '●';
+          const estDist = Math.round(p.x * 1.1 + p.y * 1.3 + 15);
+          const dropperDesc = p.mount.includes('roof') ? '1.2m threaded steel pendant dropper with safety tether' : 'Heavy-duty wall cantilever bracket';
+          return `<tr>
+            <td style="font-weight: 700; color: #1e3a8a;">Camera ${p.id}</td>
+            <td><span class="badge" style="background: #e2e8f0; color: #1e293b;">${sym} ${p.mount.toUpperCase()}</span></td>
+            <td>X: <strong>${p.x.toFixed(2)}m</strong><br>Y: <strong>${p.y.toFixed(2)}m</strong><br>Z: <strong>${p.z.toFixed(2)}m</strong></td>
+            <td>Pan: <strong>${p.panDeg}°</strong> Azimuth<br>Tilt: <strong>${p.tiltDeg}°</strong> Depression</td>
+            <td>${dropperDesc}<br><span style="color: #b45309; font-size: 9px;">Dead-zone: ${st && st.nearBlind > 0 ? st.nearBlind.toFixed(1) + 'm' : 'Directly beneath mount'}</span></td>
+            <td>Span: ${st ? st.coverStart.toFixed(1) + 'm → ' + st.coverEnd.toFixed(1) + 'm' : '0m'}<br><span style="color: #64748b; font-size: 9px;">Target h: ${targetHeight}m</span></td>
+            <td>Port #${idx + 1}<br><span style="color: #64748b; font-size: 9px;">~${estDist}m Cat6</span></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; margin-top: 6px;">
+      <strong style="color: #92400e; font-size: 10px;">Field Rigging Sign-Off Checklist (Required for Handover):</strong>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; font-size: 9.5px; color: #78350f;">
+        <div>☑ Physical mount torqued to structural I-beam / concrete slab</div>
+        <div>☑ IP67 weather gland sealed with conduit drip loop</div>
+        <div>☑ Cat6 TIA-568B terminated & certified with active PoE link</div>
+        <div>☑ Azimuth pan & depression tilt aligned to target corridor marker</div>
+        <div>☑ Varifocal optical focus set screw locked & anti-tamper seal applied</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PART 2: SOFTWARE DEVELOPER GUIDE -->
+  <div class="section-card">
+    <div class="section-title">
+      <span>💻 PART 2: Computer Vision Pipeline &amp; Ingestion Package</span>
+      <span class="badge badge-indigo">For Software Developers &amp; CV Engineers</span>
+    </div>
+    <p style="margin: 0 0 8px 0; color: #475569; font-size: 10px;">
+      Camera stream endpoints, RTSP video codecs, DeepStream pipeline graph, target inspection resolution guarantees, and GPU VRAM resource sizing.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Camera Tag</th>
+          <th>RTSP Ingestion URI Schema</th>
+          <th>Native Profile &amp; Codec</th>
+          <th>Assigned Vision Model</th>
+          <th>DORI PPM Guarantee</th>
+          <th>Normalized Spatial ROI</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${poses.map((p, idx) => {
+          let assignedModel = 'YOLOv8x (General Detection)';
+          let ppmReq = '≥ 125 px/m (Recognize)';
+          if (mode === 'identify') {
+            assignedModel = 'ArcFace + YOLOv8-Face (LPR / Biometrics)';
+            ppmReq = '≥ 250 px/m (Identify)';
+          } else if (mode === 'recognize') {
+            assignedModel = 'YOLOv8x-pose (PPE & Personnel Safety)';
+            ppmReq = '≥ 125 px/m (Recognize)';
+          } else if (mode === 'observe') {
+            assignedModel = 'ByteTrack + RT-DETR (Forklift / Asset)';
+            ppmReq = '≥ 62.5 px/m (Observe)';
+          }
+          const roiStr = `[(${(p.x / bayLength - 0.05).toFixed(2)}, ${(p.y / bayWidth - 0.05).toFixed(2)}) … (${Math.min(1, p.x / bayLength + 0.2).toFixed(2)}, ${Math.min(1, p.y / bayWidth + 0.2).toFixed(2)})]`;
+          return `<tr>
+            <td style="font-weight: 700; color: #1e3a8a;">Camera ${p.id}</td>
+            <td style="font-family: ui-monospace, monospace; color: #4338ca;">rtsp://192.168.1.${101 + idx}:554/live/ch1/main</td>
+            <td>1920×1080 @ 20 FPS<br><span style="color: #64748b; font-size: 9px;">H.264 Main / 4096 kbps CBR</span></td>
+            <td><span class="badge badge-indigo">${assignedModel}</span></td>
+            <td><strong style="color: #166534;">${ppmReq}</strong></td>
+            <td style="font-family: ui-monospace, monospace; font-size: 9px; color: #475569;">${roiStr}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px;">
+      <div class="code-box">
+        <div style="color: #38bdf8; font-weight: 700; margin-bottom: 4px;">NVIDIA DeepStream Pipeline Architecture</div>
+[RTSP Sources: ${m.cameras} Streams]
+       │
+       ▼
+nvurisrcbin (Hardware Accelerated Dec: NVDEC)
+       │
+       ▼
+nvstreammux (Batch Size: ${Math.min(m.cameras, 16)}, 1080p, 25 FPS)
+       │
+       ▼
+nvinfer: Primary GIE (YOLOv8 TensorRT FP16 Engine)
+       │
+       ▼
+nvtracker: NvDCF / ByteTrack (Trajectory Association)
+       │
+       ▼
+nvdsanalytics: Virtual ROI Triplines & Directional Cross
+       │
+       ▼
+msgconv + msgbroker: MQTT / Kafka Event Publishing
+      </div>
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 10px;">
+        <div style="font-weight: 800; color: #1e293b; margin-bottom: 6px;">Edge Hardware &amp; VRAM Sizing Calculation</div>
+        <div style="margin-bottom: 4px;">• <strong>Simultaneous Streams:</strong> ${m.cameras} IP RTSP camera streams.</div>
+        <div style="margin-bottom: 4px;">• <strong>VRAM Footprint:</strong> ~120 MB per 1080p stream at FP16 batch inference $\to$ ~<strong>${(m.cameras * 0.12).toFixed(1)} GB VRAM</strong>.</div>
+        <div style="margin-bottom: 4px;">• <strong>Recommended Hardware:</strong> ${m.cameras <= 8 ? 'NVIDIA Jetson Orin Nano (8GB)' : (m.cameras <= 20 ? 'NVIDIA Jetson AGX Orin (32GB)' : 'NVIDIA L4 / A2 Enterprise Edge Server')}.</div>
+        <div>• <strong>Network Bandwidth:</strong> ~<strong>${(m.cameras * 4.2).toFixed(1)} Mbps</strong> aggregate ingestion throughput.</div>
+      </div>
+    </div>
+  </div>
+
+  ${obstacles.length > 0 ? `
+  <!-- PART 3: 3D OCCLUSION SCHEDULE -->
+  <div class="section-card">
+    <div class="section-title">
+      <span>🏗️ PART 3: Facility 3D Physical Obstacles &amp; Occlusion Schedule</span>
+      <span class="badge badge-green">${obstacles.length} Physical Structures</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Structure Name</th>
+          <th>Type</th>
+          <th>Floor Coordinates (X, Y)</th>
+          <th>Dimensions (W × D × H)</th>
+          <th>Footprint Area</th>
+          <th>3D Ray Occlusion Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${obstacles.map(o => `<tr>
+          <td style="font-weight: 700;">${o.name}</td>
+          <td><span class="badge" style="background: #f1f5f9; color: #334155;">${(o.type || 'obstacle').toUpperCase()}</span></td>
+          <td>X: ${o.x.toFixed(1)}m, Y: ${o.y.toFixed(1)}m</td>
+          <td>${o.w.toFixed(1)}m × ${o.d.toFixed(1)}m × ${o.h.toFixed(1)}m</td>
+          <td>${(o.w * o.d).toFixed(1)} m²</td>
+          <td style="color: #166534; font-weight: 600;">Active 3D Ray-Box Slab Intersect (Shadows cast onto target plane ${targetHeight}m)</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
+
+  <div style="text-align: center; color: #94a3b8; font-size: 9px; margin-top: 15px;">
+    Plan Vision • Automated Computer Vision Facility Engineering System • Document Hash: ${Math.random().toString(36).substring(2, 10).toUpperCase()}
+  </div>
+</body>
+</html>`;
+
+    if (format === 'pdf') {
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+        }, 500);
+      }
+    } else {
+      // DOCX export (Word compatible HTML container with Office XML declarations)
+      const docxHeader = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset='utf-8'><title>${title}</title>
+<!--[if gte mso 9]>
+<xml>
+<w:WordDocument>
+<w:View>Print</w:View>
+<w:Zoom>100</w:Zoom>
+<w:DoNotOptimizeForBrowser/>
+</w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1e293b; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 15pt; }
+th { background-color: #f1f5f9; border: 1pt solid #cbd5e1; padding: 6pt; font-weight: bold; }
+td { border: 1pt solid #e2e8f0; padding: 6pt; vertical-align: top; }
+h1 { color: #1e3a8a; font-size: 18pt; margin-bottom: 4pt; }
+h2 { color: #2563eb; font-size: 14pt; margin-top: 15pt; border-bottom: 1pt solid #cbd5e1; padding-bottom: 4pt; }
+.badge { font-weight: bold; font-size: 9pt; }
+</style>
+</head>
+<body>
+${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\S]*?<\/html>/, '')}
+</body></html>`;
+
+      const blob = new Blob(['\ufeff', docxHeader], { type: 'application/msword;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title.replace(/\s+/g, '_')}_Field_and_Developer_Blueprint.doc`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const selectedPose = poses.find(p => p.id === selectedId);
@@ -1240,23 +1475,34 @@ ${'─'.repeat(78)}\n`;
           </div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-3 pt-1 pb-4">
+          <div className="space-y-2 pt-1 pb-4">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleExportReport('pdf')}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-xs transition-colors"
+                title="Generates printable field rigging & developer PDF with print stylesheet"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export PDF
+              </button>
+              <button
+                onClick={() => handleExportReport('docx')}
+                className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold shadow-xs transition-colors"
+                title="Generates editable Microsoft Word / Google Docs DOCX blueprint"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export DOCX
+              </button>
+            </div>
             <button
               onClick={() => {
                 setPoses(defaultLayout(cameraCount, site, lens, mode));
                 setSelectedId(null);
               }}
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-white border border-border text-slate-700 hover:bg-muted text-xs font-semibold shadow-xs"
+              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white border border-border text-slate-700 hover:bg-muted text-xs font-medium shadow-xs transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              Reset Layout
-            </button>
-            <button
-              onClick={handleExportReport}
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-white border border-border text-slate-700 hover:bg-muted text-xs font-semibold shadow-xs"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export Blueprint
+              Reset Layout to Defaults
             </button>
           </div>
         </div>

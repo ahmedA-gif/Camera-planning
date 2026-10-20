@@ -93,6 +93,8 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
           <a href="#use-cases" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Use Cases</a>
           <a href="#techniques" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Techniques</a>
           <a href="#cameras" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Cameras</a>
+          <a href="#installation-guide" className="block flex-none px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded transition-colors">Field Installation</a>
+          <a href="#developer-guide" className="block flex-none px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded transition-colors">Developer Specs</a>
           <a href="#zones" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Zones</a>
           <a href="#workflow" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Workflow</a>
           <a href="#assumptions" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Assumptions</a>
@@ -446,6 +448,262 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </>
               )}
             </div>
+          </section>
+
+          {/* 5A. Field Installation & Rigging Guide (For Camera Installation Team) */}
+          <section id="installation-guide" data-output-enabled={!project.output_scope?.length || project.output_scope.includes('Camera plan')} className="p-8 border-b border-border bg-slate-50/40 print:bg-white print:break-inside-avoid">
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
+                <Wrench className="w-6 h-6 text-amber-600" />
+                5A. Camera Installation & Field Engineering Package
+              </h2>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 uppercase tracking-wide">
+                For Field Rigging Crew & Electricians
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-5">
+              Comprehensive physical mounting coordinates, compass pan/tilt angles, dropper pole lengths, PoE cable run schedules, and field verification procedures.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
+              <div className="p-3.5 bg-white border border-border rounded-lg shadow-xs">
+                <span className="text-xs text-muted-foreground font-medium block">Total Cameras to Rig</span>
+                <span className="text-xl font-bold text-slate-900">{project.cameras.length} Units</span>
+                <span className="text-[11px] text-slate-500 block mt-0.5">IP67/IK10 rated enclosures</span>
+              </div>
+              <div className="p-3.5 bg-white border border-border rounded-lg shadow-xs">
+                <span className="text-xs text-muted-foreground font-medium block">Est. Cat6 Structured Cabling</span>
+                <span className="text-xl font-bold text-slate-900">
+                  ~{project.cameras.length > 0 ? Math.round(project.cameras.reduce((acc, c) => acc + (c.x * 60 + c.y * 25) * 1.25 + 15, 0)) : 0} m
+                </span>
+                <span className="text-[11px] text-slate-500 block mt-0.5">UTP/STP PoE+ certified runs</span>
+              </div>
+              <div className="p-3.5 bg-white border border-border rounded-lg shadow-xs">
+                <span className="text-xs text-muted-foreground font-medium block">PoE Power Budget</span>
+                <span className="text-xl font-bold text-slate-900">
+                  {project.cameras.length * 15.4}W – {project.cameras.length * 30}W
+                </span>
+                <span className="text-[11px] text-slate-500 block mt-0.5">IEEE 802.3af/at standard</span>
+              </div>
+            </div>
+
+            {project.cameras.length === 0 ? (
+              <p className="text-muted-foreground text-center py-6">No cameras configured for installation schedule.</p>
+            ) : (
+              <div className="space-y-6">
+                <div className="overflow-x-auto bg-white border border-border rounded-lg shadow-xs">
+                  <table className="w-full text-xs text-left font-mono">
+                    <thead className="bg-slate-100 text-slate-700 uppercase font-semibold text-[10px] tracking-wider border-b border-border">
+                      <tr>
+                        <th className="p-3">Camera Tag</th>
+                        <th className="p-3">Mount Type</th>
+                        <th className="p-3">Coordinates (X, Y, Z)</th>
+                        <th className="p-3">Pan / Tilt</th>
+                        <th className="p-3">Rigging & Dropper</th>
+                        <th className="p-3">Aiming Corridor</th>
+                        <th className="p-3">PoE Port & Run</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {project.cameras.map((cam, idx) => {
+                        const mount = cam.y < 0.1 ? 'wall-v' : (cam.y > 0.9 ? 'wall-h' : (cam.x < 0.1 || cam.x > 0.9 ? 'cross' : 'roof-tilt'));
+                        const symbols: Record<string, string> = { 'wall-h': '■', 'wall-v': '▼', 'roof-nadir': '●', 'roof-tilt': '◆', 'corner': '▲', 'cross': '◀▶', 'pole360': '⊕' };
+                        const estDistM = Math.round((cam.x * 60 + cam.y * 25) * 1.25 + 15);
+                        return (
+                          <tr key={cam.id} className="hover:bg-slate-50">
+                            <td className="p-3 font-bold text-slate-900">
+                              {cam.name}
+                            </td>
+                            <td className="p-3">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
+                                <span>{symbols[mount] || '●'}</span>
+                                <span className="uppercase text-[10px]">{mount}</span>
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-700">
+                              X: {(cam.x * 60).toFixed(1)}m<br />
+                              Y: {(cam.y * 25).toFixed(1)}m<br />
+                              Z: 4.5m
+                            </td>
+                            <td className="p-3">
+                              <span className="font-semibold text-primary">{cam.orientation_degrees}° Azimuth</span><br />
+                              <span className="text-slate-500">25° Depression</span>
+                            </td>
+                            <td className="p-3 text-slate-700">
+                              {mount.includes('roof') ? '1.2m threaded steel dropper pole' : 'Heavy-duty wall cantilever bracket'}<br />
+                              <span className="text-amber-700 text-[10px]">Dead-zone: 1.2m beneath base</span>
+                            </td>
+                            <td className="p-3 text-slate-700">
+                              {(cam as any).target_area || `Aisle / Sector ${idx + 1}`}<br />
+                              <span className="text-slate-500 text-[10px]">Plane: 1.5m PPE Height</span>
+                            </td>
+                            <td className="p-3 text-slate-700">
+                              Port #{idx + 1}<br />
+                              <span className="text-slate-500 text-[10px]">~{estDistM}m Cat6 UTP</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 5-Point Technician Sign-Off Checklist */}
+                <div className="p-4 bg-white border border-amber-200 rounded-lg shadow-xs">
+                  <h4 className="font-bold text-sm text-slate-900 mb-2 flex items-center gap-1.5">
+                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                    Field Rigging & Commissioning Checklist (Sign-Off Required)
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700">
+                    <label className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50">
+                      <input type="checkbox" className="rounded text-primary accent-primary" />
+                      <span>Physical mount torqued to structural I-beam / concrete wall</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50">
+                      <input type="checkbox" className="rounded text-primary accent-primary" />
+                      <span>IP67 weather gland sealed with conduit drip loop</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50">
+                      <input type="checkbox" className="rounded text-primary accent-primary" />
+                      <span>Cat6 TIA-568B terminated & certified with active PoE link</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50">
+                      <input type="checkbox" className="rounded text-primary accent-primary" />
+                      <span>Pan/tilt optical axis aligned to corridor aiming marker</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 sm:col-span-2">
+                      <input type="checkbox" className="rounded text-primary accent-primary" />
+                      <span>Varifocal lens calibrated & optical focus set screw locked</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* 5B. Computer Vision & Software Developer Package */}
+          <section id="developer-guide" data-output-enabled={!project.output_scope?.length || project.output_scope.includes('Camera plan')} className="p-8 border-b border-border bg-white print:break-inside-avoid">
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
+                <Cpu className="w-6 h-6 text-indigo-600" />
+                5B. Computer Vision & Software Developer Package
+              </h2>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 uppercase tracking-wide">
+                For CV Engineers & Software Developers
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-5">
+              RTSP stream URI schemas, deep learning inference models, IEC EN 62676-4 pixel density (PPM) guarantees, DeepStream pipeline architecture, and GPU VRAM sizing.
+            </p>
+
+            {project.cameras.length === 0 ? (
+              <p className="text-muted-foreground text-center py-6">No cameras configured for software pipeline specifications.</p>
+            ) : (
+              <div className="space-y-6">
+                <div className="overflow-x-auto border border-border rounded-lg shadow-xs">
+                  <table className="w-full text-xs text-left font-mono">
+                    <thead className="bg-indigo-50/60 text-slate-700 uppercase font-semibold text-[10px] tracking-wider border-b border-border">
+                      <tr>
+                        <th className="p-3">Camera Tag</th>
+                        <th className="p-3">RTSP Stream URI Schema</th>
+                        <th className="p-3">Stream Profile & Codec</th>
+                        <th className="p-3">Target CV Model</th>
+                        <th className="p-3">IEC PPM Guarantee</th>
+                        <th className="p-3">Spatial ROI Trigger</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {project.cameras.map((cam, idx) => {
+                        const assignedUseCases = cam.assigned_use_case_ids.map(id => project.use_cases.find(u => u.id === id)?.name).filter(Boolean);
+                        let model = 'YOLOv8x (Detection)';
+                        let targetPpm = '≥125 px/m (Recognize)';
+                        const lower = (assignedUseCases.join(' ') || project.business_description || '').toLowerCase();
+                        if (/face|identity|lpr|license|plate/i.test(lower)) {
+                          model = 'ArcFace + YOLOv8-Face';
+                          targetPpm = '≥250 px/m (Identify)';
+                        } else if (/ppe|helmet|vest/i.test(lower)) {
+                          model = 'YOLOv8x-pose (PPE Classifier)';
+                          targetPpm = '≥125 px/m (Recognize)';
+                        } else if (/forklift|vehicle|traffic|agv/i.test(lower)) {
+                          model = 'ByteTrack + RT-DETR';
+                          targetPpm = '≥62.5 px/m (Observe)';
+                        }
+
+                        return (
+                          <tr key={cam.id} className="hover:bg-slate-50">
+                            <td className="p-3 font-bold text-slate-900">
+                              {cam.name}
+                            </td>
+                            <td className="p-3 text-indigo-700 font-medium">
+                              rtsp://192.168.1.{101 + idx}:554/live/ch1/main
+                            </td>
+                            <td className="p-3 text-slate-700">
+                              {cam.resolution_width}×{cam.resolution_height} @ 20 FPS<br />
+                              <span className="text-slate-500 text-[10px]">H.264 Main / 4096 kbps CBR</span>
+                            </td>
+                            <td className="p-3">
+                              <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold text-[10px]">
+                                {model}
+                              </span>
+                            </td>
+                            <td className="p-3 font-semibold text-emerald-700">
+                              {targetPpm}
+                            </td>
+                            <td className="p-3 text-slate-600 text-[10px]">
+                              Polygon: [({(cam.x - 0.05).toFixed(2)}, {(cam.y - 0.05).toFixed(2)}) … ({(cam.x + 0.15).toFixed(2)}, {(cam.y + 0.15).toFixed(2)})]
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* DeepStream Pipeline & GPU Sizing Architecture */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="p-4 bg-slate-900 text-slate-200 rounded-lg font-mono space-y-2">
+                    <div className="flex items-center justify-between text-slate-400 text-[11px] pb-1 border-b border-slate-800">
+                      <span className="text-emerald-400 font-bold">NVIDIA DeepStream Pipeline Graph</span>
+                      <span>GStreamer 1.20+</span>
+                    </div>
+                    <pre className="text-[10px] leading-relaxed text-slate-300 overflow-x-auto">
+{`[RTSP Sources: ${project.cameras.length} Streams]
+       │
+       ▼
+nvurisrcbin (Hardware Accelerated Dec: NVDEC)
+       │
+       ▼
+nvstreammux (Batch Size: ${Math.min(project.cameras.length, 16)}, 1080p, 25 FPS)
+       │
+       ▼
+nvinfer: Primary GIE (YOLOv8 TensorRT FP16 Engine)
+       │
+       ▼
+nvtracker: NvDCF / ByteTrack (Trajectory Association)
+       │
+       ▼
+nvdsanalytics: Virtual ROI Triplines & Directional Cross
+       │
+       ▼
+msgconv + msgbroker: MQTT / Kafka Event Publishing`}
+                    </pre>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border border-border rounded-lg space-y-2">
+                    <h4 className="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                      <Cpu className="w-4 h-4 text-indigo-600" />
+                      Edge Compute & VRAM Sizing Calculation
+                    </h4>
+                    <ul className="space-y-1.5 text-slate-700 text-xs">
+                      <li>• <strong>Active Streams:</strong> {project.cameras.length} simultaneous IP RTSP streams.</li>
+                      <li>• <strong>VRAM Footprint:</strong> ~120 MB per 1080p stream at FP16 batch inference $\to$ ~{(project.cameras.length * 0.12).toFixed(1)} GB VRAM.</li>
+                      <li>• <strong>Recommended Hardware:</strong> {project.cameras.length <= 8 ? 'NVIDIA Jetson Orin Nano (8GB)' : (project.cameras.length <= 20 ? 'NVIDIA Jetson AGX Orin (32GB)' : 'NVIDIA L4 / A2 Enterprise Server')}.</li>
+                      <li>• <strong>Network Bandwidth:</strong> ~{(project.cameras.length * 4.2).toFixed(1)} Mbps aggregate ingestion throughput.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Zones */}

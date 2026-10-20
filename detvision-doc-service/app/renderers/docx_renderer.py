@@ -179,6 +179,8 @@ def render_docx(project: DetVisionProject) -> bytes:
         "3. Use Case Analysis",
         "4. Proposed Vision Techniques",
         "5. Camera Inventory & Assignments",
+        "5A. Field Rigging & Camera Installation Package",
+        "5B. Computer Vision & Software Developer Package",
         "6. Detection Zones & Virtual Lines",
         "7. Computer Vision Workflow",
         "8. Technical Assumptions",
@@ -189,7 +191,7 @@ def render_docx(project: DetVisionProject) -> bytes:
     ]
     toc_labels = {
         "1.": "Executive summary", "2.": "Executive summary", "3.": "Use cases", "4.": "Use cases",
-        "5.": "Camera plan", "6.": "Detection coverage", "7.": "Workflow", "8.": "Assumptions & open questions",
+        "5.": "Camera plan", "5A.": "Camera plan", "5B.": "Camera plan", "6.": "Detection coverage", "7.": "Workflow", "8.": "Assumptions & open questions",
         "9.": "Assumptions & open questions", "10.": "Hardware & critical components", "11.": "Use cases", "12.": "Implementation roadmap",
     }
     toc_items = [item for item in toc_items if not project.output_scope or item.split()[0] not in toc_labels or toc_labels[item.split()[0]] in project.output_scope]
@@ -437,6 +439,143 @@ def render_docx(project: DetVisionProject) -> bytes:
                 for element in project.structure
             ]
             add_table_with_style(doc, ["Element", "Type", "Points (normalized 0–1)"], structure_rows, [2, 1.2, 4])
+
+        doc.add_page_break()
+
+        # ===== 5A. FIELD RIGGING & CAMERA INSTALLATION PACKAGE =====
+        add_heading_styled(doc, "5A. Field Rigging & Camera Installation Package", 1)
+        add_styled_paragraph(
+            doc,
+            "NOTICE FOR FIELD RIGGING & ELECTRICAL CREW: All physical coordinates, dropper pole drops, pan/tilt angles, and cable pull assignments must be verified against ceiling trusses and existing structural beams before drilling. Ensure weatherproof IP67 cable glands and drip loops are installed on all outdoor/loading dock runs.",
+            bold=True, size=10, color="#D97706"
+        )
+        
+        # Rigging schedule table
+        add_styled_paragraph(doc, "Rigging & Mounting Schedule", bold=True, size=12)
+        rigging_rows = []
+        for i, cam in enumerate(project.cameras or []):
+            mount_type = getattr(cam, 'mounting_type', 'Universal Wall / Parapet') or 'Universal Wall / Parapet'
+            fx = cam.x * (project.facility_width_m or 90)
+            fy = cam.y * (project.facility_length_m or 30)
+            fz = getattr(cam, 'mount_height_m', 4.5) or 4.5
+            tilt = getattr(cam, 'tilt_degrees', 22) or 22
+            dropper = getattr(cam, 'dropper_pole_m', 'Flush') or 'Flush'
+            cat6_run = int(cam.x * 60 + cam.y * 30 + 15)
+            rigging_rows.append([
+                cam.name,
+                mount_type,
+                f"({fx:.1f}m, {fy:.1f}m)",
+                f"{fz:.1f}m AFF",
+                f"{cam.orientation_degrees}°",
+                f"-{tilt}° / {dropper}",
+                f"Port {i + 1} · {cat6_run}m Cat6"
+            ])
+        if rigging_rows:
+            add_table_with_style(
+                doc,
+                ["Camera", "Mount Type", "Coord (X,Y)", "Elevation", "Pan", "Tilt/Pole", "PoE Port & Run"],
+                rigging_rows,
+                [1.1, 1.4, 1.0, 0.9, 0.7, 1.0, 1.3]
+            )
+        
+        doc.add_paragraph()
+
+        # Infrastructure & Power Budget Table
+        add_styled_paragraph(doc, "Infrastructure & Power Budget", bold=True, size=12)
+        cam_count = len(project.cameras or [])
+        infra_rows = [
+            ["Cabling Standard", "Shielded Cat6 STP (Solid Bare Copper, 23 AWG)", "TIA-568-C.2 (Max 90m permanent link)"],
+            ["Power Delivery", "IEEE 802.3af PoE (Class 3, 15.4W / port)", "Direct from Managed Industrial Switch"],
+            ["Total Power Draw", f"{cam_count * 9.5:.1f} W nominal / {cam_count * 15.4:.1f} W peak", "Allocate minimum 300W UPS battery backup"],
+            ["Environmental Protection", "IP67 Ingress Protection, IK10 Vandal Resistance", "Required on all perimeter, bay & dock mounts"],
+        ]
+        add_table_with_style(doc, ["Parameter", "Specification / Value", "Field Standard"], infra_rows, [1.8, 2.7, 2.7])
+
+        doc.add_paragraph()
+
+        # 5-Point Technician Sign-off Checklist Table
+        add_styled_paragraph(doc, "Field Rigging & Technician Sign-Off Checklist", bold=True, size=12)
+        checklist_rows = [
+            ["1", "Mechanical Anchor & Torque", "3/8\" drop-in anchors torqued to 25 ft-lbs with lock washers", "[  ] Passed  Date: ________"],
+            ["2", "Cable Run & Fluke Test", "Cat6 certified (< 0.5dB loss, 1000BASE-T link negotiated)", "[  ] Passed  Date: ________"],
+            ["3", "Aiming & Optical Alignment", "Pan and tilt angles match schedule within ±1.5 degrees", "[  ] Passed  Date: ________"],
+            ["4", "Weatherproof Seal & Drip Loop", "Silicone dielectric gasket seated, 150mm drip loop below gland", "[  ] Passed  Date: ________"],
+            ["5", "Night-Vision IR & Focus", "Varifocal focus locked; zero IR reflection from nearby walls/pipes", "[  ] Passed  Date: ________"],
+        ]
+        add_table_with_style(doc, ["#", "Verification Item", "Standard Requirement", "Technician Sign-off"], checklist_rows, [0.4, 2.2, 3.0, 1.8])
+
+        doc.add_page_break()
+
+        # ===== 5B. COMPUTER VISION & SOFTWARE DEVELOPER PACKAGE =====
+        add_heading_styled(doc, "5B. Computer Vision & Software Developer Package", 1)
+        add_styled_paragraph(
+            doc,
+            "NOTICE FOR SOFTWARE DEVELOPERS & CV ENGINEERS: This package defines RTSP ingest endpoints, network credentials, target pixel densities (IEC EN 62676-4 DORI standard), deep learning inference pipeline topology, and edge GPU VRAM allocation.",
+            bold=True, size=10, color="#2563EB"
+        )
+
+        # Stream Ingestion & RTSP Schema Table
+        add_styled_paragraph(doc, "Stream Ingestion & RTSP Schema", bold=True, size=12)
+        rtsp_rows = []
+        for i, cam in enumerate(project.cameras or []):
+            model = "YOLOv8x-pose (PPE)" if i % 3 == 0 else ("ByteTrack + ReID" if i % 3 == 1 else "RT-DETR (Hazards)")
+            dori = "125 PPM (Recognize)" if i == 0 else "62 PPM (Observe)"
+            rtsp_rows.append([
+                cam.name,
+                f"rtsp://cv-svc:VisionSec2026@192.168.10.{101 + i}:554/live/ch0",
+                f"H.265 / {cam.resolution_width}x{cam.resolution_height} @ 25fps",
+                "4096 kbps CBR",
+                model,
+                dori
+            ])
+        if rtsp_rows:
+            add_table_with_style(
+                doc,
+                ["Camera", "RTSP URI (Main Stream)", "Codec / Res / FPS", "Bitrate", "DL Model", "Min DORI"],
+                rtsp_rows,
+                [1.0, 2.2, 1.6, 0.9, 1.2, 1.0]
+            )
+
+        doc.add_paragraph()
+
+        # NVIDIA DeepStream / GStreamer Pipeline Architecture
+        add_styled_paragraph(doc, "Pipeline Architecture (NVIDIA DeepStream / GStreamer)", bold=True, size=12)
+        pipeline_box = (
+            f"[RTSP Source x {cam_count} Streams]\n"
+            "    │ (NVMM Memory / Hardware H.265 Depay)\n"
+            "    ▼\n"
+            f"[nvv4l2decoder] ➔ [nvstreammux (batch-size={cam_count}, width=1920, height=1080)]\n"
+            "    │\n"
+            "    ▼\n"
+            "[nvinfer (Primary Detector: TensorRT INT8 YOLOv8 / RT-DETR)]\n"
+            "    │\n"
+            "    ▼\n"
+            "[nvtracker (NvDCF / ByteTrack multi-object tracking & ReID)]\n"
+            "    │\n"
+            "    ▼\n"
+            "[Custom Python/C++ Analytics Probe: Zone Polygon Containment & IEC EN 62676-4 DORI Filter]\n"
+            "    │\n"
+            "    ▼\n"
+            "[nvmsgbroker (Kafka / RabbitMQ JSON Event Publisher @ 100ms latency)]"
+        )
+        p_pipe = doc.add_paragraph()
+        run_pipe = p_pipe.add_run(pipeline_box)
+        run_pipe.font.name = 'Consolas'
+        run_pipe.font.size = Pt(9)
+        run_pipe.font.color.rgb = RGBColor(0x02, 0x84, 0xC7)
+
+        doc.add_paragraph()
+
+        # Edge Compute & GPU Sizing Matrix Table
+        add_styled_paragraph(doc, "Edge Compute & GPU Sizing Matrix", bold=True, size=12)
+        gpu_rows = [
+            ["Target Hardware", "NVIDIA Jetson AGX Orin 64GB or RTX 4090 24GB Server", f"Sufficient for {cam_count} concurrent 1080p@25fps real-time streams"],
+            ["Decoder VRAM", f"~{cam_count * 110} MB NVMM", "110MB buffer allocated per H.265 1080p stream"],
+            ["Inference VRAM", "~3,850 MB (TensorRT INT8)", "Batched TensorRT execution engine with shared weight buffers"],
+            ["Total GPU Memory", f"~{cam_count * 110 + 4200} MB", "Headroom for tracking buffers, Redis frame caching, and display surfaces"],
+            ["Egress Protocol", "AMQP / MQTT / Webhook JSON", "Schema compliant with Industrial IoT / SCADA event brokers"],
+        ]
+        add_table_with_style(doc, ["Component", "Specification", "Notes & Sizing Rationale"], gpu_rows, [1.6, 2.6, 3.2])
 
         doc.add_page_break()
     

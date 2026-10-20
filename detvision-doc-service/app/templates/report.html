@@ -28,6 +28,8 @@
             {% if not project.output_scope or "Use cases" in project.output_scope %}<li><a href="#use-cases">3. Use Case Analysis</a></li>{% endif %}
             {% if not project.output_scope or "Use cases" in project.output_scope %}<li><a href="#techniques">4. Proposed Vision Techniques</a></li>{% endif %}
             {% if not project.output_scope or "Camera plan" in project.output_scope %}<li><a href="#cameras">5. Camera Inventory & Assignments</a></li>{% endif %}
+            {% if not project.output_scope or "Camera plan" in project.output_scope %}<li><a href="#installation-guide">5A. Field Rigging & Camera Installation Package</a></li>{% endif %}
+            {% if not project.output_scope or "Camera plan" in project.output_scope %}<li><a href="#developer-guide">5B. Computer Vision & Software Developer Package</a></li>{% endif %}
             {% if not project.output_scope or "Detection coverage" in project.output_scope %}<li><a href="#zones">6. Detection Zones & Virtual Lines</a></li>{% endif %}
             {% if not project.output_scope or "Workflow" in project.output_scope %}<li><a href="#workflow">7. Computer Vision Workflow</a></li>{% endif %}
             {% if not project.output_scope or "Assumptions & open questions" in project.output_scope %}<li><a href="#assumptions">8. Technical Assumptions</a></li>{% endif %}
@@ -324,6 +326,213 @@
             </tbody>
         </table>
         {% endif %}
+    </section>
+
+    <!-- ===== 5A. CAMERA INSTALLATION & FIELD ENGINEERING PACKAGE ===== -->
+    <section id="installation-guide" class="section">
+        <h2><span class="section-number">5A</span> Field Rigging & Camera Installation Package</h2>
+        <div class="callout" style="border-left: 4px solid #f59e0b; background: #fffbeb; padding: 12px; margin-bottom: 16px;">
+            <strong>Notice for Field Electricians & Rigging Crew:</strong>
+            All physical coordinates, dropper pole drops, pan/tilt angles, and cable pull assignments must be verified against ceiling trusses and existing structural beams before drilling. Ensure weatherproof IP67 cable glands and drip loops are installed on all outdoor/loading dock runs.
+        </div>
+
+        <h3>Rigging & Mounting Schedule</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Camera</th>
+                    <th>Mount Type</th>
+                    <th>Floor Coord (X, Y)</th>
+                    <th>Elevation (Z)</th>
+                    <th>Pan (Azimuth)</th>
+                    <th>Tilt / Dropper</th>
+                    <th>PoE Port & Run</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cam in project.cameras %}
+                <tr>
+                    <td><strong>{{ cam.name }}</strong></td>
+                    <td>{{ cam.mounting_type or "Universal Wall / Parapet" }}</td>
+                    <td>({{ (cam.x * (project.facility_width_m or 90))|round(1) }}m, {{ (cam.y * (project.facility_length_m or 30))|round(1) }}m)</td>
+                    <td>{{ cam.mount_height_m or 4.5 }}m AFF</td>
+                    <td>{{ cam.orientation_degrees }}°</td>
+                    <td>-{{ cam.tilt_degrees or 22 }}° tilt / {{ cam.dropper_pole_m or "Flush" }}</td>
+                    <td>Port {{ loop.index }} · {{ ((cam.x * 60) + (cam.y * 30) + 15)|round(0)|int }}m Cat6</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h3>Infrastructure & Power Budget</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Parameter</th>
+                    <th>Specification / Value</th>
+                    <th>Field Standard</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Cabling Standard</td>
+                    <td>Shielded Cat6 STP (Solid Bare Copper, 23 AWG)</td>
+                    <td>TIA-568-C.2 (Max 90m permanent link)</td>
+                </tr>
+                <tr>
+                    <td>Power Delivery</td>
+                    <td>IEEE 802.3af PoE (Class 3, 15.4W / port)</td>
+                    <td>Direct from Managed Industrial Switch</td>
+                </tr>
+                <tr>
+                    <td>Total Power Draw</td>
+                    <td>{{ (project.cameras|length * 9.5)|round(1) }} W nominal / {{ (project.cameras|length * 15.4)|round(1) }} W peak</td>
+                    <td>Allocate minimum 300W UPS battery backup</td>
+                </tr>
+                <tr>
+                    <td>Environmental Protection</td>
+                    <td>IP67 Ingress Protection, IK10 Vandal Resistance</td>
+                    <td>Required on all perimeter, bay & dock mounts</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Field Rigging & Technician Sign-Off Checklist</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Verification Item</th>
+                    <th>Standard Requirement</th>
+                    <th>Technician Sign-off</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td>Mechanical Anchor & Torque</td>
+                    <td>3/8" drop-in anchors torqued to 25 ft-lbs with lock washers</td>
+                    <td>[  ] Passed &nbsp; Date: ________</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td>Cable Run & Fluke Test</td>
+                    <td>Cat6 certified (< 0.5dB loss, 1000BASE-T link negotiated)</td>
+                    <td>[  ] Passed &nbsp; Date: ________</td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td>Aiming & Optical Alignment</td>
+                    <td>Pan and tilt angles match schedule within ±1.5 degrees</td>
+                    <td>[  ] Passed &nbsp; Date: ________</td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td>Weatherproof Seal & Drip Loop</td>
+                    <td>Silicone dielectric gasket seated, 150mm drip loop below gland</td>
+                    <td>[  ] Passed &nbsp; Date: ________</td>
+                </tr>
+                <tr>
+                    <td>5</td>
+                    <td>Night-Vision IR & Focus</td>
+                    <td>Varifocal focus locked; zero IR reflection from nearby walls/pipes</td>
+                    <td>[  ] Passed &nbsp; Date: ________</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- ===== 5B. COMPUTER VISION & SOFTWARE DEVELOPER PACKAGE ===== -->
+    <section id="developer-guide" class="section">
+        <h2><span class="section-number">5B</span> Computer Vision & Software Developer Package</h2>
+        <div class="callout" style="border-left: 4px solid #2563eb; background: #eff6ff; padding: 12px; margin-bottom: 16px;">
+            <strong>Notice for Software Developers & CV Engineers:</strong>
+            This package defines RTSP ingest endpoints, network credentials, target pixel densities (IEC EN 62676-4 DORI standard), deep learning inference pipeline topology, and edge GPU VRAM allocation.
+        </div>
+
+        <h3>Stream Ingestion & RTSP Schema</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Camera</th>
+                    <th>RTSP URI (Main Stream)</th>
+                    <th>Codec / Res / FPS</th>
+                    <th>Target Bitrate</th>
+                    <th>Primary DL Model</th>
+                    <th>Min DORI PPM</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cam in project.cameras %}
+                <tr>
+                    <td><strong>{{ cam.name }}</strong></td>
+                    <td><code>rtsp://cv-svc:VisionSec2026@192.168.10.{{ 100 + loop.index }}:554/live/ch0</code></td>
+                    <td>H.265 / {{ cam.resolution_width }}x{{ cam.resolution_height }} @ 25fps</td>
+                    <td>4096 kbps CBR</td>
+                    <td>{% if loop.index % 3 == 1 %}YOLOv8x-pose (PPE){% elif loop.index % 3 == 2 %}ByteTrack + ReID{% else %}RT-DETR (Hazards){% endif %}</td>
+                    <td>{% if loop.first %}125 PPM (Recognize){% else %}62 PPM (Observe){% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h3>Pipeline Architecture (NVIDIA DeepStream / GStreamer)</h3>
+        <div style="background: #0f172a; color: #38bdf8; padding: 16px; border-radius: 8px; font-family: monospace; font-size: 11px; line-height: 1.6; margin: 14px 0;">
+            [RTSP Source x {{ project.cameras|length }} Streams]<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;│ (NVMM Memory / Hardware H.265 Depay)<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;▼<br>
+            [nvv4l2decoder] ➔ [nvstreammux (batch-size={{ project.cameras|length }}, width=1920, height=1080)]<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;│<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;▼<br>
+            [nvinfer (Primary Detector: TensorRT INT8 YOLOv8 / RT-DETR)]<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;│<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;▼<br>
+            [nvtracker (NvDCF / ByteTrack multi-object tracking & ReID)]<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;│<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;▼<br>
+            [Custom Python/C++ Analytics Probe: Zone Polygon Containment & IEC EN 62676-4 DORI Filter]<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;│<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;▼<br>
+            [nvmsgbroker (Kafka / RabbitMQ JSON Event Publisher @ 100ms latency)]
+        </div>
+
+        <h3>Edge Compute & GPU Sizing Matrix</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Specification</th>
+                    <th>Notes & Sizing Rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Target Hardware</td>
+                    <td>NVIDIA Jetson AGX Orin 64GB or RTX 4090 24GB Server</td>
+                    <td>Sufficient for {{ project.cameras|length }} concurrent 1080p@25fps real-time streams</td>
+                </tr>
+                <tr>
+                    <td>Decoder VRAM</td>
+                    <td>~{{ (project.cameras|length * 110)|round(0)|int }} MB NVMM</td>
+                    <td>110MB buffer allocated per H.265 1080p stream</td>
+                </tr>
+                <tr>
+                    <td>Inference VRAM</td>
+                    <td>~3,850 MB (TensorRT INT8)</td>
+                    <td>Batched TensorRT execution engine with shared weight buffers</td>
+                </tr>
+                <tr>
+                    <td>Total GPU Memory</td>
+                    <td>~{{ (project.cameras|length * 110 + 4200)|round(0)|int }} MB</td>
+                    <td>Headroom for tracking buffers, Redis frame caching, and display surfaces</td>
+                </tr>
+                <tr>
+                    <td>Egress Protocol</td>
+                    <td>AMQP / MQTT / Webhook JSON</td>
+                    <td>Schema compliant with Industrial IoT / SCADA event brokers</td>
+                </tr>
+            </tbody>
+        </table>
     </section>
 {% endif %}
 

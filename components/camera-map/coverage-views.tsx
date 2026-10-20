@@ -1,6 +1,24 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { 
+  Move, 
+  Compass, 
+  Eye, 
+  ShieldCheck, 
+  Activity, 
+  RotateCcw, 
+  Play, 
+  Pause, 
+  ChevronRight, 
+  Layers, 
+  Sliders, 
+  ArrowUp, 
+  ArrowDown, 
+  ArrowLeft, 
+  ArrowRight, 
+  Video 
+} from 'lucide-react';
 import {
   buildFrame, sideProfile, clamp, DORI_LEVEL, LEVEL_NAMES,
   type CameraPose, type CoverageResult, type DoriMode, type LensSpec, type Pt, type SiteSpec,
@@ -823,22 +841,30 @@ function rayIntersectsObstacle(
 export function BirdCameraView({
   result, poses, lens, site, mode, selectedId, onSelect, heatMode,
   standard: initialStandard = 'dori', onStandardChange,
+  onMoveCamera, onPoseChange,
 }: BaseProps & {
   heatMode: 'dori' | 'overlap';
   standard?: MappingStandard;
   onStandardChange?: (std: MappingStandard) => void;
+  onMoveCamera?: (id: number, x: number, y: number) => void;
+  onPoseChange?: (id: number, updates: Partial<CameraPose>) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const width = useElementWidth(wrapRef);
-  const height = width ? clamp(Math.round(width * 0.52), 340, 580) : 380;
+  const canvasWidth = useElementWidth(canvasWrapRef);
+  const height = canvasWidth ? clamp(Math.round(canvasWidth * 0.56), 360, 560) : 400;
 
   // Camera orientation & view controls
   const [yaw, setYaw] = useState(-20);
   const [pitch, setPitch] = useState(68); // High bird's eye tilt
   const [zoom, setZoom] = useState(1.05);
-  const [isAutoOrbit, setIsAutoOrbit] = useState(false);
-  const [isTargetPatrolling, setIsTargetPatrolling] = useState(true);
+
+  // Slow animation & motion controls (0.3x calm speed by default so user clearly understands)
+  const [animSpeed, setAnimSpeed] = useState<number>(0.3);
+  const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  const [isAutoOrbit, setIsAutoOrbit] = useState<boolean>(false);
+  const [isTargetPatrolling, setIsTargetPatrolling] = useState<boolean>(true);
   const [targetType, setTargetType] = useState<'pedestrian' | 'forklift' | 'intruder'>('pedestrian');
   const [standard, setStandard] = useState<MappingStandard>(initialStandard);
 
@@ -853,8 +879,9 @@ export function BirdCameraView({
     z: targetH,
   });
 
-  const dragRef = useRef<{ x: number; y: number; yaw: number; pitch: number } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; yaw: number; pitch: number; moved: boolean } | null>(null);
   const animTimeRef = useRef<number>(0);
+  const camProjectedPointsRef = useRef<Array<{ id: number; x: number; y: number }>>([]);
 
   // Sync external standard change
   useEffect(() => {
@@ -877,7 +904,6 @@ export function BirdCameraView({
 
     poses.forEach(cam => {
       const dist = Math.hypot(cam.x - targetPos.x, cam.y - targetPos.y, cam.z - targetPos.z);
-      // Raycast test
       const pCam: [number, number, number] = [cam.x, cam.y, cam.z];
       const pTar: [number, number, number] = [targetPos.x, targetPos.y, targetPos.z];
       
@@ -904,7 +930,6 @@ export function BirdCameraView({
     const chosenCam = selectedId != null ? (poses.find(p => p.id === selectedId) || bestCam) : bestCam;
     const chosenDist = chosenCam ? Math.hypot(chosenCam.x - targetPos.x, chosenCam.y - targetPos.y, chosenCam.z - targetPos.z) : 10;
     
-    // Check occlusion for chosen cam
     let chosenOccluded = false;
     let chosenObstacle: string | null = null;
     if (chosenCam) {
@@ -929,30 +954,64 @@ export function BirdCameraView({
     };
   }, [poses, targetPos, site.obstacles, selectedId, hpx, lens, targetH]);
 
+  // Selected camera reference for mover controls
+  const currentCam = (selectedId != null ? poses.find(p => p.id === selectedId) : null) || activeCameraTargetInfo.camera || poses[0];
+
+  const handleNudgeCam = (dx: number, dy: number) => {
+    if (!currentCam) return;
+    const nx = +clamp(currentCam.x + dx, 0, L).toFixed(2);
+    const ny = +clamp(currentCam.y + dy, 0, W).toFixed(2);
+    if (onMoveCamera) {
+      onMoveCamera(currentCam.id, nx, ny);
+    } else if (onPoseChange) {
+      onPoseChange(currentCam.id, { x: nx, y: ny });
+    }
+  };
+
+  const handleNudgeCamZ = (dz: number) => {
+    if (!currentCam || !onPoseChange) return;
+    const nz = +clamp(currentCam.z + dz, 1.5, 20).toFixed(2);
+    onPoseChange(currentCam.id, { z: nz });
+  };
+
+  const handleRotateCamPan = (dPan: number) => {
+    if (!currentCam || !onPoseChange) return;
+    const nPan = ((Math.round(currentCam.panDeg + dPan) % 360) + 360) % 360;
+    onPoseChange(currentCam.id, { panDeg: nPan });
+  };
+
+  const handleRotateCamTilt = (dTilt: number) => {
+    if (!currentCam || !onPoseChange) return;
+    const nTilt = Math.round(clamp(currentCam.tiltDeg + dTilt, -30, 90));
+    onPoseChange(currentCam.id, { tiltDeg: nTilt });
+  };
+
   // Animation & Rendering Loop
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !width) return;
+    if (!canvas || !canvasWidth) return;
     let raf = 0;
 
     const render = () => {
-      animTimeRef.current += 0.016;
+      if (isPlaying) {
+        animTimeRef.current += 0.016 * animSpeed;
+      }
       const t = animTimeRef.current;
 
-      // Auto flyover orbit
-      if (isAutoOrbit) {
-        setYaw(y => (y + 0.16) % 360);
+      // Gentle, slow flyover orbit
+      if (isAutoOrbit && isPlaying) {
+        setYaw(y => (y + 0.04 * animSpeed) % 360);
       }
 
-      // Automated target patrol route
-      if (isTargetPatrolling) {
-        const pathX = L * 0.5 + Math.sin(t * 0.5) * (L * 0.32);
-        const pathY = W * 0.5 + Math.cos(t * 0.8) * (W * 0.3);
+      // Automated, gentle target patrol route
+      if (isTargetPatrolling && isPlaying) {
+        const pathX = L * 0.5 + Math.sin(t * 0.22) * (L * 0.32);
+        const pathY = W * 0.5 + Math.cos(t * 0.3) * (W * 0.3);
         setTargetPos({ x: clamp(pathX, 2, L - 2), y: clamp(pathY, 2, W - 2), z: targetH });
       }
 
-      const ctx = setupCanvas(canvas, width, height);
-      background(ctx, width, height);
+      const ctx = setupCanvas(canvas, canvasWidth, height);
+      background(ctx, canvasWidth, height);
 
       // 3D Projection Matrix
       const cy = Math.cos(rad(yaw)), sy = Math.sin(rad(yaw));
@@ -971,8 +1030,8 @@ export function BirdCameraView({
         bx0 = Math.min(bx0, q.sx); bx1 = Math.max(bx1, q.sx); by0 = Math.min(by0, q.sy); by1 = Math.max(by1, q.sy);
       }
 
-      const scale = Math.min((width - 60) / (bx1 - bx0 || 1), (height - 80) / (by1 - by0 || 1)) * zoom;
-      const ox = width / 2 - ((bx0 + bx1) / 2) * scale, oy = height / 2 + 10 - ((by0 + by1) / 2) * scale;
+      const scale = Math.min((canvasWidth - 60) / (bx1 - bx0 || 1), (height - 80) / (by1 - by0 || 1)) * zoom;
+      const ox = canvasWidth / 2 - ((bx0 + bx1) / 2) * scale, oy = height / 2 + 10 - ((by0 + by1) / 2) * scale;
       const P = (x: number, y: number, z: number) => {
         const q = raw(x, y, z);
         return { x: ox + q.sx * scale, y: oy + q.sy * scale, near: q.near };
@@ -982,6 +1041,12 @@ export function BirdCameraView({
         pts.forEach((p, k) => (k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
         ctx.closePath();
       };
+
+      // Store camera projected points for 3D click-to-select
+      camProjectedPointsRef.current = poses.map(p => {
+        const pt = P(p.x, p.y, p.z);
+        return { id: p.id, x: pt.x, y: pt.y };
+      });
 
       // 1. Floor grid & subtle heat
       const bs = Math.max(1, Math.ceil(Math.max(result.cols / 90, result.rows / 40)));
@@ -1088,8 +1153,8 @@ export function BirdCameraView({
               ctx.lineWidth = 1.2;
               ctx.stroke();
 
-              // Concentric radar scan wave pulse
-              const pulsePhase = (t * 1.5 + i * 0.3) % 1;
+              // Concentric radar scan wave pulse (slow and calm)
+              const pulsePhase = (t * 0.4 + i * 0.25) % 1;
               const midRing = ring.map(q => ({
                 x: top.x + (q.x - top.x) * pulsePhase,
                 y: top.y + (q.y - top.y) * pulsePhase,
@@ -1119,17 +1184,17 @@ export function BirdCameraView({
 
             // Camera Housing Dome
             ctx.save();
-            ctx.shadowBlur = 16;
+            ctx.shadowBlur = sel ? 20 : 10;
             ctx.shadowColor = col;
             ctx.beginPath();
-            ctx.arc(top.x, top.y, 7.5, 0, Math.PI * 2);
+            ctx.arc(top.x, top.y, sel ? 8.5 : 7, 0, Math.PI * 2);
             ctx.fillStyle = col;
             ctx.fill();
             ctx.restore();
 
             ctx.strokeStyle = selectedId === p.id ? '#ffffff' : '#0f172a';
-            ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(top.x, top.y, 7.5, 0, Math.PI * 2); ctx.stroke();
+            ctx.lineWidth = selectedId === p.id ? 2.5 : 1.5;
+            ctx.beginPath(); ctx.arc(top.x, top.y, sel ? 8.5 : 7, 0, Math.PI * 2); ctx.stroke();
 
             ctx.fillStyle = '#0b0d12';
             ctx.font = '700 8px ui-monospace, monospace';
@@ -1160,10 +1225,10 @@ export function BirdCameraView({
           ctx.fillStyle = 'rgba(15,23,42,0.4)';
           ctx.fill();
 
-          // Pulsing target perimeter ring
-          const ringPulse = (t * 2) % 1;
+          // Pulsing target perimeter ring (slow motion)
+          const ringPulse = (t * 0.6) % 1;
           ctx.beginPath();
-          ctx.ellipse(targetBase.x, targetBase.y, 14 + ringPulse * 16, 7 + ringPulse * 8, 0, 0, Math.PI * 2);
+          ctx.ellipse(targetBase.x, targetBase.y, 14 + ringPulse * 14, 7 + ringPulse * 7, 0, 0, Math.PI * 2);
           ctx.strokeStyle = activeCameraTargetInfo.isOccluded ? 'rgba(239,68,68,0.7)' : 'rgba(34,211,238,0.8)';
           ctx.lineWidth = 1.5;
           ctx.stroke();
@@ -1196,7 +1261,7 @@ export function BirdCameraView({
           ctx.fillText(symbol, targetProj.x, targetProj.y);
 
           // Target Label Badge
-          ctx.fillStyle = '#0f172a';
+          ctx.fillStyle = '#f8fafc';
           ctx.font = '700 9px ui-monospace, monospace';
           ctx.fillText(
             `TARGET [${targetPos.x.toFixed(1)}m, ${targetPos.y.toFixed(1)}m]`,
@@ -1239,8 +1304,8 @@ export function BirdCameraView({
           ctx.shadowColor = '#00e5ff';
           ctx.beginPath(); ctx.moveTo(camP.x, camP.y); ctx.lineTo(tarP.x, tarP.y); ctx.stroke();
 
-          // Laser pulse bead traveling along the ray
-          const laserPhase = (t * 2) % 1;
+          // Laser pulse bead traveling slowly along the ray
+          const laserPhase = (t * 0.5) % 1;
           const beadX = camP.x + (tarP.x - camP.x) * laserPhase;
           const beadY = camP.y + (tarP.y - camP.y) * laserPhase;
           ctx.fillStyle = '#ffffff';
@@ -1249,11 +1314,11 @@ export function BirdCameraView({
         ctx.restore();
       }
 
-      // Title & Overview
+      // Title & Overview (discrete corner tag)
       title(
         ctx,
         "3D BIRD'S EYE CAMERA MAPPING",
-        `${L}m × ${W}m · H=${site.mountHeight}m · Drag to orbit · Scroll to zoom`,
+        `${L}m × ${W}m · H=${site.mountHeight}m`,
         18,
         22
       );
@@ -1264,7 +1329,7 @@ export function BirdCameraView({
     raf = requestAnimationFrame(render);
     return () => cancelAnimationFrame(raf);
   }, [
-    width, height, yaw, pitch, zoom, isAutoOrbit, isTargetPatrolling, targetPos,
+    canvasWidth, height, yaw, pitch, zoom, isAutoOrbit, isTargetPatrolling, isPlaying, animSpeed, targetPos,
     targetType, poses, result, site, selectedId, heatMode, mode, L, W, targetH,
     activeCameraTargetInfo,
   ]);
@@ -1285,190 +1350,433 @@ export function BirdCameraView({
   const activeStdDef = MAPPING_STANDARDS[standard] || MAPPING_STANDARDS.dori;
 
   return (
-    <div ref={wrapRef} className="relative w-full select-none rounded-xl border border-border bg-slate-900 shadow-sm overflow-hidden">
-      {/* Top Tactical Controls Bar */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        {/* Left: Mode indicator & Target Selector */}
-        <div className="flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-lg border border-slate-700/60 shadow-md pointer-events-auto">
-          <div className="flex items-center gap-1 px-2 text-[10px] font-mono font-bold text-sky-400">
+    <div ref={wrapRef} className="w-full select-none rounded-xl border border-border bg-slate-900 shadow-sm overflow-hidden flex flex-col xl:flex-row">
+      {/* Left: Completely Clear & Unobstructed 3D Canvas */}
+      <div ref={canvasWrapRef} className="relative flex-1 min-w-0 bg-slate-950 flex flex-col">
+        {/* Minimal Sleek Top Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-950/95 border-b border-slate-800 text-xs">
+          <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
-            BIRD 3D
+            <span className="font-mono font-bold text-sky-400 text-[11px]">BIRD 3D VIEW</span>
+            <div className="h-3 w-px bg-slate-800 mx-1" />
+            <button
+              type="button"
+              onClick={() => setIsAutoOrbit(v => !v)}
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
+                isAutoOrbit ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              {isAutoOrbit ? '⏸ Orbiting' : '▶ Orbit'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsTargetPatrolling(v => !v)}
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
+                isTargetPatrolling ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              {isTargetPatrolling ? '⏸ Target Moving' : '▶ Patrol Target'}
+            </button>
           </div>
-          <div className="h-3.5 w-px bg-slate-800" />
-          <button
-            type="button"
-            onClick={() => setIsAutoOrbit(v => !v)}
-            className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
-              isAutoOrbit ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            {isAutoOrbit ? '⏸ Orbiting' : '▶ Flyover Orbit'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsTargetPatrolling(v => !v)}
-            className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
-              isTargetPatrolling ? 'bg-emerald-500 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            {isTargetPatrolling ? '⏸ Target Moving' : '▶ Patrol Target'}
-          </button>
-          <div className="h-3.5 w-px bg-slate-800" />
+
+          {/* Slow Motion Speed Controls & Angle Presets */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-slate-500">Speed:</span>
+            {[
+              { label: '0.25x Slow', val: 0.25 },
+              { label: '0.5x', val: 0.5 },
+              { label: '1.0x', val: 1.0 },
+            ].map(sp => (
+              <button
+                key={sp.val}
+                type="button"
+                onClick={() => { setAnimSpeed(sp.val); setIsPlaying(true); }}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
+                  animSpeed === sp.val && isPlaying
+                    ? 'bg-primary text-primary-foreground font-bold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                {sp.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setIsPlaying(p => !p)}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
+                !isPlaying ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              {isPlaying ? '⏸ Pause' : '▶ Play'}
+            </button>
+
+            <div className="h-3 w-px bg-slate-800 mx-1" />
+
+            {/* Quick Angle Presets */}
+            {[
+              ['Nadir 89°', 0, 89],
+              ['Bird 68°', -20, 68],
+              ['Iso 35°', -28, 35],
+            ].map(([label, y, p]) => (
+              <button
+                key={label as string}
+                type="button"
+                onClick={() => { setYaw(y as number); setPitch(p as number); setZoom(1.05); }}
+                className="rounded bg-slate-900 border border-slate-800 px-1.5 py-0.5 font-mono text-[9px] text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                {label as string}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => { setZoom(1); setYaw(-20); setPitch(68); }}
+              className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9px] text-slate-300 hover:text-white"
+              title="Reset view"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        {/* 3D Canvas with Click-to-Select Camera and Orbit */}
+        <canvas
+          ref={canvasRef}
+          className="block w-full touch-none cursor-grab active:cursor-grabbing bg-slate-950"
+          onPointerDown={e => {
+            dragRef.current = { x: e.clientX, y: e.clientY, yaw, pitch, moved: false };
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={e => {
+            const d = dragRef.current;
+            if (!d) return;
+            if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) {
+              d.moved = true;
+            }
+            setYaw(d.yaw + (e.clientX - d.x) * 0.35);
+            setPitch(clamp(d.pitch + (e.clientY - d.y) * 0.25, 12, 89));
+          }}
+          onPointerUp={e => {
+            const d = dragRef.current;
+            if (d && !d.moved) {
+              // Clicked on 3D canvas: test if hit a camera dome
+              const rect = canvasRef.current?.getBoundingClientRect();
+              if (rect) {
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                const hit = camProjectedPointsRef.current.find(cp => Math.hypot(cp.x - clickX, cp.y - clickY) < 18);
+                if (hit) {
+                  onSelect(hit.id);
+                }
+              }
+            }
+            dragRef.current = null;
+          }}
+        />
+
+        {/* Sleek bottom status strip */}
+        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-950/90 border-t border-slate-800 text-[10px] font-mono text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            Click any camera dome in 3D to select & move · Drag to orbit · Scroll to zoom
+          </span>
+          <span>Yaw: {Math.round(yaw)}° · Pitch: {Math.round(pitch)}° · Zoom: {zoom.toFixed(2)}x</span>
+        </div>
+      </div>
+
+      {/* Right: Dedicated Side Tab for Descriptions, Target Analysis & Camera Moving Feature */}
+      <div className="w-full xl:w-[360px] shrink-0 bg-slate-900 border-t xl:border-t-0 xl:border-l border-slate-800 p-4 space-y-3.5 overflow-y-auto max-h-[640px]">
+        {/* Tab Title */}
+        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-sky-400" />
+            <span className="font-bold text-xs text-slate-200">Simulation Side Inspector</span>
+          </div>
+          <span className="text-[10px] font-mono text-sky-400 px-1.5 py-0.5 rounded bg-sky-950 border border-sky-800">
+            Unobstructed View
+          </span>
+        </div>
+
+        {/* Section 1: Feature to Move Camera */}
+        {currentCam && (
+          <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span
+                  className="w-3 h-3 rounded-full flex items-center justify-center text-[8px] font-bold text-slate-950"
+                  style={{ backgroundColor: camColor(currentCam.id) }}
+                />
+                <span className="text-xs font-bold text-slate-100">
+                  Move Camera C{currentCam.id}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">({currentCam.mount})</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400">
+                ({currentCam.x.toFixed(1)}m, {currentCam.y.toFixed(1)}m, {currentCam.z.toFixed(1)}m)
+              </span>
+            </div>
+
+            {/* Quick Camera Switcher Chips */}
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[9px] font-mono text-slate-500 mr-1">Select:</span>
+              {poses.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onSelect(p.id)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
+                    p.id === currentCam.id
+                      ? 'bg-sky-500 text-white font-bold ring-1 ring-sky-300'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  C{p.id}
+                </button>
+              ))}
+            </div>
+
+            {/* Directional Nudge Pad to Move Camera in Real Time */}
+            <div className="space-y-1.5 pt-1">
+              <div className="text-[10px] font-semibold text-slate-300 flex items-center justify-between">
+                <span>Nudge Position (X, Y):</span>
+                <span className="text-[9px] text-slate-500 font-mono">Steps ±0.5m</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleNudgeCam(-0.5, 0)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-mono text-slate-200 flex items-center justify-center gap-0.5"
+                  title="Move West / Left -0.5m"
+                >
+                  <ArrowLeft className="w-3 h-3 text-sky-400" /> -0.5m
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNudgeCam(0.5, 0)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-mono text-slate-200 flex items-center justify-center gap-0.5"
+                  title="Move East / Right +0.5m"
+                >
+                  +0.5m <ArrowRight className="w-3 h-3 text-sky-400" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNudgeCam(0, -0.5)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-mono text-slate-200 flex items-center justify-center gap-0.5"
+                  title="Move North / Up -0.5m"
+                >
+                  <ArrowUp className="w-3 h-3 text-sky-400" /> Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNudgeCam(0, 0.5)}
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-mono text-slate-200 flex items-center justify-center gap-0.5"
+                  title="Move South / Down +0.5m"
+                >
+                  Down <ArrowDown className="w-3 h-3 text-sky-400" />
+                </button>
+              </div>
+
+              {/* Height & Angle Steering */}
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
+                  <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 mb-1">
+                    <span>Height Z ({currentCam.z.toFixed(1)}m)</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleNudgeCamZ(-0.5)}
+                      className="flex-1 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[9px] font-mono text-slate-200"
+                    >
+                      -0.5m
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNudgeCamZ(0.5)}
+                      className="flex-1 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[9px] font-mono text-slate-200"
+                    >
+                      +0.5m
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-1.5 rounded bg-slate-900 border border-slate-800">
+                  <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 mb-1">
+                    <span>Pan ({currentCam.panDeg}°)</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleRotateCamPan(-15)}
+                      className="flex-1 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[9px] font-mono text-slate-200"
+                    >
+                      ↺ -15°
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRotateCamPan(15)}
+                      className="flex-1 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[9px] font-mono text-slate-200"
+                    >
+                      +15° ↻
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Section 2: Target & Line-of-Sight Occlusion Status */}
+        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+              <Eye className="w-3.5 h-3.5 text-sky-400" />
+              Target Tracking & Line-of-Sight
+            </span>
+            <span className="text-[10px] font-mono text-slate-400">
+              {activeCameraTargetInfo.distance.toFixed(1)}m slant dist
+            </span>
+          </div>
+
+          {/* Target Type Selector */}
           <div className="flex gap-1">
             {(['pedestrian', 'forklift', 'intruder'] as const).map(type => (
               <button
                 key={type}
                 type="button"
                 onClick={() => setTargetType(type)}
-                className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
-                  targetType === type ? 'bg-slate-700 text-white font-bold' : 'text-slate-400 hover:text-white'
+                className={`flex-1 py-1 rounded text-[10px] font-mono font-medium transition ${
+                  targetType === type ? 'bg-sky-600 text-white font-bold shadow-xs' : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
                 {type === 'pedestrian' ? '👷 Worker' : type === 'forklift' ? '🚜 Forklift' : '⚠️ Intruder'}
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Right: Standards Framework Switcher */}
-        <div className="flex items-center gap-1 bg-slate-950/85 backdrop-blur-md p-1.5 rounded-lg border border-slate-700/60 shadow-md pointer-events-auto">
-          <span className="text-[10px] font-mono font-bold text-slate-400 px-1">FRAMEWORK:</span>
-          {(['dori', 'oodpcvs', 'johnson', 'dhs_nij', 'french'] as MappingStandard[]).map(s => {
-            const isSel = standard === s;
-            const label = s === 'dori' ? 'DORI' : s === 'oodpcvs' ? 'OODPCVS (2025)' : s === 'johnson' ? "Johnson's Criteria" : s === 'dhs_nij' ? 'US DHS / NIJ' : 'French (FR)';
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => handleStandardSelect(s)}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
-                  isSel ? 'bg-primary text-primary-foreground shadow-xs' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3D Canvas */}
-      <canvas
-        ref={canvasRef}
-        className="block w-full touch-none cursor-grab active:cursor-grabbing bg-slate-950"
-        onPointerDown={e => {
-          dragRef.current = { x: e.clientX, y: e.clientY, yaw, pitch };
-          (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        }}
-        onPointerMove={e => {
-          const d = dragRef.current;
-          if (!d) return;
-          setYaw(d.yaw + (e.clientX - d.x) * 0.4);
-          setPitch(clamp(d.pitch + (e.clientY - d.y) * 0.3, 15, 89));
-        }}
-        onPointerUp={() => { dragRef.current = null; }}
-      />
-
-      {/* Bottom Floating Live Analysis HUD */}
-      <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-end justify-between gap-3 pointer-events-none">
-        {/* Left: Active Camera & Target Resolution HUD */}
-        <div className="bg-slate-950/90 backdrop-blur-md p-3 rounded-xl border border-slate-700/70 shadow-xl max-w-md pointer-events-auto">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-[11px] font-mono font-bold text-slate-200">
-            <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${activeCameraTargetInfo.isOccluded ? 'bg-rose-500' : 'bg-emerald-400'}`} />
-              <span>{activeCameraTargetInfo.camera ? `Camera C${activeCameraTargetInfo.camera.id}` : 'No Camera'} → Target</span>
-            </div>
-            <span className="text-slate-400">{activeCameraTargetInfo.distance.toFixed(1)}m slant dist</span>
-          </div>
-
+          {/* Occlusion Warning or Clear Line of Sight */}
           {activeCameraTargetInfo.isOccluded ? (
-            <div className="text-[11px] font-mono text-rose-400 flex items-center gap-1.5 py-1">
-              <span>⚠️</span>
-              <span><strong>Line of sight blocked</strong> by {activeCameraTargetInfo.occludingObstacle || 'physical obstacle'}. Dead zone detected!</span>
+            <div className="p-2 rounded-lg bg-rose-950/70 border border-rose-800/80 text-[11px] font-mono text-rose-300 space-y-1">
+              <div className="font-bold flex items-center gap-1">
+                <span>⚠️</span>
+                <span>PHYSICAL OCCLUSION DETECTED</span>
+              </div>
+              <div className="text-[10px] text-rose-200">
+                Optical ray blocked by <strong>{activeCameraTargetInfo.occludingObstacle || 'structure'}</strong>. Dead zone created!
+              </div>
             </div>
           ) : (
-            <div className="space-y-1.5 text-[11px] font-mono">
-              {/* Dynamic metric view depending on selected standard */}
-              {standard === 'dori' && (
-                <div className="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
-                  <span className="text-slate-400">DORI Standard (EN 62676-4):</span>
-                  <span className="font-bold text-sky-400">{metrics.ppm} px/m [{metrics.dori.name.toUpperCase()}]</span>
-                </div>
-              )}
-
-              {standard === 'oodpcvs' && (
-                <div className="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
-                  <span className="text-slate-400">IEC 62676-4:2025 Tier:</span>
-                  <span className="font-bold text-violet-400">{metrics.oodpcvs.code} {metrics.oodpcvs.name} ({metrics.ppm} px/m)</span>
-                </div>
-              )}
-
-              {standard === 'johnson' && (
-                <div className="space-y-1 bg-slate-900/90 p-2 rounded border border-slate-800">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Thermal Johnson's Criteria:</span>
-                    <span className="font-bold text-amber-400">{metrics.johnson.linePairs} line pairs</span>
-                  </div>
-                  <div className="text-[10px] text-slate-300">
-                    Military Thermal Level: <strong className="text-amber-300">{metrics.johnson.level}</strong> (human {targetH}m)
-                  </div>
-                </div>
-              )}
-
-              {standard === 'dhs_nij' && (
-                <div className="space-y-1 bg-slate-900/90 p-2 rounded border border-slate-800">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-400">US DHS / NIJ VSH %:</span>
-                    <span className={`font-bold ${metrics.dhsNij.isForensicLegal ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {metrics.dhsNij.vshPct}% Vertical Screen Height
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-slate-300">
-                    Forensic Status: {metrics.dhsNij.isForensicLegal ? '✅ Court Admissible Forensic Evidence' : '⚠️ Investigative Lead Only (<15%)'}
-                  </div>
-                </div>
-              )}
-
-              {standard === 'french' && (
-                <div className="flex items-center justify-between bg-slate-900/90 px-2 py-1 rounded border border-slate-800">
-                  <span className="text-slate-400">French Surveillance Code:</span>
-                  <span className="font-bold text-sky-300">{metrics.french.level}</span>
-                </div>
-              )}
-
-              <div className="text-[9px] text-slate-500 pt-0.5">
-                {activeStdDef.description}
+            <div className="p-2 rounded-lg bg-emerald-950/70 border border-emerald-800/80 text-[11px] font-mono text-emerald-300 space-y-0.5">
+              <div className="font-bold flex items-center gap-1">
+                <span>✅</span>
+                <span>CLEAR DIRECT LINE OF SIGHT</span>
+              </div>
+              <div className="text-[10px] text-emerald-200">
+                Unobstructed ray from Camera C{activeCameraTargetInfo.camera?.id || 1} to target.
               </div>
             </div>
           )}
         </div>
 
-        {/* Right: Camera Angle Presets & Reset */}
-        <div className="flex gap-1 bg-slate-950/85 backdrop-blur-md p-1 rounded-lg border border-slate-700/60 shadow-md pointer-events-auto">
-          {[
-            ['Overhead Nadir (89°)', 0, 89],
-            ['Bird-Eye (68°)', -20, 68],
-            ['Tactical Iso (35°)', -28, 35],
-          ].map(([label, y, p]) => (
-            <button
-              key={label as string}
-              type="button"
-              onClick={() => { setYaw(y as number); setPitch(p as number); setZoom(1.05); }}
-              className="rounded bg-slate-900 border border-slate-800 px-2 py-1 font-mono text-[10px] font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
-            >
-              {label as string}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => { setZoom(1); setYaw(-20); setPitch(68); }}
-            className="rounded bg-slate-800 px-2 py-1 font-mono text-[10px] font-semibold text-slate-200 hover:text-white"
-            title="Reset Zoom"
-          >
-            Reset
-          </button>
+        {/* Section 3: Framework Standards Description & Calculations (in Side Tab!) */}
+        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              Framework & DORI Calculations
+            </span>
+          </div>
+
+          {/* Framework Selector Chips */}
+          <div className="flex flex-wrap gap-1">
+            {(['dori', 'oodpcvs', 'johnson', 'dhs_nij', 'french'] as MappingStandard[]).map(s => {
+              const isSel = standard === s;
+              const label = s === 'dori' ? 'DORI' : s === 'oodpcvs' ? 'OODPCVS (2025)' : s === 'johnson' ? "Johnson's Criteria" : s === 'dhs_nij' ? 'US DHS / NIJ' : 'French (FR)';
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => handleStandardSelect(s)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition ${
+                    isSel ? 'bg-primary text-primary-foreground font-bold shadow-xs' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Metric Details based on Active Standard */}
+          <div className="space-y-1.5 text-[11px] font-mono pt-1">
+            {standard === 'dori' && (
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Resolution (PPM):</span>
+                  <span className="font-bold text-sky-400">{metrics.ppm} px/m</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-slate-400">EN 62676-4 Level:</span>
+                  <span className="font-bold text-emerald-400 uppercase">{metrics.dori.name}</span>
+                </div>
+              </div>
+            )}
+
+            {standard === 'oodpcvs' && (
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">IEC 62676-4:2025 Tier:</span>
+                  <span className="font-bold text-violet-400">{metrics.oodpcvs.code}</span>
+                </div>
+                <div className="text-[10px] text-slate-300">
+                  Target Density: <strong>{metrics.ppm} px/m</strong> ({metrics.oodpcvs.name})
+                </div>
+              </div>
+            )}
+
+            {standard === 'johnson' && (
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Thermal Johnson's:</span>
+                  <span className="font-bold text-amber-400">{metrics.johnson.linePairs} line pairs</span>
+                </div>
+                <div className="text-[10px] text-slate-300">
+                  Military Thermal Class: <strong className="text-amber-300">{metrics.johnson.level}</strong>
+                </div>
+              </div>
+            )}
+
+            {standard === 'dhs_nij' && (
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">US DHS / NIJ VSH:</span>
+                  <span className={`font-bold ${metrics.dhsNij.isForensicLegal ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {metrics.dhsNij.vshPct}% Vertical Screen Height
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-300">
+                  Legal Status: {metrics.dhsNij.isForensicLegal ? '✅ Court-Admissible Forensic Evidence' : '⚠️ Investigative Lead Only (<15%)'}
+                </div>
+              </div>
+            )}
+
+            {standard === 'french' && (
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">French Code Level:</span>
+                  <span className="font-bold text-sky-300">{metrics.french.level}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Standard Description in Side Tab */}
+            <div className="p-2 rounded bg-slate-900/60 border border-slate-800/80 text-[10px] text-slate-400 leading-relaxed">
+              <strong className="text-slate-300 block mb-0.5">{activeStdDef.name}</strong>
+              {activeStdDef.description}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
+

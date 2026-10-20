@@ -2605,6 +2605,8 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                   heatMode={heatMode}
                   standard={activeStandard}
                   onStandardChange={setActiveStandard}
+                  onMoveCamera={handleMoveCamera}
+                  onPoseChange={handlePoseChange}
                 />
               )}
 

@@ -26,7 +26,11 @@ export function getNvidiaConfig(task: AITask = 'text') {
     keyName: 'NVIDIA_API_KEY',
     apiKey: process.env.NVIDIA_API_KEY || DEFAULT_NVIDIA_API_KEY,
     baseUrl: NVIDIA_URL,
-    model: task === 'vision' ? NVIDIA_MODELS.vision : (process.env.NVIDIA_MODEL || NVIDIA_MODELS.primary),
+    model: task === 'vision' 
+      ? NVIDIA_MODELS.vision 
+      : ((process.env.NVIDIA_MODEL && !process.env.NVIDIA_MODEL.includes('diffusiongemma')) 
+          ? process.env.NVIDIA_MODEL 
+          : NVIDIA_MODELS.primary),
   };
 }
 

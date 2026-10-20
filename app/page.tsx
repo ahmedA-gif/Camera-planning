@@ -39,7 +39,7 @@ function uuid(): string {
 function DashboardContent() {
   const { activeView, setActiveView } = useView();
   const { isLoaded: clerkLoaded, user } = useUser();
-  const userId = user?.id ?? null;
+  const userId = user?.id || (clerkLoaded ? 'workspace-local' : 'workspace-local');
   const [project, setProject] = useState<DetVisionProject | null>(null);
   const projectRef = useRef<DetVisionProject | null>(project);
   projectRef.current = project;

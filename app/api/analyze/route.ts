@@ -30,7 +30,7 @@ async function callNvidiaAI(prompt: string): Promise<string | null> {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 16000); // 16s timeout
+    const timeout = setTimeout(() => controller.abort(), 7000); // 7s timeout to safely beat Vercel Hobby limits
 
     const resp = await fetch(getNvidiaCompletionsURL(), {
       method: 'POST',

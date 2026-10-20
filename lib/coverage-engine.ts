@@ -798,6 +798,14 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
     cand.push({ mount: 'wall-v', x: L - e, y, z: H, panDeg: 180, tiltDeg: wallTilt });
   }
 
+  // Inject architecture-aware candidates (aisles, machine perimeters, dock portals)
+  if (site.obstacles && site.obstacles.length > 0) {
+    const archPoses = architectureAwareLayout(site.obstacles, site, lens, mode, 24);
+    for (const ap of archPoses) {
+      cand.push({ mount: ap.mount, x: ap.x, y: ap.y, z: ap.z, panDeg: ap.panDeg, tiltDeg: ap.tiltDeg });
+    }
+  }
+
   // ---- visibility sets ----
   const sets: Int32Array[] = cand.map((c, ci) => {
     const fr = buildFrame({ ...c, id: ci }, lens, site);
@@ -848,6 +856,280 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
     .sort((a, b) => a.x - b.x || a.y - b.y)
     .map((c, i) => ({ ...c, id: i + 1, x: +c.x.toFixed(2), y: +c.y.toFixed(2) }));
   return { poses, achievedPct: (covered / U) * 100, candidates: cand.length };
+}
+
+/**
+ * Architecture-Aware Camera Installation Planner
+ * 
+ * Deterministically aligns cameras with building architecture, structural corridors,
+ * storage racking aisles, loading dock entrances, and machinery zones to eliminate
+ * occlusion shadows and blind spots with 0 token overhead.
+ */
+export function architectureAwareLayout(
+  obstacles: Obstacle[],
+  site: SiteSpec,
+  lens: LensSpec,
+  mode: DoriMode,
+  targetCount: number = 6
+): CameraPose[] {
+  const L = site.length, W = site.width, H = site.mountHeight, ht = site.targetHeight;
+  const R = sanitizeRanges(lens.ranges)[mode] * (1 - site.marginPct / 100);
+  const wallTilt = aimTilt(H, ht, Math.min(R, 0.55 * Math.max(L, W)));
+  const cand: Array<{ pose: Omit<CameraPose, 'id'>; priority: number; label: string }> = [];
+
+  // 1. Separate obstacles by architectural role
+  const racks = obstacles.filter(o => o.type === 'rack' || (!o.type && o.w > 2 && o.d <= o.w));
+  const vertRacks = obstacles.filter(o => o.type === 'rack' || (!o.type && o.d > 2 && o.d > o.w));
+  const docks = obstacles.filter(o => o.type === 'dock' || /dock|door|entrance|gate/i.test(o.name));
+  const machines = obstacles.filter(o => o.type === 'machine' || o.type === 'hazard');
+  const conveyors = obstacles.filter(o => o.type === 'conveyor');
+  const columns = obstacles.filter(o => o.type === 'column');
+
+  // 2. Loading Bay & Ingress Entrances (Priority 1: Access Control & PPE)
+  docks.forEach((dock, idx) => {
+    const isNorth = dock.y < W * 0.2;
+    const isSouth = dock.y > W * 0.8;
+    const isWest = dock.x < L * 0.2;
+
+    let cx = dock.x + dock.w / 2;
+    let cy = dock.y + dock.d / 2;
+    let panDeg = 0;
+
+    if (isNorth) {
+      cy = Math.min(W - 1, dock.y + dock.d + 3.5);
+      panDeg = 270; // Looking towards north entrance
+    } else if (isSouth) {
+      cy = Math.max(1, dock.y - 3.5);
+      panDeg = 90; // Looking towards south entrance
+    } else if (isWest) {
+      cx = Math.min(L - 1, dock.x + dock.w + 3.5);
+      panDeg = 180; // Looking towards west gate
+    } else {
+      cx = Math.max(1, dock.x - 3.5);
+      panDeg = 0; // Looking towards east gate
+    }
+
+    cand.push({
+      pose: {
+        mount: 'wall-v',
+        x: clamp(cx, 0.5, L - 0.5),
+        y: clamp(cy, 0.5, W - 0.5),
+        z: Math.min(H, 4.0),
+        panDeg,
+        tiltDeg: aimTilt(Math.min(H, 4.0), ht, 4.0),
+      },
+      priority: 100 - idx,
+      label: `Dock/Entrance-${idx + 1}`,
+    });
+  });
+
+  // 3. Storage Racking Aisles (Priority 2: Longitudinal Sightlines Down Aisles)
+  // Horizontal Rack Rows (Aisles run along X)
+  if (racks.length >= 2) {
+    const sorted = [...racks].sort((a, b) => a.y - b.y);
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const r1 = sorted[i];
+      const r2 = sorted[i + 1];
+      const gapY = r2.y - (r1.y + r1.d);
+      if (gapY >= 1.2) {
+        const aisleY = (r1.y + r1.d + r2.y) / 2;
+        const startX = Math.min(r1.x, r2.x);
+        const endX = Math.max(r1.x + r1.w, r2.x + r2.w);
+        const aisleLen = endX - startX;
+
+        // West head looking East down the corridor
+        const westX = Math.max(0.6, startX - 1.2);
+        cand.push({
+          pose: {
+            mount: 'wall-h',
+            x: clamp(westX, 0.5, L - 0.5),
+            y: clamp(aisleY, 0.5, W - 0.5),
+            z: H,
+            panDeg: 0,
+            tiltDeg: aimTilt(H, ht, Math.min(R * 0.7, aisleLen * 0.55)),
+          },
+          priority: 85 - i * 2,
+          label: `Aisle-${i + 1}-WestHead`,
+        });
+
+        // East head looking West (bidirectional coverage if aisle is long)
+        if (aisleLen > R * 0.45 || targetCount > 6) {
+          const eastX = Math.min(L - 0.6, endX + 1.2);
+          cand.push({
+            pose: {
+              mount: 'wall-h',
+              x: clamp(eastX, 0.5, L - 0.5),
+              y: clamp(aisleY, 0.5, W - 0.5),
+              z: H,
+              panDeg: 180,
+              tiltDeg: aimTilt(H, ht, Math.min(R * 0.7, aisleLen * 0.55)),
+            },
+            priority: 84 - i * 2,
+            label: `Aisle-${i + 1}-EastHead`,
+          });
+        }
+      }
+    }
+  }
+
+  // Vertical Rack Rows (Aisles run along Y)
+  if (vertRacks.length >= 2) {
+    const sorted = [...vertRacks].sort((a, b) => a.x - b.x);
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const r1 = sorted[i];
+      const r2 = sorted[i + 1];
+      const gapX = r2.x - (r1.x + r1.w);
+      if (gapX >= 1.2) {
+        const aisleX = (r1.x + r1.w + r2.x) / 2;
+        const startY = Math.min(r1.y, r2.y);
+        const endY = Math.max(r1.y + r1.d, r2.y + r2.d);
+        const aisleLen = endY - startY;
+
+        cand.push({
+          pose: {
+            mount: 'wall-v',
+            x: clamp(aisleX, 0.5, L - 0.5),
+            y: clamp(Math.max(0.6, startY - 1.2), 0.5, W - 0.5),
+            z: H,
+            panDeg: 90,
+            tiltDeg: aimTilt(H, ht, Math.min(R * 0.7, aisleLen * 0.55)),
+          },
+          priority: 85 - i * 2,
+          label: `VertAisle-${i + 1}-North`,
+        });
+
+        if (aisleLen > R * 0.45 || targetCount > 6) {
+          cand.push({
+            pose: {
+              mount: 'wall-v',
+              x: clamp(aisleX, 0.5, L - 0.5),
+              y: clamp(Math.min(W - 0.6, endY + 1.2), 0.5, W - 0.5),
+              z: H,
+              panDeg: 270,
+              tiltDeg: aimTilt(H, ht, Math.min(R * 0.7, aisleLen * 0.55)),
+            },
+            priority: 84 - i * 2,
+            label: `VertAisle-${i + 1}-South`,
+          });
+        }
+      }
+    }
+  }
+
+  // 4. Robotic Workcells & High-Value Machinery (Priority 3: Operator Safety & Safety Interlocks)
+  machines.forEach((mach, idx) => {
+    const mx = mach.x + mach.w / 2;
+    const my = mach.y + mach.d / 2;
+    const offX = mach.x > L / 2 ? mach.w * 0.8 : -mach.w * 0.8;
+    const offY = mach.y > W / 2 ? mach.d * 0.8 : -mach.d * 0.8;
+    const posX = clamp(mx + offX, 0.8, L - 0.8);
+    const posY = clamp(my + offY, 0.8, W - 0.8);
+    const aimDeg = (Math.atan2(my - posY, mx - posX) * (180 / Math.PI) + 360) % 360;
+
+    cand.push({
+      pose: {
+        mount: 'corner',
+        x: +posX.toFixed(2),
+        y: +posY.toFixed(2),
+        z: H,
+        panDeg: Math.round(aimDeg),
+        tiltDeg: aimTilt(H, ht, Math.hypot(mx - posX, my - posY)),
+      },
+      priority: 75 - idx,
+      label: `MachineWorkcell-${idx + 1}`,
+    });
+  });
+
+  // 5. Conveyor Sorting Lines (Priority 4: Tracking & Jam Detection)
+  conveyors.forEach((conv, idx) => {
+    cand.push({
+      pose: {
+        mount: 'roof-tilt',
+        x: clamp(conv.x + conv.w * 0.1, 0.5, L - 0.5),
+        y: clamp(conv.y + conv.d / 2, 0.5, W - 0.5),
+        z: H,
+        panDeg: conv.w > conv.d ? 0 : 90,
+        tiltDeg: aimTilt(H, ht, Math.max(conv.w, conv.d) * 0.6),
+      },
+      priority: 70 - idx,
+      label: `ConveyorLine-${idx + 1}`,
+    });
+  });
+
+  // 6. Structural Columns (Priority 5: Cross-Aisle Intersections)
+  columns.slice(0, 4).forEach((col, idx) => {
+    cand.push({
+      pose: {
+        mount: 'cross',
+        x: clamp(col.x + col.w / 2, 0.5, L - 0.5),
+        y: clamp(col.y + col.d / 2, 0.5, W - 0.5),
+        z: H,
+        panDeg: (idx * 90 + 45) % 360,
+        tiltDeg: aimTilt(H, ht, 8.0),
+      },
+      priority: 60 - idx,
+      label: `Column-${idx + 1}`,
+    });
+  });
+
+  // 7. Perimeter Safety Sweeps (Priority 6: Diagonal Boundary Coverage)
+  const e = 0.8;
+  cand.push(
+    { pose: { mount: 'corner', x: e, y: e, z: H, panDeg: 45, tiltDeg: wallTilt }, priority: 50, label: 'Corner-NW' },
+    { pose: { mount: 'corner', x: L - e, y: e, z: H, panDeg: 135, tiltDeg: wallTilt }, priority: 49, label: 'Corner-NE' },
+    { pose: { mount: 'corner', x: L - e, y: W - e, z: H, panDeg: 225, tiltDeg: wallTilt }, priority: 48, label: 'Corner-SE' },
+    { pose: { mount: 'corner', x: e, y: W - e, z: H, panDeg: 315, tiltDeg: wallTilt }, priority: 47, label: 'Corner-SW' }
+  );
+
+  // 8. Infill Overhead Nadir / Panoramic (Priority 7)
+  cand.push({
+    pose: { mount: 'roof-nadir', x: L / 2, y: W / 2, z: H, panDeg: 0, tiltDeg: 90 },
+    priority: 40,
+    label: 'Overhead-Center-Nadir',
+  });
+
+  // Sort candidates by architectural priority
+  cand.sort((a, b) => b.priority - a.priority);
+
+  // Select up to targetCount candidates
+  const count = Math.max(1, Math.min(60, targetCount));
+  const selected: Array<Omit<CameraPose, 'id'>> = [];
+
+  for (const c of cand) {
+    if (selected.length >= count) break;
+    const tooClose = selected.some(s => Math.hypot(s.x - c.pose.x, s.y - c.pose.y) < 2.5);
+    if (!tooClose) {
+      selected.push(c.pose);
+    }
+  }
+
+  // If we still need more cameras to satisfy targetCount, fill with evenly spaced aisle / perimeter cameras
+  if (selected.length < count) {
+    const needed = count - selected.length;
+    for (let k = 0; k < needed; k++) {
+      const stepX = (L * 0.8) / (needed + 1);
+      const x = L * 0.1 + (k + 1) * stepX;
+      selected.push({
+        mount: 'roof-tilt',
+        x: +x.toFixed(2),
+        y: +(W / 2).toFixed(2),
+        z: H,
+        panDeg: k % 2 === 0 ? 0 : 180,
+        tiltDeg: aimTilt(H, ht, R * 0.5),
+      });
+    }
+  }
+
+  // Format into final CameraPose[] with sequential 1..N IDs
+  return selected
+    .slice(0, count)
+    .sort((a, b) => a.x - b.x || a.y - b.y)
+    .map((c, idx) => ({
+      ...c,
+      id: idx + 1,
+      x: +c.x.toFixed(2),
+      y: +c.y.toFixed(2),
+    }));
 }
 
 /* ------------------------------------------------------------------ */

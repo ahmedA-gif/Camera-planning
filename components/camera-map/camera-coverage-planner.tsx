@@ -42,6 +42,7 @@ import {
   optimizeLayout,
   defaultLayout,
   defaultPose,
+  architectureAwareLayout,
   MOUNT_INFO,
   type CameraPose,
   type MountType,
@@ -260,11 +261,35 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     return computeCoverage(poses, lens, site, mode);
   }, [poses, lens, site, mode]);
 
-  // Update camera count and re-distribute
+  // Update camera count and re-distribute (architecture-aware if obstacles exist)
   const handleCameraCountChange = (count: number) => {
     const c = Math.max(1, Math.min(100, count));
     setCameraCount(c);
-    setPoses(defaultLayout(c, site, lens, mode));
+    if (obstacles.length > 0) {
+      setPoses(architectureAwareLayout(obstacles, site, lens, mode, c));
+    } else {
+      setPoses(defaultLayout(c, site, lens, mode));
+    }
+    setSelectedId(null);
+  };
+
+  // Plan cameras directly based on architectural layout, storage aisles, and dock doors
+  const handlePlanFromArchitecture = () => {
+    let currentObs = obstacles;
+    if (currentObs.length === 0) {
+      currentObs = generateProceduralObstacles({
+        type: 'logistics_warehouse',
+        length: bayLength,
+        width: bayWidth,
+        mountHeight,
+      });
+      setObstacles(currentObs);
+    }
+    const archPoses = architectureAwareLayout(currentObs, { ...site, obstacles: currentObs }, lens, mode, cameraCount);
+    if (archPoses.length > 0) {
+      setPoses(archPoses);
+      setCameraCount(archPoses.length);
+    }
     setSelectedId(null);
   };
 
@@ -289,7 +314,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   // AI Facility Structure Synthesizer powered by NVIDIA NIM
   const handleSynthesizeFacility = async (promptOverride?: string) => {
     setIsSynthesizingFacility(true);
-    setFacilitySynthesisStatus('Querying NVIDIA NIM (meta/llama-3.2-90b-vision-instruct)...');
+    setFacilitySynthesisStatus('Querying NVIDIA NIM (meta/llama-3.2-11b-vision-instruct)...');
     try {
       const resp = await fetch('/api/camera/facility-structures', {
         method: 'POST',
@@ -312,6 +337,11 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         setSelectedObstacleId(null);
         setFacilitySynthesisSummary(data.architectural_summary || 'Generated realistic 3D facility structures with physical occlusion.');
         setFacilitySynthesisStatus(`✨ Synthesized ${data.obstacles.length} structures using ${data.model_used || 'NVIDIA NIM'}`);
+        // Automatically auto-align cameras with newly generated architectural design!
+        const archPoses = architectureAwareLayout(data.obstacles, { ...site, obstacles: data.obstacles }, lens, mode, cameraCount);
+        if (archPoses.length > 0) {
+          setPoses(archPoses);
+        }
       } else {
         throw new Error('No physical structures were returned');
       }
@@ -334,6 +364,10 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     });
     setObstacles(newObs);
     setSelectedObstacleId(null);
+    const archPoses = architectureAwareLayout(newObs, { ...site, obstacles: newObs }, lens, mode, cameraCount);
+    if (archPoses.length > 0) {
+      setPoses(archPoses);
+    }
   };
 
   // Add custom obstacle
@@ -1476,6 +1510,14 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
 
           {/* Action Buttons */}
           <div className="space-y-2 pt-1 pb-4">
+            <button
+              onClick={handlePlanFromArchitecture}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-colors"
+              title="Automatically aligns all camera mounts, pan azimuths, and tilt angles with corridors, racking aisles, dock gates, and machinery"
+            >
+              <Building2 className="w-4 h-4" />
+              Plan Cameras from Architecture
+            </button>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => handleExportReport('pdf')}
@@ -1496,7 +1538,11 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
             </div>
             <button
               onClick={() => {
-                setPoses(defaultLayout(cameraCount, site, lens, mode));
+                if (obstacles.length > 0) {
+                  setPoses(architectureAwareLayout(obstacles, site, lens, mode, cameraCount));
+                } else {
+                  setPoses(defaultLayout(cameraCount, site, lens, mode));
+                }
                 setSelectedId(null);
               }}
               className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white border border-border text-slate-700 hover:bg-muted text-xs font-medium shadow-xs transition-colors"

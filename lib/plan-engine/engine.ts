@@ -159,7 +159,7 @@ export class PlanEngine {
       const limitBody = await response.json().catch(() => ({}));
       const retryAfter = response.headers.get('retry-after');
       const waitHint = retryAfter ? ` Try again in about ${retryAfter} seconds.` : ' Please wait briefly and retry.';
-      throw new Error(`${limitBody?.error?.message || 'Groq rate limit reached.'}${waitHint} Your brief is saved.`);
+      throw new Error(`${limitBody?.error?.message || 'AI rate limit reached.'}${waitHint} Your brief is saved.`);
     }
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 400);

@@ -71,10 +71,21 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
         }),
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        // Safe fallback if server sent HTML/text error
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || 'Analysis failed');
+        const errorMsg = data?.error || (responseText.includes('<') ? `Server error (${response.status}). Please try again or create a draft.` : responseText.slice(0, 200)) || 'Analysis failed';
+        throw new Error(errorMsg);
+      }
+
+      if (!data || !data.project) {
+        throw new Error('Analysis response was malformed. Please try again.');
       }
 
       const analysisData: AnalysisResponse = data;
@@ -206,11 +217,6 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
           <div className="block text-sm font-medium"><p>Planned output sections <span className="text-xs font-normal text-muted-foreground">Select only what you need in the generated document. Keep at least one selected.</span></p><div className="mt-2 flex flex-wrap gap-2">{['Executive summary','Use cases','Camera plan','Detection coverage','Hardware & critical components','Workflow','Assumptions & open questions','Implementation roadmap'].map(item=><label key={item} className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs ${formData.output_scope.includes(item)?'border-emerald-500 bg-emerald-50 text-emerald-800':'border-border'}`}><input type="checkbox" className="sr-only" checked={formData.output_scope.includes(item)} onChange={e=>{if(!e.target.checked && formData.output_scope.length===1)return;const output_scope=e.target.checked?[...formData.output_scope,item]:formData.output_scope.filter(v=>v!==item);setFormData(prev=>({...prev,output_scope}));onBriefChange?.({...formData,output_scope,requirements:formData.requirements.split('\n').filter(Boolean),critical_components:formData.critical_components.split('\n').filter(Boolean),layout_sections:formData.layout_sections.split('\n').map(v=>v.trim()).filter(Boolean)});}}/>{item}</label>)}</div></div>
         </section>
 
-        <details className="group rounded-xl border border-border bg-white p-4 transition-colors open:border-emerald-300 open:bg-emerald-50/30">
-          <summary className="cursor-pointer list-none text-sm font-semibold">Groq AI configuration <span className="ml-1 text-xs font-normal text-muted-foreground">(server-side)</span></summary>
-          <div className="mt-3 rounded-lg border border-border bg-white p-3 text-xs leading-relaxed text-muted-foreground"><b className="text-foreground">This workspace uses Groq.</b><p className="mt-1">Configure your Groq API key as <code>GROQ_API_KEY</code> in the server’s <code>.env.local</code>. Text analysis uses <code>GROQ_MODEL</code>; image analysis uses <code>GROQ_VISION_MODEL</code>.</p><p className="mt-2">The server serializes model requests and locally paces them with a default of 8 requests per minute. Set <code>GROQ_MAX_REQUESTS_PER_MINUTE</code> lower if your account limit is stricter.</p><p className="mt-2">Keep the key out of this brief, project documents, and browser storage.</p></div>
-        </details>
-
         <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
           <input
             type="checkbox"
@@ -220,8 +226,8 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
             className="w-4 h-4 accent-primary"
           />
           <label htmlFor="use-ai" className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-            <Brain className="w-4 h-4 text-primary" />
-            <span>Use AI analysis (requires a configured provider)</span>
+            <Brain className="w-4 h-4 text-emerald-600" />
+            <span>Use NVIDIA Vision AI Analysis</span>
           </label>
         </div>
 
@@ -262,8 +268,8 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
           <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
             <CheckCircle className="w-5 h-5 text-green-600" />
             <span className="font-medium">{result.model_used === 'Project draft' ? 'Your draft is ready' : 'AI analysis complete'}</span>
-            <span className="ml-2 px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded">
-              {result.model_used === 'Project draft' ? 'Built from your requirements' : result.model_used || 'AI analysis'}
+            <span className="ml-2 px-2 py-0.5 text-xs bg-emerald-100 text-emerald-800 rounded font-medium">
+              {result.model_used === 'Project draft' ? 'Built from your requirements' : 'NVIDIA AI Engine'}
             </span>
           </div>
 

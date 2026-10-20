@@ -23,7 +23,10 @@ import {
   buildFrame, sideProfile, clamp, DORI_LEVEL, LEVEL_NAMES,
   type CameraPose, type CoverageResult, type DoriMode, type LensSpec, type Pt, type SiteSpec,
   type MappingStandard, MAPPING_STANDARDS, computeTargetMetrics, impliedHorizontalPixels,
+  type Vec3, type Obstacle3D, rayAABBIntersection, obstaclesTo3D, evaluateTargetPoint3D,
 } from '@/lib/coverage-engine';
+
+export { FrustumSpatialInspector } from './frustum-spatial-inspector';
 
 /* ------------------------------------------------------------------ */
 /* Palette & helpers                                                   */
@@ -814,17 +817,18 @@ export function PerspectiveView({ result, poses, site, mode, selectedId, heatMod
 function rayIntersectsObstacle(
   p0: [number, number, number],
   p1: [number, number, number],
-  o: { x: number; y: number; w: number; d: number; h: number }
-): boolean {
+  o: { x: number; y: number; w: number; d: number; h: number; zBase?: number }
+): { hit: boolean; t: number; point?: [number, number, number] } {
   const dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2];
   let tmin = 0, tmax = 1;
-  const bmin = [o.x, o.y, 0];
-  const bmax = [o.x + o.w, o.y + o.d, o.h];
+  const zb = o.zBase ?? 0;
+  const bmin = [o.x, o.y, zb];
+  const bmax = [o.x + o.w, o.y + o.d, zb + o.h];
 
   for (let i = 0; i < 3; i++) {
     const p = p0[i], d = [dx, dy, dz][i];
     if (Math.abs(d) < 1e-6) {
-      if (p < bmin[i] || p > bmax[i]) return false;
+      if (p < bmin[i] || p > bmax[i]) return { hit: false, t: 1 };
     } else {
       const invD = 1 / d;
       let t1 = (bmin[i] - p) * invD;
@@ -832,10 +836,18 @@ function rayIntersectsObstacle(
       if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
       tmin = Math.max(tmin, t1);
       tmax = Math.min(tmax, t2);
-      if (tmin > tmax) return false;
+      if (tmin > tmax) return { hit: false, t: 1 };
     }
   }
-  return true;
+  if (tmin <= tmax && tmax > 0 && tmin < 1) {
+    const tHit = Math.max(0, tmin);
+    return {
+      hit: true,
+      t: tHit,
+      point: [p0[0] + dx * tHit, p0[1] + dy * tHit, p0[2] + dz * tHit],
+    };
+  }
+  return { hit: false, t: 1 };
 }
 
 export function BirdCameraView({
@@ -895,7 +907,7 @@ export function BirdCameraView({
     onStandardChange?.(std);
   };
 
-  // Find camera with best optical coverage of target
+  // Multi-height target raycasting (Ankle 0.15m, Torso 1.1m, Head targetH - 0.15m)
   const activeCameraTargetInfo = useMemo(() => {
     let bestCam: CameraPose | null = null;
     let minOccludedDist = Infinity;
@@ -905,11 +917,12 @@ export function BirdCameraView({
     poses.forEach(cam => {
       const dist = Math.hypot(cam.x - targetPos.x, cam.y - targetPos.y, cam.z - targetPos.z);
       const pCam: [number, number, number] = [cam.x, cam.y, cam.z];
-      const pTar: [number, number, number] = [targetPos.x, targetPos.y, targetPos.z];
+      const pTarHead: [number, number, number] = [targetPos.x, targetPos.y, targetH - 0.15];
       
       let occludedBy: string | null = null;
       for (const obs of site.obstacles) {
-        if (rayIntersectsObstacle(pCam, pTar, obs)) {
+        const hitRes = rayIntersectsObstacle(pCam, pTarHead, obs);
+        if (hitRes.hit) {
           occludedBy = obs.name;
           break;
         }
@@ -930,27 +943,75 @@ export function BirdCameraView({
     const chosenCam = selectedId != null ? (poses.find(p => p.id === selectedId) || bestCam) : bestCam;
     const chosenDist = chosenCam ? Math.hypot(chosenCam.x - targetPos.x, chosenCam.y - targetPos.y, chosenCam.z - targetPos.z) : 10;
     
-    let chosenOccluded = false;
+    // Evaluate 3 vertical anchors for chosen camera
+    const anchors: Array<{ name: 'ankle' | 'torso' | 'head'; z: number }> = [
+      { name: 'ankle', z: 0.15 },
+      { name: 'torso', z: 1.1 },
+      { name: 'head', z: targetH - 0.15 },
+    ];
+
+    const rayDetails: Array<{
+      name: string;
+      z: number;
+      blocked: boolean;
+      hitPoint?: [number, number, number];
+      obstacleName?: string;
+    }> = [];
+
+    let visibleCount = 0;
     let chosenObstacle: string | null = null;
+
     if (chosenCam) {
       const pCam: [number, number, number] = [chosenCam.x, chosenCam.y, chosenCam.z];
-      const pTar: [number, number, number] = [targetPos.x, targetPos.y, targetPos.z];
-      for (const obs of site.obstacles) {
-        if (rayIntersectsObstacle(pCam, pTar, obs)) {
-          chosenOccluded = true;
-          chosenObstacle = obs.name;
-          break;
+
+      anchors.forEach(a => {
+        const pTar: [number, number, number] = [targetPos.x, targetPos.y, a.z];
+        let nearestHit: { t: number; point?: [number, number, number]; obstacleName?: string } | null = null;
+
+        for (const obs of site.obstacles) {
+          const res = rayIntersectsObstacle(pCam, pTar, obs);
+          if (res.hit && (!nearestHit || res.t < nearestHit.t)) {
+            nearestHit = { t: res.t, point: res.point, obstacleName: obs.name };
+          }
         }
-      }
+
+        if (nearestHit) {
+          if (!chosenObstacle) chosenObstacle = nearestHit.obstacleName || null;
+          rayDetails.push({
+            name: a.name,
+            z: a.z,
+            blocked: true,
+            hitPoint: nearestHit.point,
+            obstacleName: nearestHit.obstacleName,
+          });
+        } else {
+          visibleCount++;
+          rayDetails.push({
+            name: a.name,
+            z: a.z,
+            blocked: false,
+          });
+        }
+      });
     }
 
     const metrics = computeTargetMetrics(chosenDist, hpx, lens.hfovDeg, lens.vfovDeg, targetH);
+    const depressionDeg = chosenCam ? (Math.atan2(chosenCam.z - 1.0, Math.hypot(chosenCam.x - targetPos.x, chosenCam.y - targetPos.y)) * 180) / Math.PI : 20;
+
     return {
       camera: chosenCam,
       distance: chosenDist,
-      isOccluded: chosenOccluded,
+      isOccluded: visibleCount < 3,
+      fullyOccluded: visibleCount === 0,
+      visibleAnchors: visibleCount,
+      rayDetails,
       occludingObstacle: chosenObstacle,
       metrics,
+      aiFeasibility: {
+        faceId: metrics.ppm >= 280 && depressionDeg <= 30 && visibleCount === 3,
+        ppeSafety: metrics.ppm >= 145 && depressionDeg <= 45 && visibleCount >= 2,
+        personTrack: metrics.ppm >= 65 && visibleCount >= 2,
+      },
     };
   }, [poses, targetPos, site.obstacles, selectedId, hpx, lens, targetH]);
 
@@ -1274,44 +1335,49 @@ export function BirdCameraView({
       // Sort & Draw 3D Entities
       items.sort((a, b) => a.near - b.near).forEach(d => d.draw());
 
-      // 4. Active Raycast Line from Camera to Target
-      if (activeCameraTargetInfo.camera) {
-        const camP = P(
-          activeCameraTargetInfo.camera.x,
-          activeCameraTargetInfo.camera.y,
-          activeCameraTargetInfo.camera.z
-        );
-        const tarP = P(targetPos.x, targetPos.y, targetPos.z);
+      // 4. Multi-Anchor Laser Raycasts (Ankle, Torso, Head) with Collision Impact Dots
+      if (activeCameraTargetInfo.camera && activeCameraTargetInfo.rayDetails) {
+        const cam = activeCameraTargetInfo.camera;
+        const camP = P(cam.x, cam.y, cam.z);
 
-        ctx.save();
-        if (activeCameraTargetInfo.isOccluded) {
-          ctx.setLineDash([4, 4]);
-          ctx.strokeStyle = 'rgba(239,68,68,0.9)';
-          ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(camP.x, camP.y); ctx.lineTo(tarP.x, tarP.y); ctx.stroke();
+        activeCameraTargetInfo.rayDetails.forEach(ray => {
+          const tarP = P(targetPos.x, targetPos.y, ray.z);
 
-          // Obstacle warning tag midway
-          const midX = (camP.x + tarP.x) / 2, midY = (camP.y + tarP.y) / 2;
-          ctx.fillStyle = 'rgba(239,68,68,0.95)';
-          ctx.font = '700 8px ui-monospace, monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText(`OCCLUDED BY ${activeCameraTargetInfo.occludingObstacle || 'OBSTACLE'}`, midX, midY - 6);
-        } else {
-          // Clear line-of-sight laser
-          ctx.strokeStyle = 'rgba(34,211,238,0.95)';
-          ctx.lineWidth = 2.2;
-          ctx.shadowBlur = 10;
-          ctx.shadowColor = '#00e5ff';
-          ctx.beginPath(); ctx.moveTo(camP.x, camP.y); ctx.lineTo(tarP.x, tarP.y); ctx.stroke();
+          ctx.save();
+          if (ray.blocked && ray.hitPoint) {
+            // Blocked ray stops exactly at obstacle collision surface
+            const hitP = P(ray.hitPoint[0], ray.hitPoint[1], ray.hitPoint[2]);
 
-          // Laser pulse bead traveling slowly along the ray
-          const laserPhase = (t * 0.5) % 1;
-          const beadX = camP.x + (tarP.x - camP.x) * laserPhase;
-          const beadY = camP.y + (tarP.y - camP.y) * laserPhase;
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath(); ctx.arc(beadX, beadY, 3.5, 0, Math.PI * 2); ctx.fill();
-        }
-        ctx.restore();
+            ctx.strokeStyle = 'rgba(239,68,68,0.95)';
+            ctx.lineWidth = 1.8;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = '#ef4444';
+            ctx.beginPath(); ctx.moveTo(camP.x, camP.y); ctx.lineTo(hitP.x, hitP.y); ctx.stroke();
+
+            // Glowing Red Collision Impact Marker on Obstacle
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath(); ctx.arc(hitP.x, hitP.y, 4, 0, Math.PI * 2); ctx.fill();
+
+            // Small white center dot
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(hitP.x, hitP.y, 1.8, 0, Math.PI * 2); ctx.fill();
+          } else {
+            // Clear Line-of-Sight Laser Ray
+            ctx.strokeStyle = 'rgba(34,211,238,0.95)';
+            ctx.lineWidth = 2.0;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#00e5ff';
+            ctx.beginPath(); ctx.moveTo(camP.x, camP.y); ctx.lineTo(tarP.x, tarP.y); ctx.stroke();
+
+            // Traveling laser pulse bead
+            const laserPhase = (t * 0.5 + (ray.z / 3)) % 1;
+            const beadX = camP.x + (tarP.x - camP.x) * laserPhase;
+            const beadY = camP.y + (tarP.y - camP.y) * laserPhase;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(beadX, beadY, 3, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.restore();
+        });
       }
 
       // Title & Overview (discrete corner tag)
@@ -1653,15 +1719,22 @@ export function BirdCameraView({
             ))}
           </div>
 
-          {/* Occlusion Warning or Clear Line of Sight */}
+          {/* Multi-Anchor Occlusion Breakdown & AI Feasibility Badges */}
+          <div className="flex items-center justify-between text-[10px] font-mono pt-1 text-slate-400">
+            <span>Ray Visibility:</span>
+            <span className={`font-bold ${activeCameraTargetInfo.visibleAnchors === 3 ? 'text-emerald-400' : activeCameraTargetInfo.visibleAnchors > 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+              {activeCameraTargetInfo.visibleAnchors}/3 Anchors (Head, Torso, Ankle)
+            </span>
+          </div>
+
           {activeCameraTargetInfo.isOccluded ? (
             <div className="p-2 rounded-lg bg-rose-950/70 border border-rose-800/80 text-[11px] font-mono text-rose-300 space-y-1">
               <div className="font-bold flex items-center gap-1">
                 <span>⚠️</span>
-                <span>PHYSICAL OCCLUSION DETECTED</span>
+                <span>{activeCameraTargetInfo.fullyOccluded ? 'FULL OCCLUSION' : 'PARTIAL OCCLUSION DETECTED'}</span>
               </div>
               <div className="text-[10px] text-rose-200">
-                Optical ray blocked by <strong>{activeCameraTargetInfo.occludingObstacle || 'structure'}</strong>. Dead zone created!
+                Blocked by <strong>{activeCameraTargetInfo.occludingObstacle || 'warehouse structure'}</strong>.
               </div>
             </div>
           ) : (
@@ -1671,10 +1744,32 @@ export function BirdCameraView({
                 <span>CLEAR DIRECT LINE OF SIGHT</span>
               </div>
               <div className="text-[10px] text-emerald-200">
-                Unobstructed ray from Camera C{activeCameraTargetInfo.camera?.id || 1} to target.
+                All 3 vertical sightline rays unobstructed.
               </div>
             </div>
           )}
+
+          {/* AI Model Feasibility Live Grid */}
+          <div className="pt-2 border-t border-slate-800 grid grid-cols-3 gap-1.5 text-center">
+            <div>
+              <div className="text-[9px] font-mono text-slate-500 mb-0.5">FACE ID</div>
+              <span className={`block py-0.5 rounded text-[10px] font-mono font-bold ${activeCameraTargetInfo.aiFeasibility?.faceId ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950/80 text-rose-400 border border-rose-800'}`}>
+                {activeCameraTargetInfo.aiFeasibility?.faceId ? 'PASS' : 'FAIL'}
+              </span>
+            </div>
+            <div>
+              <div className="text-[9px] font-mono text-slate-500 mb-0.5">PPE SAFETY</div>
+              <span className={`block py-0.5 rounded text-[10px] font-mono font-bold ${activeCameraTargetInfo.aiFeasibility?.ppeSafety ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950/80 text-rose-400 border border-rose-800'}`}>
+                {activeCameraTargetInfo.aiFeasibility?.ppeSafety ? 'PASS' : 'FAIL'}
+              </span>
+            </div>
+            <div>
+              <div className="text-[9px] font-mono text-slate-500 mb-0.5">BYTETRACK</div>
+              <span className={`block py-0.5 rounded text-[10px] font-mono font-bold ${activeCameraTargetInfo.aiFeasibility?.personTrack ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : activeCameraTargetInfo.visibleAnchors > 0 ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-rose-950/80 text-rose-400 border border-rose-800'}`}>
+                {activeCameraTargetInfo.aiFeasibility?.personTrack ? 'LOCKED' : activeCameraTargetInfo.visibleAnchors > 0 ? 'DEGRADED' : 'LOST'}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Section 3: Framework Standards Description & Calculations (in Side Tab!) */}

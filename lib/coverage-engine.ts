@@ -74,6 +74,8 @@ export interface Obstacle {
   /** Height (m). */
   h: number;
   type?: ObstacleType;
+  /** Base elevation above floor (m). Default 0 */
+  zBase?: number;
 }
 
 /** IEC 62676-4:2025 (OODPCVS) 7-Level Standard Definition */
@@ -364,14 +366,66 @@ export interface CameraPose {
   tiltDeg: number;
 }
 
-type Vec3 = [number, number, number];
+type Vec3Tuple = [number, number, number];
+
+export interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface CameraSpec {
+  id: string;
+  position: Vec3;          // (X, Y, Mount Height Z in meters)
+  azimuthDeg: number;      // 0 = North (+Y), 90 = East (+X), clockwise
+  tiltDeg: number;         // Downward pitch angle (0 = horizontal, 90 = straight down)
+  focalLengthMm: number;   // e.g., 2.8, 4, 6, 8, 12
+  sensorWidthMm: number;   // e.g., 5.14 for 1/2.8", 7.18 for 1/1.8"
+  sensorHeightMm: number;  // e.g., 2.89 for 1/2.8", 4.04 for 1/1.8"
+  resolutionW: number;     // e.g., 3840 (4K)
+  resolutionH: number;     // e.g., 2160 (4K)
+  distortionK1?: number;   // Radial barrel distortion (e.g., -0.18 for 2.8mm)
+}
+
+export interface Obstacle3D {
+  id: string;
+  min: Vec3; // World-space AABB minimum (x, y, zBase)
+  max: Vec3; // World-space AABB maximum (x + W, y + D, zBase + H)
+  name?: string;
+  type?: ObstacleType;
+}
+
+export interface TargetEvaluation {
+  inFrustum: boolean;
+  visibilityRatio: number;      // 0.0 (fully occluded) to 1.0 (fully visible)
+  slantDistanceM: number;
+  groundDistanceM: number;
+  effectivePpm: number;
+  verticalDepressionDeg: number;
+  doriTier: 'BLIND' | 'DETECT' | 'OBSERVE' | 'RECOGNIZE' | 'IDENTIFY';
+  personBBoxPx: { width: number; height: number };
+  aiFeasibility: {
+    personTracking: boolean;
+    ppeDetection: boolean;
+    facialRecognition: boolean;
+    forkliftAlert?: boolean;
+    licensePlateOcr?: boolean;
+  };
+  rayHits?: Array<{
+    anchor: 'ankle' | 'torso' | 'head';
+    heightM: number;
+    blocked: boolean;
+    hitPoint?: Vec3;
+    obstacleName?: string;
+  }>;
+}
 
 export interface CameraFrame {
   pose: CameraPose;
   fisheye: boolean;
-  f: Vec3; // forward (optical axis)
-  r: Vec3; // image right
-  u: Vec3; // image "down" (completes the basis)
+  f: Vec3Tuple; // forward (optical axis)
+  r: Vec3Tuple; // image right
+  u: Vec3Tuple; // image "down" (completes the basis)
   tanH: number;
   tanV: number;
   /** Derated max distance per level, index 1..4 (0 unused). Depth for rectilinear, slant for fisheye. */
@@ -461,10 +515,10 @@ export function buildFrame(pose: CameraPose, lens: LensSpec, site: SiteSpec): Ca
   const p = rad(pose.panDeg);
   const t = rad(clamp(pose.tiltDeg, -89, 90));
   const cp = Math.cos(p), sp = Math.sin(p), ct = Math.cos(t), st = Math.sin(t);
-  const f: Vec3 = [ct * cp, ct * sp, -st];
-  const r: Vec3 = [-sp, cp, 0];
+  const f: Vec3Tuple = [ct * cp, ct * sp, -st];
+  const r: Vec3Tuple = [-sp, cp, 0];
   // u = r × f  (unit, perpendicular to both; z-component = −cos(tilt))
-  const u: Vec3 = [-cp * st, -sp * st, -ct];
+  const u: Vec3Tuple = [-cp * st, -sp * st, -ct];
   const fisheye = pose.mount === 'pole360';
   const derate = 1 - clamp(site.marginPct, 0, 90) / 100;
   const hpx = impliedHorizontalPixels(lens);
@@ -501,8 +555,9 @@ function segmentHitsBox(ax: number, ay: number, az: number, bx: number, by: numb
   let t0 = 1e-4, t1 = 1 - 1e-4;
   const d = [bx - ax, by - ay, bz - az];
   const a = [ax, ay, az];
-  const lo = [o.x, o.y, 0];
-  const hi = [o.x + o.w, o.y + o.d, o.h];
+  const zBase = o.zBase ?? 0;
+  const lo = [o.x, o.y, zBase];
+  const hi = [o.x + o.w, o.y + o.d, zBase + o.h];
   for (let i = 0; i < 3; i++) {
     if (Math.abs(d[i]) < 1e-12) {
       if (a[i] < lo[i] || a[i] > hi[i]) return false;
@@ -611,9 +666,9 @@ export function footprintOnPlane(frame: CameraFrame, planeZ: number, maxDepth: n
 }
 
 /** End point of an image ray (a,b) clipped by the floor and the depth limit (for side/3D views). */
-export function rayEnd(frame: CameraFrame, a: number, b: number, maxDepth: number, floorZ = 0): Vec3 {
+export function rayEnd(frame: CameraFrame, a: number, b: number, maxDepth: number, floorZ = 0): Vec3Tuple {
   const c = frame.pose;
-  const d: Vec3 = [
+  const d: Vec3Tuple = [
     frame.f[0] + a * frame.tanH * frame.r[0] + b * frame.tanV * frame.u[0],
     frame.f[1] + a * frame.tanH * frame.r[1] + b * frame.tanV * frame.u[1],
     frame.f[2] + a * frame.tanH * frame.r[2] + b * frame.tanV * frame.u[2],
@@ -1476,4 +1531,545 @@ export function generateProceduralObstacles(config: ProceduralFacilityConfig): O
 
   return obstacles;
 }
+
+/* ------------------------------------------------------------------ */
+/* 3D Photogrammetric Optical Physics & Kay-Kajiya Ray-AABB Slab Math */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 3D Ray-AABB Slab Intersection (Kay-Kajiya Algorithm)
+ * Checks if a sightline segment from `origin` to `target` intersects `box`.
+ */
+export function segmentIntersectsAABB(origin: Vec3, target: Vec3, box: Obstacle3D): boolean {
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+  const dz = target.z - origin.z;
+
+  let tmin = 0.0;
+  let tmax = 1.0;
+
+  const axes: Array<[number, number, number, number]> = [
+    [origin.x, dx, box.min.x, box.max.x],
+    [origin.y, dy, box.min.y, box.max.y],
+    [origin.z, dz, box.min.z, box.max.z],
+  ];
+
+  for (const [p, d, bmin, bmax] of axes) {
+    if (Math.abs(d) < 1e-8) {
+      if (p < bmin || p > bmax) return false;
+    } else {
+      const invD = 1.0 / d;
+      let t1 = (bmin - p) * invD;
+      let t2 = (bmax - p) * invD;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return false;
+    }
+  }
+  return tmin <= tmax && tmax > 0.0 && tmin < 1.0;
+}
+
+/**
+ * Returns exact 3D intersection point on AABB surface if a hit occurs along the segment.
+ */
+export function rayAABBIntersection(
+  origin: Vec3,
+  target: Vec3,
+  box: Obstacle3D
+): { hit: boolean; t: number; point?: Vec3 } {
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+  const dz = target.z - origin.z;
+
+  let tmin = 0.0;
+  let tmax = 1.0;
+
+  const axes: Array<[number, number, number, number]> = [
+    [origin.x, dx, box.min.x, box.max.x],
+    [origin.y, dy, box.min.y, box.max.y],
+    [origin.z, dz, box.min.z, box.max.z],
+  ];
+
+  for (const [p, d, bmin, bmax] of axes) {
+    if (Math.abs(d) < 1e-8) {
+      if (p < bmin || p > bmax) return { hit: false, t: 1.0 };
+    } else {
+      const invD = 1.0 / d;
+      let t1 = (bmin - p) * invD;
+      let t2 = (bmax - p) * invD;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      tmin = Math.max(tmin, t1);
+      tmax = Math.min(tmax, t2);
+      if (tmin > tmax) return { hit: false, t: 1.0 };
+    }
+  }
+
+  if (tmin <= tmax && tmax > 0.0 && tmin < 1.0) {
+    const tHit = Math.max(0.0, tmin);
+    return {
+      hit: true,
+      t: tHit,
+      point: {
+        x: +(origin.x + dx * tHit).toFixed(3),
+        y: +(origin.y + dy * tHit).toFixed(3),
+        z: +(origin.z + dz * tHit).toFixed(3),
+      },
+    };
+  }
+
+  return { hit: false, t: 1.0 };
+}
+
+/**
+ * Exact Sensor-to-FOV Calculation:
+ * HFOV = 2 · arctan(W_s / (2f)), VFOV = 2 · arctan(H_s / (2f))
+ */
+export function computeSensorFov(
+  sensorWidthMm: number,
+  sensorHeightMm: number,
+  focalLengthMm: number
+): { hfovDeg: number; vfovDeg: number } {
+  const f = Math.max(0.1, focalLengthMm);
+  const hfovRad = 2 * Math.atan(sensorWidthMm / (2 * f));
+  const vfovRad = 2 * Math.atan(sensorHeightMm / (2 * f));
+  return {
+    hfovDeg: +((hfovRad * 180) / Math.PI).toFixed(1),
+    vfovDeg: +((vfovRad * 180) / Math.PI).toFixed(1),
+  };
+}
+
+/**
+ * Radial Lens Distortion (Brown-Conrady Model)
+ * Reduces effective PPM by 12%-25% in the outer 15% of the frustum cone for wide-angle lenses.
+ */
+export function computeRadialDistortionMultiplier(
+  yawDeltaRad: number,
+  pitchDeltaRad: number,
+  hfovRad: number,
+  vfovRad: number,
+  focalLengthMm: number,
+  distortionK1?: number
+): number {
+  const normRadius = Math.hypot(
+    yawDeltaRad / Math.max(1e-4, hfovRad / 2),
+    pitchDeltaRad / Math.max(1e-4, vfovRad / 2)
+  );
+  const k1 = distortionK1 ?? (focalLengthMm <= 2.8 ? -0.18 : focalLengthMm <= 4.0 ? -0.09 : -0.03);
+  return Math.max(0.72, 1 + k1 * Math.pow(normRadius, 2));
+}
+
+/** Convert legacy 2D/2.5D Obstacle list to full 3D AABB Obstacle3D array */
+export function obstaclesTo3D(obstacles: Obstacle[]): Obstacle3D[] {
+  return obstacles.map(o => {
+    const zb = o.zBase ?? 0;
+    return {
+      id: o.id,
+      name: o.name,
+      type: o.type,
+      min: { x: o.x, y: o.y, z: zb },
+      max: { x: o.x + o.w, y: o.y + o.d, z: zb + o.h },
+    };
+  });
+}
+
+/**
+ * Evaluates full 3D optical coverage, multi-height occlusion, and AI feasibility at a target (X, Y)
+ * Models:
+ * 1. Oblique angle-of-incidence & vertical tilt cutoff (cos α_yaw · cos β_pitch)
+ * 2. Steep-angle forensic penalty ("Top-of-Head Syndrome" > 35°-45°)
+ * 3. Exact sensor dimensions (W_s, H_s)
+ * 4. Brown-Conrady radial barrel distortion
+ * 5. Multi-height sampling: Ankle (0.15m), Torso (1.1m), Head (1.65m)
+ */
+export function evaluateTargetPoint3D(
+  cam: CameraSpec,
+  targetXY: { x: number; y: number },
+  obstacles: Obstacle3D[],
+  targetHeightM = 1.7,
+  targetWidthM = 0.5
+): TargetEvaluation {
+  const dx = targetXY.x - cam.position.x;
+  const dy = targetXY.y - cam.position.y;
+  const groundDist = Math.hypot(dx, dy);
+
+  // Target center-of-mass and vertical sample anchors (ankle, torso, head)
+  const sampleAnchors: Array<{ anchor: 'ankle' | 'torso' | 'head'; height: number }> = [
+    { anchor: 'ankle', height: 0.15 },
+    { anchor: 'torso', height: 1.1 },
+    { anchor: 'head', height: 1.65 },
+  ];
+  const centroidZ = 1.0;
+  const dz = centroidZ - cam.position.z;
+  const slantDist = Math.hypot(groundDist, dz);
+
+  // Exact FOV computed from physical sensor dimensions
+  const f = Math.max(0.1, cam.focalLengthMm);
+  const hfovRad = 2 * Math.atan(cam.sensorWidthMm / (2 * f));
+  const vfovRad = 2 * Math.atan(cam.sensorHeightMm / (2 * f));
+
+  // Horizontal bearing delta (0 deg = North +Y, 90 deg = East +X)
+  const targetAzimuthDeg = ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
+  let yawDeltaDeg = Math.abs(targetAzimuthDeg - cam.azimuthDeg);
+  if (yawDeltaDeg > 180) yawDeltaDeg = 360 - yawDeltaDeg;
+  const yawDeltaRad = (yawDeltaDeg * Math.PI) / 180;
+
+  // Vertical depression angle from camera horizontal plane to target centroid
+  const depressionRad = Math.atan2(cam.position.z - centroidZ, Math.max(0.01, groundDist));
+  const depressionDeg = (depressionRad * 180) / Math.PI;
+  const tiltRad = (cam.tiltDeg * Math.PI) / 180;
+  const pitchDeltaRad = Math.abs(depressionRad - tiltRad);
+
+  // Frustum boundary check
+  const inFrustum = yawDeltaRad <= hfovRad / 2 && pitchDeltaRad <= vfovRad / 2 && slantDist > 0.5;
+  if (!inFrustum) {
+    return {
+      inFrustum: false,
+      visibilityRatio: 0,
+      slantDistanceM: +slantDist.toFixed(2),
+      groundDistanceM: +groundDist.toFixed(2),
+      effectivePpm: 0,
+      verticalDepressionDeg: +depressionDeg.toFixed(1),
+      doriTier: 'BLIND',
+      personBBoxPx: { width: 0, height: 0 },
+      aiFeasibility: {
+        personTracking: false,
+        ppeDetection: false,
+        facialRecognition: false,
+        forkliftAlert: false,
+        licensePlateOcr: false,
+      },
+      rayHits: sampleAnchors.map(a => ({ anchor: a.anchor, heightM: a.height, blocked: true })),
+    };
+  }
+
+  // Multi-height 3D raycast occlusion check (Ankle, Torso, Head)
+  let visibleAnchors = 0;
+  const rayHits: TargetEvaluation['rayHits'] = [];
+
+  for (const s of sampleAnchors) {
+    const samplePt: Vec3 = { x: targetXY.x, y: targetXY.y, z: s.height };
+    let nearestHit: { t: number; point?: Vec3; obstacleName?: string } | null = null;
+
+    for (const obs of obstacles) {
+      const res = rayAABBIntersection(cam.position, samplePt, obs);
+      if (res.hit && (!nearestHit || res.t < nearestHit.t)) {
+        nearestHit = { t: res.t, point: res.point, obstacleName: obs.name || obs.id };
+      }
+    }
+
+    if (nearestHit) {
+      rayHits.push({
+        anchor: s.anchor,
+        heightM: s.height,
+        blocked: true,
+        hitPoint: nearestHit.point,
+        obstacleName: nearestHit.obstacleName,
+      });
+    } else {
+      visibleAnchors++;
+      rayHits.push({
+        anchor: s.anchor,
+        heightM: s.height,
+        blocked: false,
+      });
+    }
+  }
+
+  const visibilityRatio = visibleAnchors / sampleAnchors.length;
+
+  if (visibilityRatio === 0) {
+    return {
+      inFrustum: true,
+      visibilityRatio: 0,
+      slantDistanceM: +slantDist.toFixed(2),
+      groundDistanceM: +groundDist.toFixed(2),
+      effectivePpm: 0,
+      verticalDepressionDeg: +depressionDeg.toFixed(1),
+      doriTier: 'BLIND',
+      personBBoxPx: { width: 0, height: 0 },
+      aiFeasibility: {
+        personTracking: false,
+        ppeDetection: false,
+        facialRecognition: false,
+        forkliftAlert: false,
+        licensePlateOcr: false,
+      },
+      rayHits,
+    };
+  }
+
+  // Orthogonal PPM at slant range + oblique angle-of-incidence projection
+  const orthoPpm = cam.resolutionW / (2 * slantDist * Math.tan(hfovRad / 2));
+  const obliqueFactor = Math.cos(yawDeltaRad) * Math.cos(depressionRad);
+
+  // Radial lens distortion edge penalty
+  const distortionMultiplier = computeRadialDistortionMultiplier(
+    yawDeltaRad,
+    pitchDeltaRad,
+    hfovRad,
+    vfovRad,
+    cam.focalLengthMm,
+    cam.distortionK1
+  );
+
+  const effectivePpm = Math.round(orthoPpm * obliqueFactor * distortionMultiplier);
+
+  // DORI classification with steep-angle (>45 deg) forensic facial cutoff ("Top-of-Head Syndrome")
+  let doriTier: TargetEvaluation['doriTier'] = 'BLIND';
+  if (effectivePpm >= 250 && depressionDeg <= 45) doriTier = 'IDENTIFY';
+  else if (effectivePpm >= 125) doriTier = 'RECOGNIZE';
+  else if (effectivePpm >= 62.5) doriTier = 'OBSERVE';
+  else if (effectivePpm >= 25) doriTier = 'DETECT';
+
+  const bboxWidthPx = Math.round(targetWidthM * effectivePpm);
+  const bboxHeightPx = Math.round(targetHeightM * effectivePpm * visibilityRatio);
+
+  return {
+    inFrustum: true,
+    visibilityRatio,
+    slantDistanceM: +slantDist.toFixed(2),
+    groundDistanceM: +groundDist.toFixed(2),
+    effectivePpm,
+    verticalDepressionDeg: +depressionDeg.toFixed(1),
+    doriTier,
+    personBBoxPx: { width: bboxWidthPx, height: bboxHeightPx },
+    aiFeasibility: {
+      personTracking: effectivePpm >= 65 && visibilityRatio >= 0.66,
+      ppeDetection: effectivePpm >= 145 && depressionDeg <= 45 && visibilityRatio >= 0.66,
+      facialRecognition: effectivePpm >= 280 && depressionDeg <= 30 && visibilityRatio === 1.0,
+      forkliftAlert: effectivePpm >= 40 && depressionDeg <= 65 && visibilityRatio >= 0.33,
+      licensePlateOcr: effectivePpm >= 250 && depressionDeg <= 30 && visibilityRatio === 1.0,
+    },
+    rayHits,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Neural Network AI Feasibility & Automated Engineering Utilities   */
+/* ------------------------------------------------------------------ */
+
+export interface AiTaskCriteria {
+  id: string;
+  task: string;
+  targetObject: string;
+  criticalDimensionM: number;
+  minPixelBox: string;
+  minRequiredPpm: number;
+  maxDepressionDeg: number;
+  minFramerateFps: number;
+  shutterGuidance: string;
+}
+
+export const AI_MODEL_FEASIBILITY_CRITERIA: AiTaskCriteria[] = [
+  {
+    id: 'facial_recognition',
+    task: 'Facial Recognition (SCRFD / ArcFace)',
+    targetObject: 'Face width (0.16 m)',
+    criticalDimensionM: 0.16,
+    minPixelBox: '≥ 45 × 45 px',
+    minRequiredPpm: 280,
+    maxDepressionDeg: 30,
+    minFramerateFps: 25,
+    shutterGuidance: '≤ 1/250 s',
+  },
+  {
+    id: 'ppe_compliance',
+    task: 'PPE Compliance (Hardhat, Glasses, Vest)',
+    targetObject: 'Head/Helmet (0.22 m)',
+    criticalDimensionM: 0.22,
+    minPixelBox: '≥ 32 × 32 px',
+    minRequiredPpm: 145,
+    maxDepressionDeg: 45,
+    minFramerateFps: 15,
+    shutterGuidance: '≤ 1/125 s',
+  },
+  {
+    id: 'person_reid',
+    task: 'Person Detection & Re-ID (YOLO + ByteTrack)',
+    targetObject: 'Full human body (0.5 m × 1.7 m)',
+    criticalDimensionM: 0.5,
+    minPixelBox: '≥ 40 × 110 px',
+    minRequiredPpm: 65,
+    maxDepressionDeg: 55,
+    minFramerateFps: 20,
+    shutterGuidance: '≤ 1/125 s',
+  },
+  {
+    id: 'forklift_agv',
+    task: 'Forklift / AGV Collision Avoidance',
+    targetObject: 'Industrial vehicle (1.2 m × 2.2 m)',
+    criticalDimensionM: 1.2,
+    minPixelBox: '≥ 50 × 80 px',
+    minRequiredPpm: 40,
+    maxDepressionDeg: 65,
+    minFramerateFps: 30,
+    shutterGuidance: '≤ 1/500 s',
+  },
+  {
+    id: 'license_plate_ocr',
+    task: 'License Plate / Badge OCR (LPR / ANPR)',
+    targetObject: 'Plate width (0.52 m)',
+    criticalDimensionM: 0.52,
+    minPixelBox: '≥ 130 × 32 px',
+    minRequiredPpm: 250,
+    maxDepressionDeg: 30,
+    minFramerateFps: 30,
+    shutterGuidance: '≤ 1/1000 s',
+  },
+];
+
+export interface AiTaskEvaluationReport {
+  criteria: AiTaskCriteria;
+  passed: boolean;
+  actualPpm: number;
+  actualDepressionDeg: number;
+  actualVisibility: number;
+  failureReasons: string[];
+}
+
+export function evaluateAllAiTasks(
+  effectivePpm: number,
+  depressionDeg: number,
+  visibilityRatio: number
+): AiTaskEvaluationReport[] {
+  return AI_MODEL_FEASIBILITY_CRITERIA.map(crit => {
+    const reasons: string[] = [];
+    if (effectivePpm < crit.minRequiredPpm) {
+      reasons.push(`Low resolution (${effectivePpm} px/m < ${crit.minRequiredPpm} required)`);
+    }
+    if (depressionDeg > crit.maxDepressionDeg) {
+      reasons.push(`Steep look-down angle (${depressionDeg.toFixed(1)}° > ${crit.maxDepressionDeg}° limit)`);
+    }
+    if (crit.id === 'facial_recognition' && visibilityRatio < 1.0) {
+      reasons.push('Face anchor occluded by obstacle');
+    } else if (visibilityRatio < 0.66) {
+      reasons.push('Partial target occlusion (<66% visible)');
+    }
+
+    return {
+      criteria: crit,
+      passed: reasons.length === 0,
+      actualPpm: effectivePpm,
+      actualDepressionDeg: depressionDeg,
+      actualVisibility: visibilityRatio,
+      failureReasons: reasons,
+    };
+  });
+}
+
+/**
+ * Tracker Occlusion Horizon Metric:
+ * Calculates Blind Transit Duration (t_blind = L_shadow / v_target)
+ * and outputs the recommended track_buffer frame parameter for ByteTrack / DeepSORT.
+ */
+export interface TrackerOcclusionMetric {
+  shadowLengthM: number;
+  targetSpeedMs: number;
+  blindTransitSeconds: number;
+  recommendedTrackBufferFrames: number;
+}
+
+export function calculateTrackerOcclusion(
+  shadowLengthM: number,
+  targetSpeedMs = 1.4,
+  fps = 30
+): TrackerOcclusionMetric {
+  const tBlind = shadowLengthM / Math.max(0.1, targetSpeedMs);
+  return {
+    shadowLengthM: +shadowLengthM.toFixed(2),
+    targetSpeedMs: +targetSpeedMs.toFixed(2),
+    blindTransitSeconds: +tBlind.toFixed(2),
+    recommendedTrackBufferFrames: Math.ceil(tBlind * fps),
+  };
+}
+
+/**
+ * Automated Cable Routing & PoE Engineering
+ * Manhattan A* distance: d_run = (|ΔX| + |ΔY| + ΔZ_drop) × 1.15 slack factor.
+ * Flags any run exceeding 90m permanent link Ethernet limit.
+ */
+export interface CableRunCalculation {
+  cableDistanceM: number;
+  slackDistanceM: number;
+  totalRunM: number;
+  exceeds90m: boolean;
+  recommendation: string;
+  poeClass: string;
+  poeWatts: number;
+}
+
+export function calculateCableRun(
+  camPos: Vec3,
+  switchPos: Vec3 = { x: 0, y: 0, z: 2.2 },
+  slackFactor = 1.15,
+  isPtZ = false
+): CableRunCalculation {
+  const rawDist =
+    Math.abs(camPos.x - switchPos.x) +
+    Math.abs(camPos.y - switchPos.y) +
+    Math.abs(camPos.z - switchPos.z);
+  const totalRun = rawDist * slackFactor;
+  const exceeds90m = totalRun > 90;
+  const watts = isPtZ ? 30.0 : 15.4;
+
+  return {
+    cableDistanceM: +rawDist.toFixed(1),
+    slackDistanceM: +(totalRun - rawDist).toFixed(1),
+    totalRunM: +totalRun.toFixed(1),
+    exceeds90m,
+    recommendation: exceeds90m
+      ? 'Exceeds 90m Permanent Link limit (ANSI/TIA-568). PoE Extender or Fiber Media Converter required.'
+      : 'Compliant Cat6 / Cat6A UTP Ethernet Link (≤90m).',
+    poeClass: isPtZ ? 'PoE+ (802.3at Type 2)' : 'PoE (802.3af Type 1)',
+    poeWatts: watts,
+  };
+}
+
+/**
+ * Storage & Bandwidth Calculator:
+ * Storage (TB) = (Bitrate Mbps × 86,400 × Days × N_cameras) / (8 × 10^6)
+ */
+export interface StorageCalculation {
+  bitrateMbps: number;
+  totalBitrateMbps: number;
+  dailyGb: number;
+  storage30DaysTb: number;
+}
+
+export function calculateStorageAndBandwidth(
+  cameraCount: number,
+  resolution: '2MP' | '4MP' | '5MP' | '8MP' | '12MP',
+  codec: 'H.264' | 'H.265' | 'H.265+' | 'AV1' = 'H.265+',
+  fps = 25,
+  days = 30
+): StorageCalculation {
+  const resMultipliers: Record<string, number> = {
+    '2MP': 1.0,
+    '4MP': 1.8,
+    '5MP': 2.2,
+    '8MP': 3.5,
+    '12MP': 5.2,
+  };
+  const codecFactors: Record<string, number> = {
+    'H.264': 1.0,
+    'H.265': 0.55,
+    'H.265+': 0.38,
+    'AV1': 0.32,
+  };
+
+  const baseBitrate = 4.0 * (resMultipliers[resolution] || 1.8) * (fps / 25);
+  const bitrateMbps = +(baseBitrate * (codecFactors[codec] || 0.55)).toFixed(2);
+  const totalBitrateMbps = +(bitrateMbps * cameraCount).toFixed(2);
+  const dailyGb = +((bitrateMbps * 86400 * cameraCount) / (8 * 1000)).toFixed(1);
+  const storage30DaysTb = +((totalBitrateMbps * 86400 * days) / (8 * 1e6)).toFixed(2);
+
+  return {
+    bitrateMbps,
+    totalBitrateMbps,
+    dailyGb,
+    storage30DaysTb,
+  };
+}
+
 

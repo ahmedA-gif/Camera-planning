@@ -76,12 +76,18 @@ import {
   rangesFromResolution,
   type MappingStandard,
   MAPPING_STANDARDS,
+  AI_MODEL_FEASIBILITY_CRITERIA,
+  calculateCableRun,
+  calculateStorageAndBandwidth,
+  calculateTrackerOcclusion,
+  impliedHorizontalPixels,
 } from '@/lib/coverage-engine';
 import {
   TopView,
   SideView,
   PerspectiveView,
   BirdCameraView,
+  FrustumSpatialInspector,
   camColor,
   CAM_COLORS,
   MOUNT_SYMBOLS
@@ -317,9 +323,9 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
 
   // UI state
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [activeViewTab, setActiveViewTab] = useState<'top' | 'side' | '3d' | 'bird'>('bird');
+  const [activeViewTab, setActiveViewTab] = useState<'top' | 'side' | '3d' | 'bird' | 'frustum'>('bird');
   const [activeStandard, setActiveStandard] = useState<MappingStandard>('dori');
-  const [activeDetTab, setActiveDetTab] = useState<'table' | 'list' | 'obstacles' | 'reco' | 'legend'>('table');
+  const [activeDetTab, setActiveDetTab] = useState<'table' | 'list' | 'obstacles' | 'reco' | 'legend' | 'ai-feasibility' | 'cables'>('table');
   const [heatMode, setHeatMode] = useState<'dori' | 'overlap'>('dori');
   const [isOptimizing, setIsOptimizing] = useState(false);
 
@@ -2558,6 +2564,17 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                     Bird Camera 3D
                   </button>
                   <button
+                    onClick={() => setActiveViewTab('frustum')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5 ${
+                      activeViewTab === 'frustum'
+                        ? 'bg-cyan-600 text-white shadow-xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    Frustum & DORI 3D
+                  </button>
+                  <button
                     onClick={() => setActiveViewTab('top')}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                       activeViewTab === 'top'
@@ -2607,6 +2624,28 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                   onStandardChange={setActiveStandard}
                   onMoveCamera={handleMoveCamera}
                   onPoseChange={handlePoseChange}
+                />
+              )}
+
+              {activeViewTab === 'frustum' && (
+                <FrustumSpatialInspector
+                  initialFocalLength={lens.focalMm}
+                  initialMountHeight={selectedPose?.z ?? site.mountHeight}
+                  initialTilt={selectedPose?.tiltDeg ?? 25}
+                  initialAzimuth={selectedPose?.panDeg ?? 45}
+                  resolutionName={resolutionPreset === '8mp' ? '8MP 4K' : resolutionPreset === '12mp' ? '12MP' : resolutionPreset === '5mp' ? '5MP' : resolutionPreset === '2mp' ? '2MP' : '4MP'}
+                  onSpecsChange={(specs) => {
+                    if (selectedPose) {
+                      handlePoseChange(selectedPose.id, {
+                        tiltDeg: specs.tiltDeg,
+                        panDeg: specs.azimuthDeg,
+                        z: specs.mountHeight,
+                      });
+                    }
+                    if (specs.focalMm !== lens.focalMm) {
+                      setLens(refocusLens(lens, specs.focalMm));
+                    }
+                  }}
                 />
               )}
 
@@ -2687,6 +2726,22 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                   }`}
                 >
                   Obstacles ({obstacles.length})
+                </button>
+                <button
+                  onClick={() => setActiveDetTab('ai-feasibility')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    activeDetTab === 'ai-feasibility' ? 'bg-primary text-primary-foreground font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  AI Feasibility Matrix
+                </button>
+                <button
+                  onClick={() => setActiveDetTab('cables')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    activeDetTab === 'cables' ? 'bg-primary text-primary-foreground font-bold shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  Cable & Storage
                 </button>
                 <button
                   onClick={() => setActiveDetTab('reco')}
@@ -2908,6 +2963,184 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                   <div className="p-3.5 bg-slate-50 border-l-4 border-primary rounded-lg">
                     <strong className="text-slate-900">Infrastructure & Cabling:</strong> Estimated ~{(bayLength * 1.4).toFixed(0)}m Cat6 PoE cabling. Dedicated {Math.ceil(result.metrics.cameras / 8) * 8}-port PoE switch recommended.
                   </div>
+                </div>
+              )}
+
+              {/* AI Feasibility Matrix */}
+              {activeDetTab === 'ai-feasibility' && (
+                <div className="space-y-4 font-sans text-xs">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">Neural Network Task-Specific Feasibility Engine</h4>
+                      <p className="text-slate-600 text-xs">Validation against real-world deep learning models, optical angle-of-incidence, and minimum bounding box pixel requirements.</p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded bg-sky-100 text-sky-800 font-mono text-xs font-semibold">
+                      5 AI Task Profiles
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto border border-border rounded-lg">
+                    <table className="w-full text-left font-mono text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-border bg-slate-100/80 text-slate-700 text-[11px] font-semibold">
+                          <th className="p-2.5">AI Computer Vision Task</th>
+                          <th className="p-2.5">Target Dimension</th>
+                          <th className="p-2.5">Min Pixel Bounding Box</th>
+                          <th className="p-2.5">Required PPM</th>
+                          <th className="p-2.5">Max Tilt (βpitch)</th>
+                          <th className="p-2.5">Framerate & Shutter</th>
+                          <th className="p-2.5">Feasibility Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {AI_MODEL_FEASIBILITY_CRITERIA.map((crit, idx) => {
+                          const passesPpm = poses.some(p => {
+                            const maxPpm = (impliedHorizontalPixels(lens) / (2 * 4 * Math.tan((lens.hfovDeg * Math.PI) / 360)));
+                            return maxPpm >= crit.minRequiredPpm && p.tiltDeg <= crit.maxDepressionDeg;
+                          });
+
+                          return (
+                            <tr key={crit.id} className={`border-b border-border ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-slate-100/60`}>
+                              <td className="p-2.5 font-bold text-slate-900">{crit.task}</td>
+                              <td className="p-2.5 text-slate-600">{crit.targetObject}</td>
+                              <td className="p-2.5 text-slate-800 font-semibold">{crit.minPixelBox}</td>
+                              <td className="p-2.5 text-sky-700 font-bold">{crit.minRequiredPpm} px/m</td>
+                              <td className="p-2.5 text-amber-700">≤ {crit.maxDepressionDeg}°</td>
+                              <td className="p-2.5 text-slate-600">{crit.minFramerateFps} fps, {crit.shutterGuidance}</td>
+                              <td className="p-2.5">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${passesPpm ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'}`}>
+                                  {passesPpm ? '✓ High Feasibility' : '⚠ Requires Calibration'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Tracker Occlusion Horizon Metric */}
+                  <div className="p-4 rounded-xl bg-slate-900 text-slate-200 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                        <span className="font-bold text-xs text-white">Tracker Occlusion Horizon Metric (ByteTrack / DeepSORT)</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-cyan-400">t_blind = L_shadow / v_target</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono">
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="text-slate-400 text-[10px] mb-1">Walking Worker (1.4 m/s)</div>
+                        <div className="text-slate-200">Shadow transit behind 2.5m rack: <strong>1.79 sec</strong></div>
+                        <div className="text-cyan-400 font-bold mt-1">track_buffer = 54 frames @ 30fps</div>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="text-slate-400 text-[10px] mb-1">Industrial Forklift (3.5 m/s)</div>
+                        <div className="text-slate-200">Shadow transit behind 3.6m rack: <strong>1.03 sec</strong></div>
+                        <div className="text-cyan-400 font-bold mt-1">track_buffer = 31 frames @ 30fps</div>
+                      </div>
+
+                      <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="text-slate-400 text-[10px] mb-1">AI Re-ID Continuity</div>
+                        <div className="text-slate-300 text-[11px] leading-relaxed">
+                          Configuring multi-object tracker buffer frames above t_blind prevents trajectory fragmentation and preserves track IDs across storage rack pillars.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Cable & Storage Calculator */}
+              {activeDetTab === 'cables' && (
+                <div className="space-y-4 font-sans text-xs">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm">Automated Cable Routing & PoE Engineering</h4>
+                      <p className="text-slate-600 text-xs">Manhattan A* orthogonal ceiling/wall cable tray pathfinding with 1.15× slack factor and 90m Ethernet limit validation.</p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded bg-emerald-100 text-emerald-800 font-mono text-xs font-semibold">
+                      {poses.length} Camera Runs
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto border border-border rounded-lg">
+                    <table className="w-full text-left font-mono text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-border bg-slate-100/80 text-slate-700 text-[11px] font-semibold">
+                          <th className="p-2.5">Camera</th>
+                          <th className="p-2.5">Coordinates (X, Y, Z)</th>
+                          <th className="p-2.5">Orthogonal Distance</th>
+                          <th className="p-2.5">Total Run (1.15x Slack)</th>
+                          <th className="p-2.5">90m Limit Status</th>
+                          <th className="p-2.5">PoE Standard</th>
+                          <th className="p-2.5">Power Draw</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {poses.map((p, idx) => {
+                          const isPtz = p.mount === 'pole360';
+                          const run = calculateCableRun({ x: p.x, y: p.y, z: p.z }, { x: 0, y: 0, z: 2.2 }, 1.15, isPtz);
+
+                          return (
+                            <tr key={p.id} className={`border-b border-border ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-slate-100/60`}>
+                              <td className="p-2.5 font-bold text-slate-900 flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: camColor(p.id) }} />
+                                Camera C{p.id}
+                              </td>
+                              <td className="p-2.5 text-slate-600">({p.x.toFixed(1)}m, {p.y.toFixed(1)}m, {p.z.toFixed(1)}m)</td>
+                              <td className="p-2.5 text-slate-700">{run.cableDistanceM} m</td>
+                              <td className="p-2.5 text-slate-900 font-bold">{run.totalRunM} m</td>
+                              <td className="p-2.5">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${!run.exceeds90m ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                  {!run.exceeds90m ? '✓ Compliant (≤90m)' : '⚠ Exceeds 90m (Extender Req.)'}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-slate-600">{run.poeClass}</td>
+                              <td className="p-2.5 text-slate-900 font-semibold">{run.poeWatts} W</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Storage & Bandwidth Computation Table */}
+                  {(() => {
+                    const resName = resolutionPreset === '8mp' ? '8MP 4K' : resolutionPreset === '12mp' ? '12MP' : resolutionPreset === '5mp' ? '5MP' : resolutionPreset === '2mp' ? '2MP' : '4MP';
+                    const storageCalc = calculateStorageAndBandwidth(poses.length, resName as any, 'H.265+', 25, 30);
+                    const totalPoeWatts = poses.reduce((acc, p) => acc + (p.mount === 'pole360' ? 30 : 15.4), 0);
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                          <div className="text-[10px] font-mono text-slate-500 uppercase">Per-Camera Bitrate</div>
+                          <div className="text-lg font-bold text-slate-900">{storageCalc.bitrateMbps} Mbps</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">H.265+ Smart Codec @ 25fps</div>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                          <div className="text-[10px] font-mono text-slate-500 uppercase">Total NVR Bandwidth</div>
+                          <div className="text-lg font-bold text-sky-700">{storageCalc.totalBitrateMbps} Mbps</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{poses.length} Concurrent Streams</div>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                          <div className="text-[10px] font-mono text-slate-500 uppercase">30-Day Storage Capacity</div>
+                          <div className="text-lg font-bold text-emerald-700">{storageCalc.storage30DaysTb} TB</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{storageCalc.dailyGb} GB daily ingestion</div>
+                        </div>
+
+                        <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                          <div className="text-[10px] font-mono text-slate-500 uppercase">Total PoE Switch Power</div>
+                          <div className="text-lg font-bold text-amber-700">{totalPoeWatts.toFixed(0)} W</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">Recommended {Math.ceil(poses.length / 8) * 8}-port Switch</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

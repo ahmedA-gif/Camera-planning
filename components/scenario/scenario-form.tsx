@@ -34,7 +34,7 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
     layout_section_count: initialData?.layout_section_count || 1, detection_coverage_target: initialData?.detection_coverage_target || 90,
     layout_sections: asStringList(initialData?.layout_sections, ['Section 1']).join('\n'),
     output_scope: asStringList(initialData?.output_scope, ['Executive summary', 'Camera plan', 'Detection coverage', 'Hardware & critical components', 'Workflow']),
-    use_ai: false,
+    use_ai: true,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -300,8 +300,9 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
             </div>
 
             {/* Assumptions & Missing Info */}
+            {/* Assumptions & Missing Info */}
             <div className="space-y-4">
-              {result.project.assumptions?.length && (
+              {result.project.assumptions && result.project.assumptions.length > 0 ? (
                 <div>
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <Info className="w-5 h-5 text-blue-600" />
@@ -316,9 +317,9 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
                     ))}
                   </ul>
                 </div>
-              )}
+              ) : null}
 
-              {result.project.missing_information?.length && (
+              {result.project.missing_information && result.project.missing_information.length > 0 ? (
                 <div>
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-amber-600" />
@@ -333,9 +334,9 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
                     ))}
                   </ul>
                 </div>
-              )}
+              ) : null}
 
-              {result.project.requirements?.length && (
+              {result.project.requirements && result.project.requirements.length > 0 ? (
                 <div>
                   <h3 className="font-semibold text-lg">Requirements ({result.project.requirements.length})</h3>
                   <ul className="space-y-1">
@@ -347,12 +348,12 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
                     ))}
                   </ul>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 
           {/* Cameras Preview */}
-          {result.project.cameras?.length && (
+          {result.project.cameras && result.project.cameras.length > 0 ? (
             <div>
               <h3 className="font-semibold text-lg mb-2">Suggested Cameras ({result.project.cameras.length})</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -367,10 +368,10 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Zones Preview */}
-          {result.project.zones?.length && (
+          {result.project.zones && result.project.zones.length > 0 ? (
             <div>
               <h3 className="font-semibold text-lg mb-2">Suggested Zones ({result.project.zones.length})</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -385,7 +386,7 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

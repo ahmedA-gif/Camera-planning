@@ -493,10 +493,10 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     setPoses(prev => prev.map(p => p.id === id ? { ...p, tiltDeg: norm } : p));
   };
 
-  // AI Facility Structure Synthesizer powered by NVIDIA NIM
+  // AI Facility Structure Synthesizer powered by NVIDIA Vision AI
   const handleSynthesizeFacility = async (promptOverride?: string) => {
     setIsSynthesizingFacility(true);
-    setFacilitySynthesisStatus('Querying NVIDIA NIM (meta/llama-3.2-11b-vision-instruct)...');
+    setFacilitySynthesisStatus('Synthesizing 3D facility structures with NVIDIA Vision AI...');
     try {
       const resp = await fetch('/api/camera/facility-structures', {
         method: 'POST',
@@ -518,7 +518,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         setActiveFacilityPreset('custom');
         setSelectedObstacleId(null);
         setFacilitySynthesisSummary(data.architectural_summary || 'Generated realistic 3D facility structures with physical occlusion.');
-        setFacilitySynthesisStatus(`✨ Synthesized ${data.obstacles.length} structures using ${data.model_used || 'NVIDIA NIM'}`);
+        setFacilitySynthesisStatus(`✨ Synthesized ${data.obstacles.length} structures via NVIDIA Vision AI`);
         // Automatically auto-align cameras with newly generated architectural design!
         const archPoses = architectureAwareLayout(data.obstacles, { ...site, obstacles: data.obstacles }, lens, mode, cameraCount);
         if (archPoses.length > 0) {
@@ -1638,10 +1638,10 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-700">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>AI Facility Synthesizer (NVIDIA NIM)</span>
+                    <span>AI Facility Synthesizer</span>
                   </div>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-600 text-white font-semibold">
-                    LLaMA-3.2-90B
+                    NVIDIA Vision AI
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-snug">

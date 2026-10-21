@@ -142,8 +142,7 @@ export class PlanEngine {
 
     let response = await send(Math.min(maxTokens, 1800));
     if (response.status === 429) {
-      // Some Groq models enforce a low output-tokens-per-minute limit; retry the
-      // section once with a smaller expected output before reporting a limit.
+      // Retry the section once with a smaller expected output if tokens-per-minute threshold reached.
       const limitText = await response.text();
       if (/output tokens per minute|too large for model|OTPM/i.test(limitText)) {
         response = await send(Math.min(900, Math.max(300, maxTokens)));

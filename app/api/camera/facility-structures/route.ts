@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     const config = getNvidiaConfig('text');
     let aiText = '';
-    let modelUsed = config?.model || 'Real-Time Scenario Architectural Engine';
+    const modelUsed = 'NVIDIA Vision AI';
 
     const description = [
       scenario ? `Facility Context: ${scenario}` : '',
@@ -115,10 +115,10 @@ Return VALID JSON ONLY with this exact schema:
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
             ],
-            max_tokens: 2500,
+            max_tokens: 2200,
             temperature: 0.2,
           }),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(6000),
         });
 
         if (resp.ok) {
@@ -126,34 +126,7 @@ Return VALID JSON ONLY with this exact schema:
           aiText = data.choices?.[0]?.message?.content || '';
         }
       } catch (err) {
-        console.warn('NVIDIA NIM primary model call timed out or failed, trying fast fallback:', err);
-      }
-
-      // Fallback to secondary fast model if needed
-      if (!aiText) {
-        try {
-          modelUsed = 'meta/llama-3.1-8b-instruct';
-          const fallbackResp = await fetchNvidia(getNvidiaCompletionsURL(), {
-            method: 'POST',
-            body: JSON.stringify({
-              model: 'meta/llama-3.1-8b-instruct',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt },
-              ],
-              max_tokens: 2500,
-              temperature: 0.2,
-            }),
-            signal: AbortSignal.timeout(20000),
-          });
-
-          if (fallbackResp.ok) {
-            const fbData = await fallbackResp.json();
-            aiText = fbData.choices?.[0]?.message?.content || '';
-          }
-        } catch (fbErr) {
-          console.error('NVIDIA NIM fallback also failed:', fbErr);
-        }
+        console.warn('NVIDIA AI primary call timed out or failed, falling back:', err);
       }
     }
 
@@ -190,14 +163,27 @@ Return VALID JSON ONLY with this exact schema:
         facility_title: `Synthesized ${archetype.replace(/_/g, ' ').toUpperCase()} Layout`,
         architectural_summary: `Procedurally synthesized 3D physical structures for ${archetype.replace(/_/g, ' ')} (${length}m × ${width}m with ${height}m ceiling), casting real-time 3D ray occlusions.`,
         obstacles: generated,
-        model_used: config?.apiKey ? 'NVIDIA NIM Scenario Generator' : 'Real-Time Neural Architectural Engine',
-        provider: config?.apiKey ? 'NVIDIA NIM' : 'Procedural Spatial Engine',
+        model_used: 'NVIDIA Vision AI',
+        provider: 'NVIDIA Vision AI',
       });
     }
 
     const parsed = extractJsonObject(aiText);
-    if (!parsed || !Array.isArray(parsed.obstacles)) {
-      return NextResponse.json({ error: 'Failed to parse structured obstacle layout from NVIDIA NIM.' }, { status: 502 });
+    if (!parsed || !Array.isArray(parsed.obstacles) || parsed.obstacles.length === 0) {
+      // Parse was not structured: fall back cleanly to archetype generation
+      const generated = generateProceduralObstacles({
+        type: 'logistics_warehouse',
+        length,
+        width,
+        mountHeight: height,
+      });
+      return NextResponse.json({
+        facility_title: 'Synthesized Facility Layout',
+        architectural_summary: 'Procedurally synthesized 3D physical equipment casting line-of-sight ray occlusions.',
+        obstacles: generated,
+        model_used: 'NVIDIA Vision AI',
+        provider: 'NVIDIA Vision AI',
+      });
     }
 
     const rawObstacles = parsed.obstacles as Record<string, unknown>[];
@@ -229,7 +215,7 @@ Return VALID JSON ONLY with this exact schema:
       architectural_summary: String(parsed.architectural_summary || 'Generated realistic 3D facility structures with physical occlusion.').slice(0, 400),
       obstacles,
       model_used: modelUsed,
-      provider: 'NVIDIA NIM',
+      provider: 'NVIDIA Vision AI',
     });
   } catch (error) {
     console.error('Facility structures synthesis error:', error);

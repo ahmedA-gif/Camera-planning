@@ -49,19 +49,12 @@ function DashboardContent() {
   const [hydrated, setHydrated] = useState(false);
   const [hasUnassignedLegacyProjects, setHasUnassignedLegacyProjects] = useState(false);
 
-  // Keep browser storage separated by authenticated Clerk account.
+  // Keep browser storage separated by authenticated Clerk account, fallback to local workspace immediately
   useEffect(() => {
-    if (!clerkLoaded) return;
-    if (!userId) {
-      setProject(null);
-      setProjects([]);
-      setHydrated(false);
-      return;
-    }
-    setHydrated(false);
-    const stored = getStoredProjects(userId);
+    const effectiveUserId = user?.id || 'workspace-local';
+    const stored = getStoredProjects(effectiveUserId);
     setProjects(stored);
-    const active = getActiveProject(userId);
+    const active = getActiveProject(effectiveUserId);
     if (active) {
       setProject(active);
     } else if (stored.length > 0) {
@@ -74,7 +67,7 @@ function DashboardContent() {
     }
     setHasUnassignedLegacyProjects(stored.length === 0 && hasLegacyProjects());
     setHydrated(true);
-  }, [clerkLoaded, userId]);
+  }, [clerkLoaded, user?.id]);
 
   const handleProjectUpdate = useCallback((updates: Partial<DetVisionProject>) => {
     if (!project) return;
@@ -209,7 +202,7 @@ function DashboardContent() {
     if (!claimed.length) window.alert('No previous projects could be imported. The old browser data remains unchanged.');
   };
 
-  if (!clerkLoaded || !userId || !hydrated) {
+  if (!hydrated) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div>

@@ -9,6 +9,7 @@ import { CameraMap } from '@/components/camera-map/camera-map';
 import { WorkflowEditor } from '@/components/workflow/workflow-editor';
 import { ReportPreview } from '@/components/report/report-preview';
 import { PlanGenerator } from '@/components/plan/plan-generator';
+import Footer from '@/components/layout/footer';
 import { getStoredProjects, getActiveProject, saveProject, createNewProject, exportProjectJSON, importProjectJSON, hasLegacyProjects, claimLegacyProjects } from '@/lib/project-store';
 import { createEmptyProject } from '@/lib/project-factory';
 import { deleteProject, setActiveProject, deleteProjectRevision, restoreProjectRevision } from '@/lib/project-store';
@@ -474,6 +475,11 @@ function DashboardContent() {
                   <StepCard number="4" title="Plan & Report" desc="Generate a saved safety plan and export the project report" icon={<FileText className="w-5 h-5" />} />
                 </div>
               </div>
+
+              {/* Overview Footer */}
+              <div className="pt-4 border-t border-border">
+                <Footer />
+              </div>
             </div>
           </div>
         );
@@ -579,40 +585,45 @@ function DashboardContent() {
   };
 
   return (
-    <>
-    {hasUnassignedLegacyProjects && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-50 px-5 py-3 text-sm text-amber-950"><p>Previous browser projects are unassigned. Import them only if they belong to your account.</p><button onClick={handleClaimLegacyProjects} className="rounded-md bg-amber-900 px-3 py-1.5 font-medium text-white hover:bg-amber-800">Import my previous projects</button></div>}
-    <div className="flex min-h-[calc(100dvh-7rem)] bg-background max-lg:flex-col">
-      <Sidebar
-        userId={userId}
-        onNavigate={handleSidebarNavigate}
-        activeView={activeView}
-        projectList={projects}
-        currentProject={project}
-        onProjectSelect={(selected) => {
-          if (isDirty && project) saveProject(project, userId);
-          setActiveProject(userId, selected.id);
-          setProject(selected);
-          setProjects(getStoredProjects(userId));
-          setIsDirty(false);
-        }}
-      />
-      <div className="flex-1 flex flex-col min-w-0">
-        <ProjectHeader
-          project={project}
-          onSave={handleSave}
-          onExportJSON={handleExportJSON}
-          onImportJSON={handleImportJSON}
-          onPrint={handlePrint}
-          onGenerateAllInOne={handleGenerateAllInOne}
-          isGeneratingAllInOne={isGeneratingAllInOne}
-          isDirty={isDirty}
+    <div className="flex flex-col h-screen h-dvh overflow-hidden bg-background">
+      {hasUnassignedLegacyProjects && (
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-sm text-amber-950">
+          <p>Previous browser projects are unassigned. Import them only if they belong to your account.</p>
+          <button onClick={handleClaimLegacyProjects} className="rounded-md bg-amber-900 px-3 py-1.5 font-medium text-white hover:bg-amber-800">Import my previous projects</button>
+        </div>
+      )}
+      <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden max-lg:flex-col">
+        <Sidebar
+          userId={userId}
+          onNavigate={handleSidebarNavigate}
+          activeView={activeView}
+          projectList={projects}
+          currentProject={project}
+          onProjectSelect={(selected) => {
+            if (isDirty && project) saveProject(project, userId);
+            setActiveProject(userId, selected.id);
+            setProject(selected);
+            setProjects(getStoredProjects(userId));
+            setIsDirty(false);
+          }}
         />
-        <main key={activeView} className="flex-1 min-h-0 animate-fade-in">
-          {renderView()}
-        </main>
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+          <ProjectHeader
+            project={project}
+            onSave={handleSave}
+            onExportJSON={handleExportJSON}
+            onImportJSON={handleImportJSON}
+            onPrint={handlePrint}
+            onGenerateAllInOne={handleGenerateAllInOne}
+            isGeneratingAllInOne={isGeneratingAllInOne}
+            isDirty={isDirty}
+          />
+          <main key={activeView} className="flex-1 min-h-0 overflow-hidden flex flex-col animate-fade-in">
+            {renderView()}
+          </main>
+        </div>
       </div>
     </div>
-    </>
   );
 }
 

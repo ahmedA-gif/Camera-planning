@@ -93,7 +93,7 @@ export function Sidebar({ userId, onNavigate, activeView, onProjectSelect, proje
   };
 
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-64'} min-h-[calc(100dvh-7rem)] shrink-0 bg-white border-r border-border flex flex-col transition-[width] duration-200 max-lg:min-h-0 max-lg:w-full max-lg:border-r-0 max-lg:border-b`}>
+    <aside className={`${collapsed ? 'w-16' : 'w-64'} h-full shrink-0 bg-white border-r border-border flex flex-col transition-[width] duration-200 max-lg:h-auto max-lg:w-full max-lg:border-r-0 max-lg:border-b`}>
       {/* Header */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-border">
         <div className="flex items-center gap-2">

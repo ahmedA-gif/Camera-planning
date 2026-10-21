@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { 
   Camera, 
   RotateCcw, 
@@ -108,7 +108,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     const prof = detectFacilityProfile(text);
     const count = project?.cameras?.length && project.cameras.length > 0
       ? project.cameras.length
-      : extractDesiredCameraCount(text) || 12;
+      : (project?.use_cases?.length ? Math.max(2, project.use_cases.length) : extractDesiredCameraCount(text));
 
     // Detect target inspection mode based on scenario requirements / keywords
     const lower = text.toLowerCase();
@@ -143,8 +143,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       mappedType = 'manufacturing_plant';
     }
 
-    const dynLength = project?.facility_width_m || Math.max(10, Math.round(prof.length));
-    const dynWidth = project?.facility_length_m || Math.max(5, Math.round(prof.width));
+    const dynLength = project?.facility_length_m || Math.max(10, Math.round(prof.length));
+    const dynWidth = project?.facility_width_m || Math.max(5, Math.round(prof.width));
     const dynHeight = project?.facility_height_m || Math.max(3, Math.round(prof.height * 10) / 10);
 
     return {
@@ -377,6 +377,77 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const result: CoverageResult = useMemo(() => {
     return computeCoverage(poses, lens, site, mode);
   }, [poses, lens, site, mode]);
+
+  // Synchronize camera poses, obstacles, and bounds whenever project is analyzed or updated
+  useEffect(() => {
+    if (!project) return;
+    
+    // 1. Synchronize site bounds if project has dimensions
+    if (project.facility_length_m && project.facility_length_m !== bayLength) {
+      setBayLength(project.facility_length_m);
+    }
+    if (project.facility_width_m && project.facility_width_m !== bayWidth) {
+      setBayWidth(project.facility_width_m);
+    }
+    if (project.facility_height_m && project.facility_height_m !== mountHeight) {
+      setMountHeight(project.facility_height_m);
+    }
+
+    // 2. Synchronize obstacles if project has structure
+    if (project.structure && project.structure.length > 0) {
+      const L = project.facility_length_m || bayLength;
+      const W = project.facility_width_m || bayWidth;
+      const H = project.facility_height_m || mountHeight;
+      const parsedObstacles: Obstacle[] = project.structure
+        .filter(s => s.type === 'obstacle' && s.points.length >= 2)
+        .map((s, idx) => {
+          const xs = s.points.map(p => p.x * L);
+          const ys = s.points.map(p => p.y * W);
+          const minX = Math.min(...xs);
+          const maxX = Math.max(...xs);
+          const minY = Math.min(...ys);
+          const maxY = Math.max(...ys);
+          return {
+            id: s.id || `obs-${idx + 1}`,
+            name: s.name || `Obstacle ${idx + 1}`,
+            x: s.x_m ?? +minX.toFixed(2),
+            y: s.y_m ?? +minY.toFixed(2),
+            w: s.width_m ?? +(maxX - minX).toFixed(2),
+            d: s.depth_m ?? +(maxY - minY).toFixed(2),
+            h: s.height_m ?? Math.min(H, 3.5),
+            type: ((s.obstacle_type || 'rack') as ObstacleType),
+          };
+        });
+      if (parsedObstacles.length > 0) {
+        setObstacles(parsedObstacles);
+      }
+    }
+
+    // 3. Synchronize camera count and poses if project has cameras
+    if (project.cameras && project.cameras.length > 0) {
+      const L = project.facility_length_m || bayLength;
+      const W = project.facility_width_m || bayWidth;
+      const H = project.facility_height_m || mountHeight;
+      const newPoses: CameraPose[] = project.cameras.map((c, i) => {
+        const x = Math.max(0.5, Math.min(L - 0.5, c.x * L));
+        const y = Math.max(0.5, Math.min(W - 0.5, c.y * W));
+        const panDeg = Math.round(c.orientation_degrees || 0);
+        const tiltDeg = Math.round(25);
+        const mount: MountType = y < 1.5 ? 'wall-h' : (y > W - 1.5 ? 'wall-h' : 'cross');
+        return {
+          id: i + 1,
+          mount,
+          x: +x.toFixed(2),
+          y: +y.toFixed(2),
+          z: H,
+          panDeg,
+          tiltDeg,
+        };
+      });
+      setPoses(newPoses);
+      setCameraCount(newPoses.length);
+    }
+  }, [project?.id, project?.updated_at, project?.cameras, project?.structure]);
 
   // Update camera count and re-distribute (architecture-aware if obstacles exist)
   const handleCameraCountChange = (count: number) => {

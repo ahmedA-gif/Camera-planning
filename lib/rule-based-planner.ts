@@ -46,17 +46,28 @@ export function extractDesiredCameraCount(text: string, explicitCount?: number |
   }
 
   const lower = text.toLowerCase();
-  if (lower.includes('large') || lower.includes('massive') || lower.includes('huge') || lower.includes('campus')) {
-    return 70;
+  if (lower.includes('large campus') || lower.includes('massive airport') || lower.includes('megawarehouse')) {
+    return 36;
   }
-  if (lower.includes('medium') || lower.includes('distribution center')) {
-    return 32;
-  }
-  if (lower.includes('small') || lower.includes('room') || lower.includes('office')) {
-    return 8;
+  if (lower.includes('distribution center') || lower.includes('full factory plant')) {
+    return 16;
   }
 
-  return 24;
+  // Count functional targets mentioned in scenario
+  let detectedTargets = 0;
+  if (/forklift|flt|traffic|vehicle|aisle/i.test(lower)) detectedTargets += 1;
+  if (/conveyor|packaging line|assembly|belt/i.test(lower)) detectedTargets += 1;
+  if (/ocr|barcode|code|label|reading/i.test(lower)) detectedTargets += 1;
+  if (/defect|quality|crack|anomaly|scratch/i.test(lower)) detectedTargets += 1;
+  if (/dock|gate|door|entrance|perimeter/i.test(lower)) detectedTargets += 1;
+  if (/ppe|vest|helmet|safety|worker/i.test(lower)) detectedTargets += 1;
+
+  if (detectedTargets > 0) {
+    return Math.max(2, Math.min(10, detectedTargets));
+  }
+
+  // Sensible default for a standard operational cell / inspection bay
+  return 4;
 }
 
 /** Detect facility type, dimensions, and structural requirements from scenario keywords. */

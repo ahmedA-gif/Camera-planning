@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateAnalysisRequest, validateProject } from '@/lib/validation';
 import { createEmptyProject } from '@/lib/project-factory';
-import type { DetVisionProject, UseCase, TaskType, FeasibilityStatus } from '@/lib/types';
+import type { DetVisionProject, UseCase, TaskType, FeasibilityStatus, Camera, Zone, LayoutElement } from '@/lib/types';
 import { getNvidiaConfig, getNvidiaCompletionsURL } from '@/lib/ai-provider';
+import { detectFacilityProfile } from '@/lib/rule-based-planner';
 
 // Allow AI providers room to answer on serverless platforms
 export const maxDuration = 60;
@@ -97,6 +98,315 @@ function extractJsonFromContent(content: string | null): Record<string, unknown>
   }
 
   return null;
+}
+
+/**
+ * Synthesizes physical cameras, 3D structures, and zones tailored strictly
+ * to the scenario use cases, layout sections, and critical components (never blind 24 cameras).
+ */
+function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
+  business_description: string;
+  requirements: string[];
+  critical_components: string[];
+  layout_sections: string[];
+  layout_section_count: number;
+  detection_coverage_target: number;
+  camera_specifications: string;
+}) {
+  const text = `${inputs.business_description} ${inputs.requirements.join(' ')} ${inputs.critical_components.join(' ')}`.toLowerCase();
+  
+  // 1. Detect facility profile & dimensions
+  const profile = detectFacilityProfile(inputs.business_description);
+  const L = project.facility_length_m || (profile.length > 10 ? profile.length : 40.0);
+  const W = project.facility_width_m || (profile.width > 5 ? profile.width : 25.0);
+  const H = project.facility_height_m || (profile.height > 2 ? profile.height : 5.0);
+
+  project.facility_length_m = L;
+  project.facility_width_m = W;
+  project.facility_height_m = H;
+  project.facility_type = profile.facility_type;
+
+  // 2. Synthesize 3D structures / obstacles matching the user scenario
+  const structures: LayoutElement[] = [];
+
+  // Perimeter boundary
+  structures.push({
+    id: crypto.randomUUID(),
+    name: 'Facility North Wall',
+    type: 'wall',
+    points: [{ x: 0.02, y: 0.02 }, { x: 0.98, y: 0.02 }],
+  });
+  structures.push({
+    id: crypto.randomUUID(),
+    name: 'Facility South Wall',
+    type: 'wall',
+    points: [{ x: 0.02, y: 0.98 }, { x: 0.98, y: 0.98 }],
+  });
+
+  // Conveyor / Packaging Line (if conveyor or packaging or manufacturing or assembly mentioned)
+  const hasConveyor = /conveyor|packaging|assembly|line|sorting|roller|inspection|box|carton|pallet/i.test(text);
+  if (hasConveyor) {
+    const convStartX = 0.15;
+    const convEndX = 0.75;
+    const convY = 0.28;
+    const convH = 0.06;
+    structures.push({
+      id: crypto.randomUUID(),
+      name: 'Automated Conveyor Inspection Line',
+      type: 'obstacle',
+      obstacle_type: 'conveyor',
+      x_m: +(convStartX * L).toFixed(1),
+      y_m: +(convY * W).toFixed(1),
+      width_m: +((convEndX - convStartX) * L).toFixed(1),
+      depth_m: +(convH * W).toFixed(1),
+      height_m: 1.0,
+      points: [
+        { x: convStartX, y: convY },
+        { x: convEndX, y: convY },
+        { x: convEndX, y: convY + convH },
+        { x: convStartX, y: convY + convH },
+      ],
+    });
+
+    // Packaging & rejection station
+    structures.push({
+      id: crypto.randomUUID(),
+      name: 'Packaging & Automated Rejection Station',
+      type: 'obstacle',
+      obstacle_type: 'machine',
+      x_m: +(0.78 * L).toFixed(1),
+      y_m: +(0.24 * W).toFixed(1),
+      width_m: +(0.12 * L).toFixed(1),
+      depth_m: +(0.14 * W).toFixed(1),
+      height_m: 2.4,
+      points: [
+        { x: 0.78, y: 0.24 },
+        { x: 0.90, y: 0.24 },
+        { x: 0.90, y: 0.38 },
+        { x: 0.78, y: 0.38 },
+      ],
+    });
+  }
+
+  // Forklift / Storage Racks (if warehouse, storage, rack, forklift, or logistics)
+  const hasWarehouse = /warehouse|storage|rack|shelf|forklift|flt|aisle|pallet|logistics/i.test(text) || !hasConveyor;
+  if (hasWarehouse) {
+    // Rack row A
+    structures.push({
+      id: crypto.randomUUID(),
+      name: 'High-Bay Storage Racks (Row A)',
+      type: 'obstacle',
+      obstacle_type: 'rack',
+      x_m: +(0.15 * L).toFixed(1),
+      y_m: +(0.52 * W).toFixed(1),
+      width_m: +(0.65 * L).toFixed(1),
+      depth_m: +(0.10 * W).toFixed(1),
+      height_m: 4.5,
+      points: [
+        { x: 0.15, y: 0.52 },
+        { x: 0.80, y: 0.52 },
+        { x: 0.80, y: 0.62 },
+        { x: 0.15, y: 0.62 },
+      ],
+    });
+
+    // Rack row B (leaving a clear transit corridor between Row A and Row B)
+    structures.push({
+      id: crypto.randomUUID(),
+      name: 'High-Bay Storage Racks (Row B)',
+      type: 'obstacle',
+      obstacle_type: 'rack',
+      x_m: +(0.15 * L).toFixed(1),
+      y_m: +(0.76 * W).toFixed(1),
+      width_m: +(0.65 * L).toFixed(1),
+      depth_m: +(0.10 * W).toFixed(1),
+      height_m: 4.5,
+      points: [
+        { x: 0.15, y: 0.76 },
+        { x: 0.80, y: 0.76 },
+        { x: 0.80, y: 0.86 },
+        { x: 0.15, y: 0.86 },
+      ],
+    });
+  }
+
+  // Critical Components from user input
+  if (inputs.critical_components?.length) {
+    inputs.critical_components.forEach((comp, idx) => {
+      const lowerComp = comp.toLowerCase();
+      let obsType = 'machine';
+      if (/conveyor|belt|roller/i.test(lowerComp)) obsType = 'conveyor';
+      else if (/gate|barrier|door|entry/i.test(lowerComp)) obsType = 'partition';
+      else if (/stop|e-stop|hazard|chemical|battery/i.test(lowerComp)) obsType = 'hazard';
+      else if (/dock|ramp/i.test(lowerComp)) obsType = 'dock';
+
+      if (obsType === 'conveyor' && hasConveyor) return;
+
+      const posX = 0.20 + (idx * 0.22) % 0.60;
+      const posY = 0.42;
+      structures.push({
+        id: crypto.randomUUID(),
+        name: comp,
+        type: 'obstacle',
+        obstacle_type: obsType,
+        x_m: +(posX * L).toFixed(1),
+        y_m: +(posY * W).toFixed(1),
+        width_m: 2.0,
+        depth_m: 1.5,
+        height_m: 2.0,
+        points: [
+          { x: posX, y: posY },
+          { x: posX + 0.08, y: posY },
+          { x: posX + 0.08, y: posY + 0.06 },
+          { x: posX, y: posY + 0.06 },
+        ],
+      });
+    });
+  }
+
+  project.structure = structures;
+
+  // 3. Synthesize Specific Cameras Based On AI Use Cases & Scenario Requirements
+  const cameras: Camera[] = [];
+  const zones: Zone[] = [];
+
+  const explicitCountMatch = text.match(/(?:deploy|install|mount|need|use|setup|require)?\s*(\d+)\s*(?:cameras?|cctvs?|cams?)/i);
+  const targetCount = explicitCountMatch ? parseInt(explicitCountMatch[1], 10) : 0;
+
+  const useCases = project.use_cases || [];
+
+  useCases.forEach((uc, idx) => {
+    const ucLower = `${uc.name} ${uc.description} ${uc.task_type}`.toLowerCase();
+    let camName = `CAM-0${idx + 1}: ${uc.name.slice(0, 32)}`;
+    let camX = 0.20 + idx * 0.20;
+    let camY = 0.20;
+    let camDeg = 90;
+    let camFov = 95;
+    let camRange = 0.40;
+    let resW = 3840;
+    let resH = 2160;
+
+    if (/safety|forklift|ppe|worker|pedestrian|collision/i.test(ucLower)) {
+      camName = `CAM-0${idx + 1}: Forklift Aisle & Worker Safety`;
+      camX = 0.12;
+      camY = 0.69;
+      camDeg = 0;
+      camFov = 106;
+      camRange = 0.50;
+      resW = 3840;
+      resH = 2160;
+
+      zones.push({
+        id: crypto.randomUUID(),
+        name: 'Forklift & Pedestrian Transit Aisle',
+        type: 'detection',
+        color: '#f59e0b',
+        points: [{ x: 0.15, y: 0.63 }, { x: 0.80, y: 0.63 }, { x: 0.80, y: 0.75 }, { x: 0.15, y: 0.75 }],
+        camera_ids: [],
+      });
+    } else if (/defect|surface|quality|inspection|anomaly|damage/i.test(ucLower)) {
+      camName = `CAM-0${idx + 1}: Conveyor Surface Defect Inspection`;
+      camX = 0.45;
+      camY = 0.20;
+      camDeg = 90;
+      camFov = 65;
+      camRange = 0.28;
+      resW = 3840;
+      resH = 2160;
+
+      zones.push({
+        id: crypto.randomUUID(),
+        name: 'Conveyor Defect Inspection ROI',
+        type: 'roi',
+        color: '#10b981',
+        points: [{ x: 0.25, y: 0.25 }, { x: 0.65, y: 0.25 }, { x: 0.65, y: 0.36 }, { x: 0.25, y: 0.36 }],
+        camera_ids: [],
+      });
+    } else if (/ocr|barcode|code|label|reading|text/i.test(ucLower)) {
+      camName = `CAM-0${idx + 1}: Barcode & Label OCR Station`;
+      camX = 0.65;
+      camY = 0.20;
+      camDeg = 45;
+      camFov = 45;
+      camRange = 0.22;
+      resW = 3840;
+      resH = 2160;
+
+      zones.push({
+        id: crypto.randomUUID(),
+        name: 'High-Speed Barcode Trigger Zone',
+        type: 'counting',
+        color: '#3b82f6',
+        points: [{ x: 0.60, y: 0.26 }, { x: 0.72, y: 0.26 }, { x: 0.72, y: 0.36 }, { x: 0.60, y: 0.36 }],
+        camera_ids: [],
+      });
+    } else if (/count|throughput|flow|line|crossing/i.test(ucLower)) {
+      camName = `CAM-0${idx + 1}: Line-Crossing Throughput Monitor`;
+      camX = 0.78;
+      camY = 0.22;
+      camDeg = 180;
+      camFov = 75;
+      camRange = 0.32;
+      resW = 2688;
+      resH = 1520;
+
+      zones.push({
+        id: crypto.randomUUID(),
+        name: 'Conveyor Line-Crossing Polygon',
+        type: 'virtual_line',
+        color: '#8b5cf6',
+        points: [{ x: 0.72, y: 0.26 }, { x: 0.85, y: 0.26 }, { x: 0.85, y: 0.36 }, { x: 0.72, y: 0.36 }],
+        camera_ids: [],
+      });
+    }
+
+    const camId = crypto.randomUUID();
+    uc.camera_ids = [camId];
+
+    cameras.push({
+      id: camId,
+      name: camName,
+      status: 'active',
+      x: +(camX).toFixed(3),
+      y: +(camY).toFixed(3),
+      orientation_degrees: camDeg,
+      horizontal_fov_degrees: camFov,
+      view_range: camRange,
+      resolution_width: resW,
+      resolution_height: resH,
+      assigned_use_case_ids: [uc.id],
+    });
+  });
+
+  // If user requested an explicit higher camera count (e.g. 6 or 8), add complementary views up to targetCount
+  if (targetCount > cameras.length && targetCount <= 30) {
+    const extraNeeded = targetCount - cameras.length;
+    for (let e = 0; e < extraNeeded; e++) {
+      const eIdx = cameras.length + 1;
+      const camId = crypto.randomUUID();
+      cameras.push({
+        id: camId,
+        name: `CAM-0${eIdx}: Section Overview & Auxiliary Angle`,
+        status: 'active',
+        x: +(0.85 - (e * 0.15) % 0.70).toFixed(3),
+        y: +(0.88 - (e * 0.20) % 0.70).toFixed(3),
+        orientation_degrees: (180 + e * 45) % 360,
+        horizontal_fov_degrees: 95,
+        view_range: 0.40,
+        resolution_width: 3840,
+        resolution_height: 2160,
+        assigned_use_case_ids: [],
+      });
+    }
+  }
+
+  // Link cameras to corresponding zones
+  zones.forEach((z, i) => {
+    if (cameras[i]) z.camera_ids = [cameras[i].id];
+  });
+
+  project.cameras = cameras;
+  project.zones = zones;
 }
 
 /** High-precision domain synthesis fallback */
@@ -262,6 +572,8 @@ function synthesizeIntelligentProject(params: {
     'Enterprise VMS integration protocol (ONVIF Profile S/T, RTSP, or native REST API).',
   ];
 
+  attachScenarioPhysicalLayout(project, params);
+
   return project;
 }
 
@@ -370,6 +682,8 @@ Suggest computer-vision use cases, practical techniques, camera placement/specif
       draft.missing_information = Array.isArray(parsed.missing_information)
         ? parsed.missing_information.filter((v: unknown): v is string => typeof v === 'string')
         : ['Truss mounting heights and ceiling clearance obstacles.', 'Exact conveyor speeds and package dimension bounds.'];
+
+      attachScenarioPhysicalLayout(draft, planningInputs);
 
       project = validateProject(draft);
     } else {

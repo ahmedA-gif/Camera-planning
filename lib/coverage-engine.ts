@@ -1026,7 +1026,7 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
 
   // Inject architecture-aware candidates (aisles, machine perimeters, dock portals)
   if (site.obstacles && site.obstacles.length > 0) {
-    const archPoses = architectureAwareLayout(site.obstacles, site, lens, mode, 24);
+    const archPoses = architectureAwareLayout(site.obstacles, site, lens, mode, opts.maxCameras);
     for (const ap of archPoses) {
       cand.push({ mount: ap.mount, x: ap.x, y: ap.y, z: ap.z, panDeg: ap.panDeg, tiltDeg: ap.tiltDeg });
     }

@@ -35,6 +35,7 @@ export function ProjectHeader({
     // optional outside provider
   }
   const [reportError, setReportError] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState<'pdf' | 'docx' | null>(null);
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) onImportJSON?.(file);
@@ -43,6 +44,7 @@ export function ProjectHeader({
   const generateReport = async (format: 'pdf' | 'docx') => {
     if (!project) return;
     setReportError(null);
+    setReportLoading(format);
     
     try {
       const response = await fetch('/api/report/generate', {
@@ -54,6 +56,15 @@ export function ProjectHeader({
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error([data.error, data.details].filter(Boolean).join(' ') || `Report generation failed (${response.status}).`);
+      }
+
+      const contentType = response.headers.get('Content-Type') || '';
+      // If server returned HTML fallback for PDF (e.g. on serverless Vercel), seamlessly open high-res print/PDF view
+      if (format === 'pdf' && contentType.includes('text/html')) {
+        if (onPrint) {
+          onPrint();
+          return;
+        }
       }
 
       const blob = await response.blob();
@@ -77,6 +88,8 @@ export function ProjectHeader({
       } else {
         setReportError(message);
       }
+    } finally {
+      setReportLoading(null);
     }
   };
 
@@ -184,21 +197,23 @@ export function ProjectHeader({
         {/* Generate PDF Report */}
         <button
           onClick={() => generateReport('pdf')}
-          className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1"
+          disabled={reportLoading !== null}
+          className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 transition-colors flex items-center gap-1.5 shadow-xs"
           title="Generate Professional PDF Report"
         >
-          <FileText className="w-4 h-4" />
-          <span>PDF</span>
+          {reportLoading === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+          <span>{reportLoading === 'pdf' ? 'Generating…' : 'PDF'}</span>
         </button>
 
         {/* Generate DOCX Report */}
         <button
           onClick={() => generateReport('docx')}
-          className="px-3 py-1.5 text-sm font-medium bg-green-600 text-white rounded hover:bg-green-700 transition-colors flex items-center gap-1"
+          disabled={reportLoading !== null}
+          className="px-3 py-1.5 text-sm font-medium bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-60 transition-colors flex items-center gap-1.5 shadow-xs"
           title="Generate Professional DOCX Report"
         >
-          <FileType className="w-4 h-4" />
-          <span>DOCX</span>
+          {reportLoading === 'docx' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileType className="w-4 h-4" />}
+          <span>{reportLoading === 'docx' ? 'Generating…' : 'DOCX'}</span>
         </button>
 
         {/* Print report (browser print) */}

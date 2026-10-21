@@ -241,7 +241,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
 
             <div className="space-y-6">
               {/* Picture 1: Top View Blueprint */}
-              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs diagram-card print:break-inside-avoid break-inside-avoid">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-blue-600" />
@@ -261,7 +261,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </div>
 
               {/* Picture 2: Bird Camera 3D View */}
-              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs diagram-card print:break-inside-avoid break-inside-avoid">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
@@ -281,7 +281,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </div>
 
               {/* Picture 3: Frustum & DORI 3D Spatial Projection */}
-              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs diagram-card print:break-inside-avoid break-inside-avoid">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -301,7 +301,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </div>
 
               {/* Picture 4: Side Elevation Profile & Field Rigging */}
-              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs diagram-card print:break-inside-avoid break-inside-avoid">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-purple-500" />
@@ -321,7 +321,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </div>
 
               {/* Picture 5: 3D Perspective Visualizer */}
-              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs diagram-card print:break-inside-avoid break-inside-avoid">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-sky-500" />
@@ -341,7 +341,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </div>
 
               {/* Picture 6: Vision AI Pipeline Architecture */}
-              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs diagram-card print:break-inside-avoid break-inside-avoid">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <GitBranch className="w-4 h-4 text-teal-600" />
@@ -361,7 +361,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </div>
 
               {/* Picture 7: Optical Coverage Telemetry & Hardware Sizing */}
-              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs diagram-card print:break-inside-avoid break-inside-avoid">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <Target className="w-4 h-4 text-indigo-600" />

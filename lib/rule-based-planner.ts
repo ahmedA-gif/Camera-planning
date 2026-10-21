@@ -30,9 +30,12 @@ export function extractDesiredCameraCount(text: string, explicitCount?: number |
   }
 
   const patterns = [
+    /total\s*(?:of\s*)?cameras?\s*(?:of|:|=|-|\s)?\s*(\d+)/i,
+    /cameras?\s*(?:count|total|quantity|qty)?\s*(?:of|:|=|-|\s)?\s*(\d+)/i,
     /(\d+)\s*(?:cameras?|cctvs?|cams?|units?|sensors?)/i,
     /(?:install|deploy|mount|place|need|require|setup)\s+(\d+)\s*(?:cameras?|cctvs?|cams?)?/i,
     /camera\s*count\s*(?:of|:|=)?\s*(\d+)/i,
+    /(\d+)\s*[-x\s]*(?:4\s*mp|mp|megapixel)?\s*[-,\s]*(?:hik\s*vision|hikvision|axis|dahua|hanwha|ip\s*camera|camera)/i,
   ];
 
   for (const pattern of patterns) {
@@ -73,20 +76,46 @@ export function extractDesiredCameraCount(text: string, explicitCount?: number |
 /** Detect facility type, dimensions, and structural requirements from scenario keywords. */
 export function detectFacilityProfile(text: string): FacilityProfile {
   const lower = text.toLowerCase();
+  const isFeet = /in\s*ft|feet|\bft\b|foot/i.test(lower);
 
-  const dimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meters)?\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:m|meters)?/i);
+  // Check dimensions: ft or meters
+  const ftDimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:ft|feet|')\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')/i);
+  const mDimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meters)?\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:m|meters)?/i);
+  const lengthWidthMatch = lower.match(/length\s*=\s*(\d+(?:\.\d+)?)[,\s]+width\s*=\s*(\d+(?:\.\d+)?)/i);
+
   let length = 100.0;
   let width = 60.0;
-  if (dimMatch) {
-    length = parseFloat(dimMatch[1]);
-    width = parseFloat(dimMatch[2]);
+
+  if (ftDimMatch) {
+    length = parseFloat(ftDimMatch[1]) * 0.3048;
+    width = parseFloat(ftDimMatch[2]) * 0.3048;
+  } else if (lengthWidthMatch) {
+    const rawL = parseFloat(lengthWidthMatch[1]);
+    const rawW = parseFloat(lengthWidthMatch[2]);
+    length = isFeet ? rawL * 0.3048 : rawL;
+    width = isFeet ? rawW * 0.3048 : rawW;
+  } else if (mDimMatch) {
+    const rawL = parseFloat(mDimMatch[1]);
+    const rawW = parseFloat(mDimMatch[2]);
+    length = isFeet ? rawL * 0.3048 : rawL;
+    width = isFeet ? rawW * 0.3048 : rawW;
   } else if (lower.includes('bay')) {
     length = 90.0;
     width = 15.0;
   }
 
-  const hMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meters)?\s*(?:high|height|tall|ceiling|clearance)/i);
-  const height = hMatch ? parseFloat(hMatch[1]) : 5.0;
+  const hMatch = lower.match(/(?:height|h)\s*(?:=|\s)?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|m|meters)?/i) ||
+                 lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meters|ft|feet)\s*(?:high|height|tall|ceiling|clearance)/i);
+  let height = 5.0;
+  if (hMatch) {
+    const rawH = parseFloat(hMatch[1]);
+    height = (isFeet || /ft|feet/i.test(hMatch[0])) ? rawH * 0.3048 : rawH;
+  }
+
+  // Safety clamps
+  length = Math.max(10, Math.min(300, Math.round(length * 10) / 10));
+  width = Math.max(8, Math.min(200, Math.round(width * 10) / 10));
+  height = Math.max(2.5, Math.min(25, Math.round(height * 10) / 10));
 
   let facility_type = 'warehouse';
   if (/factory|plant|manufactur|assembly|production line/i.test(lower)) {

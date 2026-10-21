@@ -3,7 +3,7 @@ import { validateAnalysisRequest, validateProject } from '@/lib/validation';
 import { createEmptyProject } from '@/lib/project-factory';
 import type { DetVisionProject, UseCase, TaskType, FeasibilityStatus, Camera, Zone, LayoutElement } from '@/lib/types';
 import { getNvidiaConfig, getNvidiaCompletionsURL } from '@/lib/ai-provider';
-import { detectFacilityProfile } from '@/lib/rule-based-planner';
+import { detectFacilityProfile, extractDesiredCameraCount } from '@/lib/rule-based-planner';
 
 // Allow AI providers room to answer on serverless platforms
 export const maxDuration = 60;
@@ -270,89 +270,86 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
   const cameras: Camera[] = [];
   const zones: Zone[] = [];
 
-  const explicitCountMatch = text.match(/(?:deploy|install|mount|need|use|setup|require)?\s*(\d+)\s*(?:cameras?|cctvs?|cams?)/i);
-  const targetCount = explicitCountMatch ? parseInt(explicitCountMatch[1], 10) : 0;
+  const targetCount = extractDesiredCameraCount(text, null);
+  const sections = (inputs.layout_sections || []).filter(s => s && s.trim());
+  const isHik4MP = /4\s*mp|4mp|hikvision|hik\s*vision/i.test(`${inputs.camera_specifications} ${text}`);
+  const defaultResW = isHik4MP ? 2688 : 3840;
+  const defaultResH = isHik4MP ? 1520 : 2160;
 
   const useCases = project.use_cases || [];
 
   useCases.forEach((uc, idx) => {
     const ucLower = `${uc.name} ${uc.description} ${uc.task_type}`.toLowerCase();
-    let camName = `CAM-0${idx + 1}: ${uc.name.slice(0, 32)}`;
-    let camX = 0.20 + idx * 0.20;
-    let camY = 0.20;
+    const secIdx = sections.length > 0 ? idx % sections.length : -1;
+    const secPrefix = secIdx >= 0 ? `[${sections[secIdx].replace(/^[0-9.:\-\s]+/, '').trim()}] ` : '';
+    let camName = `CAM-${String(idx + 1).padStart(2, '0')}: ${secPrefix}${uc.name.slice(0, 28)}`;
+    let camX = 0.15 + (idx % 4) * 0.22;
+    let camY = 0.20 + Math.floor(idx / 4) * 0.25;
     let camDeg = 90;
     let camFov = 95;
     let camRange = 0.40;
-    let resW = 3840;
-    let resH = 2160;
+    let resW = defaultResW;
+    let resH = defaultResH;
 
-    if (/safety|forklift|ppe|worker|pedestrian|collision/i.test(ucLower)) {
-      camName = `CAM-0${idx + 1}: Forklift Aisle & Worker Safety`;
+    if (/safety|forklift|ppe|worker|pedestrian|collision|chemical\s*splash/i.test(ucLower)) {
+      camName = `CAM-${String(idx + 1).padStart(2, '0')}: ${secPrefix}PPE & Safety Zone`;
       camX = 0.12;
       camY = 0.69;
       camDeg = 0;
       camFov = 106;
       camRange = 0.50;
-      resW = 3840;
-      resH = 2160;
 
       zones.push({
         id: crypto.randomUUID(),
-        name: 'Forklift & Pedestrian Transit Aisle',
+        name: 'Chemical Safety & PPE Compliance Zone',
         type: 'detection',
         color: '#f59e0b',
         points: [{ x: 0.15, y: 0.63 }, { x: 0.80, y: 0.63 }, { x: 0.80, y: 0.75 }, { x: 0.15, y: 0.75 }],
         camera_ids: [],
       });
-    } else if (/defect|surface|quality|inspection|anomaly|damage/i.test(ucLower)) {
-      camName = `CAM-0${idx + 1}: Conveyor Surface Defect Inspection`;
+    } else if (/defect|surface|quality|inspection|anomaly|damage|leak|spill/i.test(ucLower)) {
+      camName = `CAM-${String(idx + 1).padStart(2, '0')}: ${secPrefix}Leak & Inspection ROI`;
       camX = 0.45;
       camY = 0.20;
       camDeg = 90;
       camFov = 65;
       camRange = 0.28;
-      resW = 3840;
-      resH = 2160;
 
       zones.push({
         id: crypto.randomUUID(),
-        name: 'Conveyor Defect Inspection ROI',
+        name: 'Chemical Spill & Inspection ROI',
         type: 'roi',
         color: '#10b981',
         points: [{ x: 0.25, y: 0.25 }, { x: 0.65, y: 0.25 }, { x: 0.65, y: 0.36 }, { x: 0.25, y: 0.36 }],
         camera_ids: [],
       });
-    } else if (/ocr|barcode|code|label|reading|text/i.test(ucLower)) {
-      camName = `CAM-0${idx + 1}: Barcode & Label OCR Station`;
+    } else if (/ocr|barcode|code|label|reading|text|batch/i.test(ucLower)) {
+      camName = `CAM-${String(idx + 1).padStart(2, '0')}: ${secPrefix}Drum & Tote Label OCR`;
       camX = 0.65;
       camY = 0.20;
       camDeg = 45;
       camFov = 45;
       camRange = 0.22;
-      resW = 3840;
-      resH = 2160;
 
       zones.push({
         id: crypto.randomUUID(),
-        name: 'High-Speed Barcode Trigger Zone',
+        name: 'Drum Barcode & Hazmat Label Trigger Zone',
         type: 'counting',
         color: '#3b82f6',
         points: [{ x: 0.60, y: 0.26 }, { x: 0.72, y: 0.26 }, { x: 0.72, y: 0.36 }, { x: 0.60, y: 0.36 }],
         camera_ids: [],
       });
-    } else if (/count|throughput|flow|line|crossing/i.test(ucLower)) {
-      camName = `CAM-0${idx + 1}: Line-Crossing Throughput Monitor`;
+    } else if (/count|throughput|flow|line|crossing|tanker|loading/i.test(ucLower)) {
+      camName = `CAM-${String(idx + 1).padStart(2, '0')}: ${secPrefix}Throughput & Dispatch Monitor`;
       camX = 0.78;
       camY = 0.22;
       camDeg = 180;
       camFov = 75;
       camRange = 0.32;
-      resW = 2688;
-      resH = 1520;
 
       zones.push({
         id: crypto.randomUUID(),
-        name: 'Conveyor Line-Crossing Polygon',
+        name: 'Dispatch & Tanker Loading Line',
         type: 'virtual_line',
         color: '#8b5cf6',
         points: [{ x: 0.72, y: 0.26 }, { x: 0.85, y: 0.26 }, { x: 0.85, y: 0.36 }, { x: 0.72, y: 0.36 }],
@@ -378,23 +375,33 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
     });
   });
 
-  // If user requested an explicit higher camera count (e.g. 6 or 8), add complementary views up to targetCount
-  if (targetCount > cameras.length && targetCount <= 30) {
+  // If user requested an explicit higher camera count (e.g. 15 cameras), allocate units across layout sections
+  if (targetCount > cameras.length && targetCount <= 60) {
     const extraNeeded = targetCount - cameras.length;
     for (let e = 0; e < extraNeeded; e++) {
       const eIdx = cameras.length + 1;
       const camId = crypto.randomUUID();
+      const secIdx = sections.length > 0 ? (eIdx - 1) % sections.length : -1;
+      const secName = secIdx >= 0 ? sections[secIdx].replace(/^[0-9.:\-\s]+/, '').trim() : 'Auxiliary';
+
+      // Distribute spatially across the site
+      const col = e % 4;
+      const row = Math.floor(e / 4);
+      const camX = 0.10 + col * 0.24 + (row % 2 ? 0.05 : 0);
+      const camY = 0.15 + (row * 0.22) % 0.75;
+      const camDeg = (45 + e * 55) % 360;
+
       cameras.push({
         id: camId,
-        name: `CAM-0${eIdx}: Section Overview & Auxiliary Angle`,
+        name: `CAM-${String(eIdx).padStart(2, '0')}: [${secName}] Area Monitor #${e + 1}`,
         status: 'active',
-        x: +(0.85 - (e * 0.15) % 0.70).toFixed(3),
-        y: +(0.88 - (e * 0.20) % 0.70).toFixed(3),
-        orientation_degrees: (180 + e * 45) % 360,
+        x: +Math.max(0.06, Math.min(0.94, camX)).toFixed(3),
+        y: +Math.max(0.06, Math.min(0.94, camY)).toFixed(3),
+        orientation_degrees: camDeg,
         horizontal_fov_degrees: 95,
-        view_range: 0.40,
-        resolution_width: 3840,
-        resolution_height: 2160,
+        view_range: 0.45,
+        resolution_width: defaultResW,
+        resolution_height: defaultResH,
         assigned_use_case_ids: [],
       });
     }

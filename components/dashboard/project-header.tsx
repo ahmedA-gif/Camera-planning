@@ -181,16 +181,6 @@ export function ProjectHeader({
           </button>
         )}
 
-        {/* Native 3D Camera Map Button */}
-        <button
-          onClick={() => viewCtx?.setActiveView('camera-map')}
-          className="px-3 py-1.5 text-sm font-medium bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors flex items-center gap-1.5 shadow-sm"
-          title="Open Native 3D Camera Map & Coverage Planner"
-        >
-          <Camera className="w-4 h-4" />
-          <span>Camera Map</span>
-        </button>
-
         {/* Generate PDF Report */}
         <button
           onClick={() => generateReport('pdf')}

@@ -26,7 +26,12 @@ import { getNodeCategoryInfo } from '@/lib/workflow-generator';
 import { 
   generateSiteTelemetryMapSvg, 
   generatePipelineArchitectureSvg, 
-  generateCoverageTelemetryMetricsSvg 
+  generateCoverageTelemetryMetricsSvg,
+  generateBirdCamera3DSvg,
+  generateFrustumDori3DSvg,
+  generateTopViewSvg,
+  generateSideElevationSvg,
+  generate3DPerspectiveSvg
 } from '@/lib/report-diagrams';
 
 interface ReportPreviewProps {
@@ -217,65 +222,165 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
             </div>
           </section>
 
-          {/* VISUAL SITE TELEMETRY MAP */}
-          <section id="telemetry-map" className="p-8 border-b border-border bg-slate-50/50">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900">
-                <Building2 className="w-5 h-5 text-blue-600" />
-                Visual 2D/3D Site Telemetry &amp; Camera Coverage Blueprint
-              </h2>
-              <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-blue-100 text-blue-800 border border-blue-200">
-                RAYCASTING TWIN
+          {/* MULTI-ANGLE SIMULATION & 3D TELEMETRY DIAGRAMS */}
+          <div className="bg-slate-50 border-b border-border p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
+                  <Building2 className="w-6 h-6 text-primary" />
+                  Multi-Angle 3D Simulation &amp; AI Telemetry Diagrams
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Five specialized architectural viewpoints engineered from facility geometry, 3D obstacle raycasting, and IEC EN 62676-4 DORI standard.
+                </p>
+              </div>
+              <span className="px-3 py-1 text-xs font-bold rounded-lg bg-primary/10 text-primary border border-primary/20">
+                SCENARIO DIGITAL TWIN
               </span>
             </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Vector architectural map rendering all physical 3D structures, multi-building zones, camera positions, pan angles, and directional optical FOV coverage cones.
-            </p>
-            <div 
-              className="overflow-x-auto my-2 rounded-xl border border-slate-200 bg-white p-2 shadow-xs flex justify-center"
-              dangerouslySetInnerHTML={{ __html: generateSiteTelemetryMapSvg(project, { width: 840, height: 460 }) }} 
-            />
-          </section>
 
-          {/* SYSTEM PIPELINE ARCHITECTURE */}
-          <section id="pipeline-architecture" className="p-8 border-b border-border">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900">
-                <GitBranch className="w-5 h-5 text-teal-600" />
-                End-to-End Vision AI Pipeline Architecture
-              </h2>
-              <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-teal-100 text-teal-800 border border-teal-200">
-                REAL-TIME EDGE LOOP (≤35ms)
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              4-Stage high-throughput computer vision pipeline engineered for NVIDIA DeepStream / TensorRT with deterministic latency budget (≤35ms).
-            </p>
-            <div 
-              className="overflow-x-auto my-2 rounded-xl border border-slate-200 bg-white p-2 shadow-xs flex justify-center"
-              dangerouslySetInnerHTML={{ __html: generatePipelineArchitectureSvg(project, { width: 840, height: 210 }) }} 
-            />
-          </section>
+            <div className="space-y-6">
+              {/* Picture 1: Top View Blueprint */}
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-600" />
+                    Picture 1: Top View (2D Orthographic Site Blueprint)
+                  </h3>
+                  <span className="px-2 py-0.5 text-xs font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200 rounded">
+                    X-Y FLOORPLAN
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Vector architectural map rendering all physical 3D structures, multi-building zones, camera positions, pan angles, and directional optical FOV coverage cones.
+                </p>
+                <div 
+                  className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2 flex justify-center"
+                  dangerouslySetInnerHTML={{ __html: generateTopViewSvg(project, { width: 840, height: 460 }) }} 
+                />
+              </div>
 
-          {/* 3D OPTICAL COVERAGE TELEMETRY & HARDWARE SIZING */}
-          <section id="optical-telemetry" className="p-8 border-b border-border bg-slate-50/50">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900">
-                <Target className="w-5 h-5 text-indigo-600" />
-                3D Optical Coverage Telemetry &amp; Hardware Sizing Matrix
-              </h2>
-              <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200">
-                IEC 62676-4 DORI
-              </span>
+              {/* Picture 2: Bird Camera 3D View */}
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                    Picture 2: Bird Camera 3D View (Raycasting Occlusion Engine)
+                  </h3>
+                  <span className="px-2 py-0.5 text-xs font-mono font-bold bg-cyan-50 text-cyan-700 border border-cyan-200 rounded">
+                    3D RAYCASTING TWIN
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  High-angle 3D simulation with dynamic ray-box slab intersection testing against physical machinery/racks, target tracking anchors (Head, Torso, Ankle), and zero-blind-spot verification.
+                </p>
+                <div 
+                  className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2 flex justify-center"
+                  dangerouslySetInnerHTML={{ __html: generateBirdCamera3DSvg(project, { width: 840, height: 460 }) }} 
+                />
+              </div>
+
+              {/* Picture 3: Frustum & DORI 3D Spatial Projection */}
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    Picture 3: Frustum &amp; DORI 3D Spatial Projection
+                  </h3>
+                  <span className="px-2 py-0.5 text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">
+                    IEC EN 62676-4 DORI
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Spatial frustum volume visualization with graded DORI tiers (Identify ≥250 px/m, Recognize ≥125 px/m, Observe ≥62.5 px/m, Detect ≥25 px/m), target plane intercept (1.5m AFF), and dead-zone calculation.
+                </p>
+                <div 
+                  className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2 flex justify-center"
+                  dangerouslySetInnerHTML={{ __html: generateFrustumDori3DSvg(project, { width: 840, height: 460 }) }} 
+                />
+              </div>
+
+              {/* Picture 4: Side Elevation Profile & Field Rigging */}
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-purple-500" />
+                    Picture 4: Side Elevation Profile &amp; Field Rigging Schedule
+                  </h3>
+                  <span className="px-2 py-0.5 text-xs font-mono font-bold bg-purple-50 text-purple-700 border border-purple-200 rounded">
+                    RIGGING &amp; PROFILE
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Vertical cross-section showing ceiling unistrut truss mounts, 1.2m threaded steel dropper poles, downward tilt angles (25°), human worker (1.8m) / forklift (2.3m) targets, and opposing sightline overlaps.
+                </p>
+                <div 
+                  className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2 flex justify-center"
+                  dangerouslySetInnerHTML={{ __html: generateSideElevationSvg(project, { width: 840, height: 400 }) }} 
+                />
+              </div>
+
+              {/* Picture 5: 3D Perspective Visualizer */}
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-sky-500" />
+                    Picture 5: 3D Perspective Visualizer (Isometric Twin)
+                  </h3>
+                  <span className="px-2 py-0.5 text-xs font-mono font-bold bg-sky-50 text-sky-700 border border-sky-200 rounded">
+                    ISOMETRIC TWIN
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Axonometric 3D spatial twin rendering extruded machinery, storage racks, vertical camera poles, and wireframe 3D frustum pyramids projecting to the facility floor.
+                </p>
+                <div 
+                  className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2 flex justify-center"
+                  dangerouslySetInnerHTML={{ __html: generate3DPerspectiveSvg(project, { width: 840, height: 460 }) }} 
+                />
+              </div>
+
+              {/* Picture 6: Vision AI Pipeline Architecture */}
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <GitBranch className="w-4 h-4 text-teal-600" />
+                    Picture 6: End-to-End Vision AI Pipeline Architecture
+                  </h3>
+                  <span className="px-2 py-0.5 text-xs font-mono font-bold bg-teal-50 text-teal-700 border border-teal-200 rounded">
+                    REAL-TIME EDGE LOOP (≤35ms)
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  4-Stage high-throughput computer vision pipeline engineered for NVIDIA DeepStream / TensorRT with deterministic latency budget (≤35ms).
+                </p>
+                <div 
+                  className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2 flex justify-center"
+                  dangerouslySetInnerHTML={{ __html: generatePipelineArchitectureSvg(project, { width: 840, height: 210 }) }} 
+                />
+              </div>
+
+              {/* Picture 7: Optical Coverage Telemetry & Hardware Sizing */}
+              <div className="rounded-xl border border-border bg-white p-5 shadow-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Target className="w-4 h-4 text-indigo-600" />
+                    Picture 7: 3D Optical Coverage Telemetry &amp; Hardware Sizing Matrix
+                  </h3>
+                  <span className="px-2 py-0.5 text-xs font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+                    DORI PYRAMID &amp; SIZING
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Optical resolution pyramid, coverage guarantees, 30-day NVR storage calculation, PoE power budgeting, and deterministic inference latency telemetry.
+                </p>
+                <div 
+                  className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2 flex justify-center"
+                  dangerouslySetInnerHTML={{ __html: generateCoverageTelemetryMetricsSvg(project, { width: 840, height: 260 }) }} 
+                />
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Optical resolution pyramid, coverage guarantees, 30-day NVR storage calculation, PoE power budgeting, and deterministic inference latency telemetry.
-            </p>
-            <div 
-              className="overflow-x-auto my-2 rounded-xl border border-slate-200 bg-white p-2 shadow-xs flex justify-center"
-              dangerouslySetInnerHTML={{ __html: generateCoverageTelemetryMetricsSvg(project, { width: 840, height: 260 }) }} 
-            />
-          </section>
+          </div>
 
           {/* Business Objectives */}
           <section id="objectives" data-output-enabled={!project.output_scope?.length || project.output_scope.includes('Executive summary')} className="p-8 border-b border-border">

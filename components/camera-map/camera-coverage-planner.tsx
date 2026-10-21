@@ -713,21 +713,25 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
             obstacle_type: o.type,
           }));
           const targetPoses = archPoses.length > 0 ? archPoses : poses;
-          const syncedCameras: ProjectCamera[] = targetPoses.map((p) => ({
-            id: crypto.randomUUID(),
-            name: `CAM-${p.id} (${p.mount.toUpperCase()})`,
-            x: Math.max(0.02, Math.min(0.98, p.x / bayLength)),
-            y: Math.max(0.02, Math.min(0.98, p.y / bayWidth)),
-            orientation_degrees: (p.panDeg + 360) % 360,
-            horizontal_fov_degrees: lens.hfovDeg,
-            view_range: 0.5,
-            resolution_width: sensorWidthPx,
-            resolution_height: sensorHeightPx,
-            status: 'planned',
-            target_area: `Position ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m (Elev: ${p.z.toFixed(1)}m)`,
-            assigned_use_case_ids: [],
-            rationale: `Auto-aligned to 3D synthesized structures (${data.facility_title || 'Facility Layout'}).`,
-          }));
+          const rawUcs = project?.use_cases || [];
+          const syncedCameras: ProjectCamera[] = targetPoses.map((p, pIdx) => {
+            const assignedUc = rawUcs.length > 0 ? rawUcs[pIdx % rawUcs.length] : null;
+            return {
+              id: crypto.randomUUID(),
+              name: `CAM-${p.id} (${p.mount.toUpperCase()})`,
+              x: Math.max(0.02, Math.min(0.98, p.x / bayLength)),
+              y: Math.max(0.02, Math.min(0.98, p.y / bayWidth)),
+              orientation_degrees: (p.panDeg + 360) % 360,
+              horizontal_fov_degrees: lens.hfovDeg,
+              view_range: 0.5,
+              resolution_width: sensorWidthPx,
+              resolution_height: sensorHeightPx,
+              status: 'planned',
+              target_area: `Position ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m (Elev: ${p.z.toFixed(1)}m)`,
+              assigned_use_case_ids: assignedUc ? [assignedUc.id] : [],
+              rationale: `Auto-aligned to 3D synthesized structures (${data.facility_title || 'Facility Layout'}).`,
+            };
+          });
           onApplyToProject(syncedCameras, syncedStructure, {
             facility_width_m: bayLength,
             facility_length_m: bayWidth,
@@ -781,21 +785,25 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         obstacle_type: o.type,
       }));
       const targetPoses = archPoses.length > 0 ? archPoses : poses;
-      const syncedCameras: ProjectCamera[] = targetPoses.map((p) => ({
-        id: crypto.randomUUID(),
-        name: `CAM-${p.id} (${p.mount.toUpperCase()})`,
-        x: Math.max(0.02, Math.min(0.98, p.x / bayLength)),
-        y: Math.max(0.02, Math.min(0.98, p.y / bayWidth)),
-        orientation_degrees: (p.panDeg + 360) % 360,
-        horizontal_fov_degrees: lens.hfovDeg,
-        view_range: 0.5,
-        resolution_width: sensorWidthPx,
-        resolution_height: sensorHeightPx,
-        status: 'planned',
-        target_area: `Position ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m (Elev: ${p.z.toFixed(1)}m)`,
-        assigned_use_case_ids: [],
-        rationale: `Preset architecture: ${preset.replace(/_/g, ' ')}`,
-      }));
+      const rawUcs = project?.use_cases || [];
+      const syncedCameras: ProjectCamera[] = targetPoses.map((p, pIdx) => {
+        const assignedUc = rawUcs.length > 0 ? rawUcs[pIdx % rawUcs.length] : null;
+        return {
+          id: crypto.randomUUID(),
+          name: `CAM-${p.id} (${p.mount.toUpperCase()})`,
+          x: Math.max(0.02, Math.min(0.98, p.x / bayLength)),
+          y: Math.max(0.02, Math.min(0.98, p.y / bayWidth)),
+          orientation_degrees: (p.panDeg + 360) % 360,
+          horizontal_fov_degrees: lens.hfovDeg,
+          view_range: 0.5,
+          resolution_width: sensorWidthPx,
+          resolution_height: sensorHeightPx,
+          status: 'planned',
+          target_area: `Position ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m (Elev: ${p.z.toFixed(1)}m)`,
+          assigned_use_case_ids: assignedUc ? [assignedUc.id] : [],
+          rationale: `Preset architecture: ${preset.replace(/_/g, ' ')}`,
+        };
+      });
       onApplyToProject(syncedCameras, syncedStructure, {
         facility_width_m: bayLength,
         facility_length_m: bayWidth,
@@ -946,10 +954,12 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   // Save cameras to project blueprint
   const handleApplyToCanvas = () => {
     if (!onApplyToProject) return;
+    const rawUcs = project?.use_cases || [];
     const projectCameras: ProjectCamera[] = poses.map((p, idx) => {
       const normX = Math.max(0.02, Math.min(0.98, p.x / bayLength));
       const normY = Math.max(0.02, Math.min(0.98, p.y / bayWidth));
       const st = result.cameras[idx];
+      const assignedUc = rawUcs.length > 0 ? rawUcs[idx % rawUcs.length] : null;
 
       return {
         id: crypto.randomUUID(),
@@ -963,7 +973,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         resolution_height: sensorHeightPx,
         status: 'planned',
         target_area: `Position ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m (Elev: ${p.z.toFixed(1)}m)`,
-        assigned_use_case_ids: [],
+        assigned_use_case_ids: assignedUc ? [assignedUc.id] : [],
         rationale: `${cameraModel} (${resolutionPreset.toUpperCase()}) · Codec: ${videoCodec} @ ${framerateFps}fps · Span: ${st ? (st.coverEnd - st.coverStart).toFixed(1) : ''}m, Blind: ${st ? st.nearBlind.toFixed(1) : ''}m. ${MOUNT_INFO[p.mount].tip}`
       };
     });
@@ -1003,16 +1013,15 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     const title = project?.name || 'Computer Vision Facility Plan';
     const estTotalCablingM = poses.reduce((acc, p) => acc + (p.x * 1.1 + p.y * 1.3) + 15, 0);
 
-    const effectiveProject: any = {
-      ...(project || {}),
-      id: project?.id || 'export-project',
-      name: title,
-      facility_width_m: bayWidth,
-      facility_length_m: bayLength,
-      facility_height_m: mountHeight,
-      detection_coverage_target: project?.detection_coverage_target || 95,
-      cameras: poses.map((p, idx) => ({
-        id: `CAM-${String(idx + 1).padStart(2, '0')}`,
+    const rawExportUcs = (project?.use_cases || []).map(u => ({ ...u, camera_ids: [] as string[] }));
+    const exportCameras = poses.map((p, idx) => {
+      const camId = `CAM-${String(idx + 1).padStart(2, '0')}`;
+      const assignedUc = rawExportUcs.length > 0 ? rawExportUcs[idx % rawExportUcs.length] : null;
+      if (assignedUc && !assignedUc.camera_ids.includes(camId)) {
+        assignedUc.camera_ids.push(camId);
+      }
+      return {
+        id: camId,
         name: `CAM-${String(idx + 1).padStart(2, '0')} (${p.mount.toUpperCase()})`,
         x: p.x / bayLength,
         y: p.y / bayWidth,
@@ -1021,10 +1030,29 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         view_range: 0.5,
         resolution_width: sensorWidthPx,
         resolution_height: sensorHeightPx,
-        status: 'active',
+        status: 'active' as const,
         target_area: `Zone @ ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m`,
-        assigned_use_case_ids: [],
-      })),
+        assigned_use_case_ids: assignedUc ? [assignedUc.id] : [],
+      };
+    });
+
+    const effectiveProject: any = {
+      ...(project || {}),
+      id: project?.id || 'export-project',
+      name: title,
+      facility_width_m: bayWidth,
+      facility_length_m: bayLength,
+      facility_height_m: mountHeight,
+      detection_coverage_target: project?.detection_coverage_target || 95,
+      cameras: exportCameras,
+      use_cases: rawExportUcs,
+      zones: (project?.zones || []).map((z, zIdx) => {
+        const matchingCams = exportCameras.filter((_, cIdx) => cIdx % Math.max(1, (project?.zones || []).length) === zIdx).map(c => c.id);
+        return {
+          ...z,
+          camera_ids: matchingCams.length > 0 ? matchingCams : (exportCameras[0] ? [exportCameras[0].id] : [])
+        };
+      }),
       structure: obstacles.map(o => ({
         id: o.id,
         name: o.name,
@@ -1693,7 +1721,7 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
           </div>
           <div>
             <div className="text-base font-bold tracking-tight text-slate-900 flex items-center gap-2">
-              Coverage <span className="text-primary">Planner v3</span>
+              Camera <span className="text-primary">Coverage Planner</span>
               <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/20 bg-primary/10 text-primary">
                 EN 62676-4 Standard
               </span>

@@ -28,6 +28,7 @@
             {% if not project.output_scope or "Use cases" in project.output_scope %}<li><a href="#use-cases">3. Use Case Analysis</a></li>{% endif %}
             {% if not project.output_scope or "Use cases" in project.output_scope %}<li><a href="#techniques">4. Proposed Vision Techniques</a></li>{% endif %}
             {% if not project.output_scope or "Camera plan" in project.output_scope %}<li><a href="#cameras">5. Camera Inventory & Assignments</a></li>{% endif %}
+            {% if not project.output_scope or "Camera plan" in project.output_scope %}<li><a href="#simulation-diagrams">5-SIM. Multi-Angle 3D Simulation & AI Telemetry Diagrams</a></li>{% endif %}
             {% if not project.output_scope or "Camera plan" in project.output_scope %}<li><a href="#installation-guide">5A. Field Rigging & Camera Installation Package</a></li>{% endif %}
             {% if not project.output_scope or "Camera plan" in project.output_scope %}<li><a href="#developer-guide">5B. Computer Vision & Software Developer Package</a></li>{% endif %}
             {% if not project.output_scope or "Detection coverage" in project.output_scope %}<li><a href="#zones">6. Detection Zones & Virtual Lines</a></li>{% endif %}
@@ -370,6 +371,66 @@
             <img src="{{ diagrams.camera_map }}" alt="Camera Layout" class="diagram-image">
         </div>
         {% endif %}
+
+        <!-- MULTI-ANGLE 3D SIMULATION & AI TELEMETRY DIAGRAMS -->
+        <div id="simulation-diagrams" class="section" style="margin-top: 2rem; page-break-before: always;">
+            <h2><span class="section-number">5-SIM</span> Multi-Angle 3D Simulation &amp; AI Telemetry Diagrams</h2>
+            <p class="lead">Five specialized architectural viewpoints engineered from facility geometry, 3D obstacle raycasting, and IEC EN 62676-4 DORI standard.</p>
+
+            <!-- Picture 1: Top View Blueprint -->
+            {% if diagrams.top_view %}
+            <div class="diagram-container">
+                <h3>Picture 1: Top View (2D Orthographic Site Blueprint)</h3>
+                <p class="muted">Vector architectural floorplan displaying multi-building layout sections, 3D structures, camera positions with azimuth pan angles, and optical coverage spans.</p>
+                <img src="{{ diagrams.top_view }}" alt="Top View Blueprint" class="diagram-image">
+            </div>
+            {% endif %}
+
+            <!-- Picture 2: Bird Camera 3D View -->
+            {% if diagrams.bird_camera_3d %}
+            <div class="diagram-container">
+                <h3>Picture 2: Bird Camera 3D View (Raycasting Occlusion Engine)</h3>
+                <p class="muted">High-angle 3D simulation with dynamic ray-box slab intersection testing against physical machinery/racks, target tracking anchors (Head, Torso, Ankle), and zero-blind-spot verification.</p>
+                <img src="{{ diagrams.bird_camera_3d }}" alt="Bird Camera 3D View" class="diagram-image">
+            </div>
+            {% endif %}
+
+            <!-- Picture 3: Frustum & DORI 3D Spatial Projection -->
+            {% if diagrams.frustum_dori_3d %}
+            <div class="diagram-container">
+                <h3>Picture 3: Frustum &amp; DORI 3D Spatial Projection</h3>
+                <p class="muted">Spatial frustum volume visualization with graded DORI tiers (Identify ≥250 px/m, Recognize ≥125 px/m, Observe ≥62.5 px/m, Detect ≥25 px/m), target plane intercept (1.5m AFF), and dead-zone calculation.</p>
+                <img src="{{ diagrams.frustum_dori_3d }}" alt="Frustum & DORI 3D" class="diagram-image">
+            </div>
+            {% endif %}
+
+            <!-- Picture 4: Side Elevation Profile -->
+            {% if diagrams.side_elevation %}
+            <div class="diagram-container">
+                <h3>Picture 4: Side Elevation Profile &amp; Field Rigging Cross-Section</h3>
+                <p class="muted">Vertical cross-section showing ceiling unistrut truss mounts, 1.2m threaded steel dropper poles, downward tilt angles (25°), human worker (1.8m) / forklift (2.3m) targets, and opposing sightline overlaps.</p>
+                <img src="{{ diagrams.side_elevation }}" alt="Side Elevation Profile" class="diagram-image">
+            </div>
+            {% endif %}
+
+            <!-- Picture 5: 3D Perspective Visualizer -->
+            {% if diagrams.perspective_3d %}
+            <div class="diagram-container">
+                <h3>Picture 5: 3D Perspective Visualizer (Isometric Twin)</h3>
+                <p class="muted">Axonometric 3D spatial twin rendering extruded machinery, storage racks, vertical camera poles, and wireframe 3D frustum pyramids projecting to the facility floor.</p>
+                <img src="{{ diagrams.perspective_3d }}" alt="3D Perspective Digital Twin" class="diagram-image">
+            </div>
+            {% endif %}
+
+            <!-- Picture 6: 3D AI Telemetry & Multi-Angle Simulation Dashboard -->
+            {% if diagrams.ai_telemetry %}
+            <div class="diagram-container">
+                <h3>Picture 6: 3D AI Telemetry &amp; Multi-Angle Simulation Dashboard</h3>
+                <p class="muted">Optical coverage density tiers, active sensor fleet telemetry, 30-day storage calculations, and deterministic DeepStream pipeline latency budget.</p>
+                <img src="{{ diagrams.ai_telemetry }}" alt="AI Telemetry Dashboard" class="diagram-image">
+            </div>
+            {% endif %}
+        </div>
         {% endif %}
 
         {% if project.structure %}

@@ -126,6 +126,22 @@ def render_docx(project: DetVisionProject) -> bytes:
         section.left_margin = Cm(2.54)
         section.right_margin = Cm(2.54)
     
+    # Ensure all cameras are fully assigned to use cases and zones
+    if project.cameras and project.use_cases:
+        needs_link = any(not cam.assigned_use_case_ids for cam in project.cameras) or sum(len(uc.camera_ids) for uc in project.use_cases) < len(project.cameras)
+        if needs_link:
+            for uc in project.use_cases:
+                uc.camera_ids = []
+            for idx, cam in enumerate(project.cameras):
+                assigned_uc = project.use_cases[idx % len(project.use_cases)]
+                cam.assigned_use_case_ids = [assigned_uc.id]
+                if cam.id not in assigned_uc.camera_ids:
+                    assigned_uc.camera_ids.append(cam.id)
+            if project.zones:
+                for z_idx, zone in enumerate(project.zones):
+                    cams_for_zone = [c.id for c_idx, c in enumerate(project.cameras) if c_idx % len(project.zones) == z_idx]
+                    zone.camera_ids = cams_for_zone if cams_for_zone else [project.cameras[0].id]
+
     # Generate diagrams
     diagrams = generate_all_diagrams(project)
     

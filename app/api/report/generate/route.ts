@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { 
   generateSiteTelemetryMapSvg, 
   generatePipelineArchitectureSvg, 
-  generateCoverageTelemetryMetricsSvg 
+  generateCoverageTelemetryMetricsSvg,
+  generateBirdCamera3DSvg,
+  generateFrustumDori3DSvg,
+  generateTopViewSvg,
+  generateSideElevationSvg,
+  generate3DPerspectiveSvg
 } from '@/lib/report-diagrams';
 
 // Report rendering happens in the document service; allow it room to finish on Vercel.
@@ -23,8 +28,12 @@ function renderHtmlReport(project: any) {
   const estCabling = Math.round(cameras.reduce((acc: number, c: any) => acc + (c.x * fw * 0.7 + c.y * fl * 0.9 + 15), 0));
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-  // High-resolution SVG visual diagrams
+  // High-resolution SVG visual diagrams based on scenario
   const telemetryMapSvg = generateSiteTelemetryMapSvg(project, { width: 850, height: 460 });
+  const birdCamera3DSvg = generateBirdCamera3DSvg(project, { width: 850, height: 460 });
+  const frustumDoriSvg = generateFrustumDori3DSvg(project, { width: 850, height: 460 });
+  const sideElevationSvg = generateSideElevationSvg(project, { width: 850, height: 400 });
+  const perspective3DSvg = generate3DPerspectiveSvg(project, { width: 850, height: 460 });
   const pipelineSvg = generatePipelineArchitectureSvg(project, { width: 850, height: 210 });
   const doriTelemetrySvg = generateCoverageTelemetryMetricsSvg(project, { width: 850, height: 260 });
 
@@ -118,24 +127,80 @@ function renderHtmlReport(project: any) {
     </div>
   </div>
 
-  <!-- VISUAL TELEMETRY MAP DIAGRAM -->
+  <!-- PICTURE 1: TOP VIEW BLUEPRINT -->
   <div class="section-card" style="page-break-inside: avoid;">
     <div class="section-title">
-      <span>🗺️ VISUAL 2D/3D SITE TELEMETRY &amp; CAMERA COVERAGE BLUEPRINT</span>
-      <span class="badge badge-indigo">Raycasting Telemetry Twin</span>
+      <span>📐 PICTURE 1: TOP VIEW (2D ORTHOGRAPHIC BLUEPRINT)</span>
+      <span class="badge badge-indigo">Floorplan Blueprint</span>
     </div>
     <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
-      Vector architectural map rendering all physical 3D structures, discrete building zones, camera positions, pan angles, and directional FOV coverage cones.
+      Vector architectural floorplan displaying multi-building layout sections, 3D structures, camera positions with azimuth pan angles, and optical coverage spans.
     </p>
     <div style="margin: 6px 0; text-align: center;">
       ${telemetryMapSvg}
     </div>
   </div>
 
-  <!-- SYSTEM PIPELINE ARCHITECTURE DIAGRAM -->
+  <!-- PICTURE 2: BIRD CAMERA 3D VIEW -->
   <div class="section-card" style="page-break-inside: avoid;">
     <div class="section-title">
-      <span>⚡ END-TO-END VISION AI PIPELINE ARCHITECTURE</span>
+      <span>🦅 PICTURE 2: BIRD CAMERA 3D VIEW (RAYCASTING OCCLUSION ENGINE)</span>
+      <span class="badge badge-indigo">Raycasting 3D Simulation</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      High-angle 3D simulation with dynamic ray-box slab intersection testing against physical machinery/racks, target tracking anchors (Head, Torso, Ankle), and zero-blind-spot verification.
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${birdCamera3DSvg}
+    </div>
+  </div>
+
+  <!-- PICTURE 3: FRUSTUM & DORI 3D SPATIAL PROJECTION -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>🎯 PICTURE 3: FRUSTUM &amp; DORI 3D SPATIAL PROJECTION</span>
+      <span class="badge badge-green">IEC EN 62676-4 Standard</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      Spatial frustum volume visualization with graded DORI tiers (Identify ≥250 px/m, Recognize ≥125 px/m, Observe ≥62.5 px/m, Detect ≥25 px/m), target plane intercept (1.5m AFF), and dead-zone calculation.
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${frustumDoriSvg}
+    </div>
+  </div>
+
+  <!-- PICTURE 4: SIDE ELEVATION PROFILE -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>🏗️ PICTURE 4: SIDE ELEVATION PROFILE &amp; FIELD RIGGING</span>
+      <span class="badge badge-amber">Field Rigging Package</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      Vertical cross-section showing ceiling unistrut truss mounts, 1.2m threaded steel dropper poles, downward tilt angles (25°), human worker (1.8m) / forklift (2.3m) targets, and opposing sightline overlaps.
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${sideElevationSvg}
+    </div>
+  </div>
+
+  <!-- PICTURE 5: 3D PERSPECTIVE VISUALIZER -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>🌐 PICTURE 5: 3D PERSPECTIVE VISUALIZER (ISOMETRIC TWIN)</span>
+      <span class="badge badge-indigo">Isometric Digital Twin</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      Axonometric 3D spatial twin rendering extruded machinery, storage racks, vertical camera poles, and wireframe 3D frustum pyramids projecting to the facility floor.
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${perspective3DSvg}
+    </div>
+  </div>
+
+  <!-- PICTURE 6: PIPELINE ARCHITECTURE DIAGRAM -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>⚡ PICTURE 6: END-TO-END VISION AI PIPELINE ARCHITECTURE</span>
       <span class="badge badge-green">Real-Time Edge Loop</span>
     </div>
     <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
@@ -146,10 +211,10 @@ function renderHtmlReport(project: any) {
     </div>
   </div>
 
-  <!-- 3D OPTICAL COVERAGE TELEMETRY & HARDWARE SIZING DIAGRAM -->
+  <!-- PICTURE 7: 3D OPTICAL COVERAGE TELEMETRY & HARDWARE SIZING DIAGRAM -->
   <div class="section-card" style="page-break-inside: avoid;">
     <div class="section-title">
-      <span>📊 3D OPTICAL COVERAGE TELEMETRY &amp; HARDWARE SIZING</span>
+      <span>📊 PICTURE 7: 3D OPTICAL COVERAGE TELEMETRY &amp; HARDWARE SIZING</span>
       <span class="badge badge-indigo">IEC 62676-4 DORI</span>
     </div>
     <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">

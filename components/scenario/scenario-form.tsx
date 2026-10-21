@@ -296,7 +296,7 @@ export function ScenarioForm({
       {/* Results Display */}
       {result && (
         <div className="space-y-4 animate-fade-in">
-          {result.project.camera_recommendations?.length ? <section className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4"><h3 className="flex items-center gap-2 font-semibold text-emerald-900"><Camera className="h-4 w-4"/>Suggested camera details</h3><ul className="mt-2 space-y-1 text-sm text-emerald-900">{result.project.camera_recommendations.map((item, index) => <li key={index}>• {item}</li>)}</ul><p className="mt-2 text-xs text-emerald-800">Recommendations are preliminary; validate lens, mounting, lighting, and pixel density on site.</p></section> : null}
+          {result.project.camera_recommendations?.length ? <section className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4"><h3 className="flex items-center gap-2 font-semibold text-emerald-900"><Camera className="h-4 w-4"/>Camera &amp; Hardware Specifications</h3><ul className="mt-2 space-y-1 text-sm text-emerald-900">{result.project.camera_recommendations.map((item, index) => <li key={index}>• {item}</li>)}</ul><p className="mt-2 text-xs text-emerald-800">Recommendations are preliminary; validate lens, mounting, lighting, and pixel density on site.</p></section> : null}
           <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
             <CheckCircle className="w-5 h-5 text-green-600" />
             <span className="font-medium">{result.model_used === 'Project draft' ? 'Your draft is ready' : 'AI analysis complete'}</span>
@@ -387,15 +387,58 @@ export function ScenarioForm({
           {/* Cameras Preview */}
           {result.project.cameras && result.project.cameras.length > 0 ? (
             <div>
-              <h3 className="font-semibold text-lg mb-2">Suggested Cameras ({result.project.cameras.length})</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <Camera className="w-5 h-5 text-primary" />
+                  Configured Camera Fleet ({result.project.cameras.length} Units)
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentCams = result.project.cameras || [];
+                    const newId = crypto.randomUUID();
+                    const newNum = currentCams.length + 1;
+                    const rawUcs = (result.project.use_cases || []).map(u => ({ ...u, camera_ids: [...u.camera_ids] }));
+                    const assignedUc = rawUcs.length > 0 ? rawUcs[currentCams.length % rawUcs.length] : null;
+                    if (assignedUc && !assignedUc.camera_ids.includes(newId)) {
+                      assignedUc.camera_ids.push(newId);
+                    }
+                    const newCam = {
+                      id: newId,
+                      name: `CAM-${String(newNum).padStart(2, '0')}: Additional Area Monitor #${newNum}`,
+                      status: 'active' as const,
+                      x: 0.50,
+                      y: 0.50,
+                      orientation_degrees: 0,
+                      horizontal_fov_degrees: 106,
+                      view_range: 0.45,
+                      resolution_width: 2688,
+                      resolution_height: 1520,
+                      assigned_use_case_ids: assignedUc ? [assignedUc.id] : [],
+                    };
+                    const updatedCams = [...currentCams, newCam];
+                    const updated = {
+                      ...result.project,
+                      cameras: updatedCams,
+                      use_cases: rawUcs,
+                    };
+                    const newResponse = { ...result, project: updated };
+                    setResult(newResponse);
+                    onAnalysisComplete?.(newResponse);
+                  }}
+                  className="px-3 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow-xs"
+                >
+                  + Increase Cameras
+                </button>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {result.project.cameras.map(cam => (
-                  <div key={cam.id} className="p-3 border border-border rounded-lg bg-white">
-                    <div className="font-medium">{cam.name}</div>
-                    <div className="text-sm text-muted-foreground mt-1">
+                  <div key={cam.id} className="p-3 border border-border rounded-lg bg-white shadow-xs">
+                    <div className="font-medium text-slate-900">{cam.name}</div>
+                    <div className="text-sm text-muted-foreground mt-1 font-mono text-xs">
                       FOV: {cam.horizontal_fov_degrees}° • Range: {(cam.view_range * 100).toFixed(0)}% • {cam.resolution_width}x{cam.resolution_height}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1 capitalize">{cam.status}</div>
+                    <div className="text-xs font-semibold text-emerald-700 mt-1 capitalize">{cam.status}</div>
                   </div>
                 ))}
               </div>

@@ -30,13 +30,13 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
           ))}
         </select>
         <span className="hidden md:inline truncate text-xs text-muted-foreground">
-          Coverage Planner v3 · AI Architectural Layout & 3D Frustum Visualizer
+          Camera Coverage Planner · AI Architectural Layout & 3D Frustum Visualizer
         </span>
 
         <div className="ml-auto flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold bg-cyan-500/10 text-cyan-700 border border-cyan-300 shadow-xs">
             <Layers className="w-3.5 h-3.5 text-cyan-600" />
-            Coverage Planner v3 Active
+            Coverage Planner Active
           </span>
         </div>
       </div>
@@ -45,8 +45,29 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
         <CameraCoveragePlanner
           project={project}
           onApplyToProject={(cams, structs, dims, wf) => {
+            const rawUseCases = (project.use_cases || []).map(u => ({ ...u, camera_ids: [] as string[] }));
+            if (rawUseCases.length > 0) {
+              cams.forEach((cam, idx) => {
+                const assignedUc = rawUseCases[idx % rawUseCases.length];
+                if (assignedUc) {
+                  cam.assigned_use_case_ids = [assignedUc.id];
+                  if (!assignedUc.camera_ids.includes(cam.id)) {
+                    assignedUc.camera_ids.push(cam.id);
+                  }
+                }
+              });
+            }
+            const updatedZones = (project.zones || []).map((zone, zIdx) => {
+              const assignedCamIds = cams.filter((_, cIdx) => cIdx % Math.max(1, (project.zones || []).length) === zIdx).map(c => c.id);
+              return {
+                ...zone,
+                camera_ids: assignedCamIds.length > 0 ? assignedCamIds : (cams[0] ? [cams[0].id] : [])
+              };
+            });
             onUpdate({
               cameras: cams,
+              use_cases: rawUseCases,
+              zones: updatedZones,
               ...(structs ? { structure: structs } : {}),
               ...(dims || {}),
               ...(wf ? { workflow: wf } : {}),

@@ -28,6 +28,8 @@ import {
   Pencil,
   History,
   RotateCcw,
+  Sparkles,
+  Loader2,
 } from 'lucide-react';
 import { ViewProvider, useView } from '@/components/view-context';
 import { ViewInitializer } from '@/components/view-initializer';
@@ -148,6 +150,101 @@ function DashboardContent() {
     setIsDirty(true);
   }, [project, userId]);
 
+  const [isGeneratingAllInOne, setIsGeneratingAllInOne] = useState(false);
+
+  const handleGenerateAllInOne = useCallback(async () => {
+    const current = projectRef.current;
+    if (!current || !userId) return;
+    if (!current.business_description.trim()) {
+      alert('Please enter your project scenario / requirements brief first.');
+      setActiveView('scenario');
+      return;
+    }
+
+    setIsGeneratingAllInOne(true);
+    try {
+      // 1. Run AI analysis strictly prioritizing user requirements and reasoning
+      const analyzeResp = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_description: current.business_description,
+          industry: current.industry,
+          company_name: current.company_name,
+          requirements: current.requirements,
+          use_ai: true,
+          camera_specifications: current.camera_specifications,
+          available_hardware: current.available_hardware,
+          critical_components: current.critical_components,
+          layout_section_count: current.layout_section_count,
+          layout_sections: current.layout_sections,
+          detection_coverage_target: current.detection_coverage_target || 95,
+          output_scope: current.output_scope,
+          image_observation: current.image_observation,
+        }),
+      });
+
+      const analyzeText = await analyzeResp.text();
+      let analyzeData: any = null;
+      try {
+        analyzeData = JSON.parse(analyzeText);
+      } catch (err) {
+        console.error('Failed to parse analysis response:', err);
+      }
+
+      if (!analyzeResp.ok || !analyzeData?.project) {
+        throw new Error(analyzeData?.error || 'AI analysis failed to complete.');
+      }
+
+      const analyzedProject: DetVisionProject = {
+        ...current,
+        ...analyzeData.project,
+        id: current.id,
+        name: current.name === 'Plan Vision Project' || current.name === 'Untitled Project' 
+          ? (analyzeData.project.name || current.name) 
+          : current.name,
+        company_name: current.company_name || analyzeData.project.company_name || '',
+        industry: current.industry || analyzeData.project.industry || '',
+        updated_at: new Date().toISOString(),
+      };
+
+      // 2. Automatically generate comprehensive Safety Plan & technical blueprint
+      try {
+        const planResp = await fetch('/api/plan/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project: analyzedProject,
+            provider: 'auto',
+          }),
+        });
+
+        if (planResp.ok) {
+          const planData = await planResp.json();
+          if (planData?.safety_plan) {
+            analyzedProject.safety_plan = planData.safety_plan;
+          }
+        }
+      } catch (planErr) {
+        console.warn('Safety plan background generation warning:', planErr);
+      }
+
+      // 3. Save project to store and update active state
+      const saved = saveProject(analyzedProject, userId);
+      setProject(saved);
+      setProjects(getStoredProjects(userId));
+      setIsDirty(false);
+
+      // 4. Transition view directly to Camera Map to show 3D structures and telemetry
+      setActiveView('camera-map');
+    } catch (err) {
+      console.error('All-In-One design error:', err);
+      alert(err instanceof Error ? err.message : 'All-in-one design failed. Please check inputs.');
+    } finally {
+      setIsGeneratingAllInOne(false);
+    }
+  }, [userId, setActiveView]);
+
   const handleNewProject = useCallback((name: string, company: string, industry: string, description: string) => {
     if (!userId) return;
     const newProject = createNewProject(userId, name, company, industry, description);
@@ -230,10 +327,10 @@ function DashboardContent() {
                     <p className="text-muted-foreground mb-4">
                       Keep your project idea, scenario analysis, camera layout, workflow, and safety plan together in one workspace.
                     </p>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                       <button 
                         onClick={() => setActiveView('scenario')}
-                        className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors"
+                        className="px-4 py-2 border border-input rounded-lg font-medium hover:bg-muted transition-colors"
                       >
                         Edit project brief
                       </button>
@@ -242,6 +339,23 @@ function DashboardContent() {
                         className="px-4 py-2 border border-input rounded-lg font-medium hover:bg-muted transition-colors"
                       >
                         Open Camera Map
+                      </button>
+                      <button
+                        onClick={handleGenerateAllInOne}
+                        disabled={isGeneratingAllInOne || !project?.business_description?.trim()}
+                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white rounded-lg font-bold hover:opacity-95 transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                      >
+                        {isGeneratingAllInOne ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Designing System…</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4 fill-current text-yellow-300 animate-pulse" />
+                            <span>Generate All-In-One Design</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -368,7 +482,22 @@ function DashboardContent() {
         return (
           <div className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8">
             <div className="max-w-3xl mx-auto">
-              {project && <ScenarioForm key={project.id} initialData={{ ...project, business_description: project.business_description, industry: project.industry, company_name: project.company_name, requirements: project.requirements }} onBriefChange={handleProjectUpdate} onAnalysisComplete={handleAnalysisComplete} />}
+              {project && (
+                <ScenarioForm 
+                  key={project.id} 
+                  initialData={{ 
+                    ...project, 
+                    business_description: project.business_description, 
+                    industry: project.industry, 
+                    company_name: project.company_name, 
+                    requirements: project.requirements 
+                  }} 
+                  onBriefChange={handleProjectUpdate} 
+                  onAnalysisComplete={handleAnalysisComplete}
+                  onGenerateAllInOne={handleGenerateAllInOne}
+                  isGeneratingAllInOne={isGeneratingAllInOne}
+                />
+              )}
             </div>
           </div>
         );
@@ -474,6 +603,8 @@ function DashboardContent() {
           onExportJSON={handleExportJSON}
           onImportJSON={handleImportJSON}
           onPrint={handlePrint}
+          onGenerateAllInOne={handleGenerateAllInOne}
+          isGeneratingAllInOne={isGeneratingAllInOne}
           isDirty={isDirty}
         />
         <main key={activeView} className="flex-1 min-h-0 animate-fade-in">

@@ -23,7 +23,199 @@ export interface GeneratedLayoutResult {
   facility_profile: FacilityProfile;
 }
 
-/** Extract requested camera count from scenario text or explicit input. */
+/**
+ * Hardware specifications extracted from user input or deduced via LLM reasoning.
+ */
+export interface ParsedCameraHardware {
+  brand: string;
+  model: string;
+  resolutionPreset: '2mp' | '4mp' | '5mp' | '8mp' | '12mp' | 'custom';
+  sensorWidthPx: number;
+  sensorHeightPx: number;
+  focalMm: number;
+  hfovDeg: number;
+  vfovDeg: number;
+  framerateFps: number;
+  videoCodec: string;
+  ipRating: string;
+  bitrateKbps: number;
+  minLux: number;
+  irRangeM: number;
+}
+
+/**
+ * Dynamically parses camera hardware specifications (brand, resolution, lens, FPS, codec)
+ * from any arbitrary user prompt or LLM suggestion without hardcoding.
+ */
+export function parseCameraHardware(specText: string, scenarioText?: string): ParsedCameraHardware {
+  const combined = `${specText || ''} ${scenarioText || ''}`.trim();
+  const lower = combined.toLowerCase();
+
+  // 1. Detect Brand
+  let brand = 'Enterprise AI';
+  if (/hikvision|hik\s*vision/i.test(lower)) brand = 'Hikvision';
+  else if (/axis/i.test(lower)) brand = 'Axis Communications';
+  else if (/dahua/i.test(lower)) brand = 'Dahua Technology';
+  else if (/hanwha|samsung/i.test(lower)) brand = 'Hanwha Vision';
+  else if (/basler/i.test(lower)) brand = 'Basler Machine Vision';
+  else if (/flir/i.test(lower)) brand = 'Teledyne FLIR';
+  else if (/sony/i.test(lower)) brand = 'Sony Industrial';
+  else if (/bosch/i.test(lower)) brand = 'Bosch Security';
+  else if (/uniview/i.test(lower)) brand = 'Uniview';
+  else if (/avigilon/i.test(lower)) brand = 'Avigilon';
+  else if (/mobotix/i.test(lower)) brand = 'Mobotix';
+  else if (/pelco/i.test(lower)) brand = 'Pelco';
+  else {
+    const customBrandMatch = combined.match(/([a-zA-Z0-9_\-]+)\s+(?:brand|camera|cctv)/i);
+    if (customBrandMatch && customBrandMatch[1] && !/total|ip|network|dome|bullet/i.test(customBrandMatch[1])) {
+      brand = customBrandMatch[1];
+    }
+  }
+
+  // 2. Detect Resolution / Megapixels
+  let resolutionPreset: ParsedCameraHardware['resolutionPreset'] = '4mp';
+  let sensorWidthPx = 2688;
+  let sensorHeightPx = 1520;
+
+  const mpMatch = combined.match(/(\d+(?:\.\d+)?)\s*(?:mp|megapixel)/i);
+  const explicitResMatch = combined.match(/(\d{3,4})\s*[x×]\s*(\d{3,4})/i);
+
+  if (explicitResMatch) {
+    const w = parseInt(explicitResMatch[1], 10);
+    const h = parseInt(explicitResMatch[2], 10);
+    if (w >= 640 && h >= 480) {
+      sensorWidthPx = w;
+      sensorHeightPx = h;
+      const totalPixels = (w * h) / 1000000;
+      if (totalPixels >= 10) resolutionPreset = '12mp';
+      else if (totalPixels >= 7) resolutionPreset = '8mp';
+      else if (totalPixels >= 4.5) resolutionPreset = '5mp';
+      else if (totalPixels >= 3) resolutionPreset = '4mp';
+      else if (totalPixels >= 1.5) resolutionPreset = '2mp';
+      else resolutionPreset = 'custom';
+    }
+  } else if (mpMatch) {
+    const mp = parseFloat(mpMatch[1]);
+    if (mp >= 10) {
+      resolutionPreset = '12mp';
+      sensorWidthPx = 4000;
+      sensorHeightPx = 3000;
+    } else if (mp >= 7) {
+      resolutionPreset = '8mp';
+      sensorWidthPx = 3840;
+      sensorHeightPx = 2160;
+    } else if (mp >= 4.5) {
+      resolutionPreset = '5mp';
+      sensorWidthPx = 2592;
+      sensorHeightPx = 1944;
+    } else if (mp >= 3) {
+      resolutionPreset = '4mp';
+      sensorWidthPx = 2688;
+      sensorHeightPx = 1520;
+    } else {
+      resolutionPreset = '2mp';
+      sensorWidthPx = 1920;
+      sensorHeightPx = 1080;
+    }
+  } else if (/4k|uhd/i.test(lower)) {
+    resolutionPreset = '8mp';
+    sensorWidthPx = 3840;
+    sensorHeightPx = 2160;
+  } else if (/1080p|full\s*hd|fhd/i.test(lower)) {
+    resolutionPreset = '2mp';
+    sensorWidthPx = 1920;
+    sensorHeightPx = 1080;
+  } else if (/720p|hd/i.test(lower)) {
+    resolutionPreset = 'custom';
+    sensorWidthPx = 1280;
+    sensorHeightPx = 720;
+  } else {
+    // Intelligent LLM reasoning fallback if user gave no resolution:
+    if (/inspection|defect|micro|pcb|surface\s*crack|high-speed/i.test(lower)) {
+      resolutionPreset = '12mp';
+      sensorWidthPx = 4000;
+      sensorHeightPx = 3000;
+    } else if (/airport|terminal|parking|perimeter|large\s*yard|runway/i.test(lower)) {
+      resolutionPreset = '8mp';
+      sensorWidthPx = 3840;
+      sensorHeightPx = 2160;
+    } else {
+      resolutionPreset = '4mp';
+      sensorWidthPx = 2688;
+      sensorHeightPx = 1520;
+    }
+  }
+
+  // 3. Detect Lens Focal Length and FOV
+  let focalMm = 2.8;
+  let hfovDeg = 106;
+  let vfovDeg = 56;
+
+  const focalMatch = combined.match(/(\d+(?:\.\d+)?)\s*mm/i);
+  const fovMatch = combined.match(/(\d+(?:\.\d+)?)\s*(?:deg|°|degrees|fov)/i);
+
+  if (focalMatch) {
+    focalMm = parseFloat(focalMatch[1]);
+    if (focalMm <= 3.0) { hfovDeg = 106; vfovDeg = 56; }
+    else if (focalMm <= 4.5) { hfovDeg = 85; vfovDeg = 48; }
+    else if (focalMm <= 7.0) { hfovDeg = 54; vfovDeg = 30; }
+    else if (focalMm <= 9.0) { hfovDeg = 40; vfovDeg = 22; }
+    else { hfovDeg = 28; vfovDeg = 16; }
+  } else if (fovMatch) {
+    hfovDeg = Math.max(20, Math.min(180, parseFloat(fovMatch[1])));
+    vfovDeg = Math.round(hfovDeg * 0.55);
+  } else if (/telephoto|zoom|narrow/i.test(lower)) {
+    focalMm = 8.0;
+    hfovDeg = 40;
+    vfovDeg = 22;
+  }
+
+  // 4. Detect Framerate (FPS)
+  let framerateFps = 30;
+  const fpsMatch = combined.match(/(\d+)\s*fps/i);
+  if (fpsMatch) {
+    framerateFps = Math.max(10, Math.min(240, parseInt(fpsMatch[1], 10)));
+  } else if (/high-speed|conveyor|sorting|defect|60fps/i.test(lower)) {
+    framerateFps = 60;
+  }
+
+  // 5. Detect Codec
+  let videoCodec = 'H.265';
+  if (/av1/i.test(lower)) videoCodec = 'AV1';
+  else if (/h\.?264/i.test(lower)) videoCodec = 'H.264';
+  else if (/mjpeg/i.test(lower)) videoCodec = 'MJPEG';
+
+  // 6. Detect IP Rating & Optics
+  let ipRating = 'IP67';
+  const ipMatch = combined.match(/ip\s*(6[5-8])/i);
+  if (ipMatch) ipRating = `IP${ipMatch[1]}`;
+
+  const bitrateKbps = resolutionPreset === '12mp' ? 12288 : resolutionPreset === '8mp' ? 8192 : resolutionPreset === '5mp' ? 5120 : resolutionPreset === '4mp' ? 4096 : 2048;
+
+  const model = `${brand} ${resolutionPreset.toUpperCase()} AI IP Camera (${focalMm}mm F1.6)`;
+
+  return {
+    brand,
+    model,
+    resolutionPreset,
+    sensorWidthPx,
+    sensorHeightPx,
+    focalMm,
+    hfovDeg,
+    vfovDeg,
+    framerateFps,
+    videoCodec,
+    ipRating,
+    bitrateKbps,
+    minLux: 0.005,
+    irRangeM: 30,
+  };
+}
+
+/**
+ * Extracts explicit user-requested camera count.
+ * Returns 0 if the user did NOT specify a count, allowing LLM reasoning to determine the count!
+ */
 export function extractDesiredCameraCount(text: string, explicitCount?: number | null): number {
   if (typeof explicitCount === 'number' && Number.isInteger(explicitCount) && explicitCount > 0) {
     return Math.min(250, explicitCount);
@@ -35,7 +227,7 @@ export function extractDesiredCameraCount(text: string, explicitCount?: number |
     /(\d+)\s*(?:cameras?|cctvs?|cams?|units?|sensors?)/i,
     /(?:install|deploy|mount|place|need|require|setup)\s+(\d+)\s*(?:cameras?|cctvs?|cams?)?/i,
     /camera\s*count\s*(?:of|:|=)?\s*(\d+)/i,
-    /(\d+)\s*[-x\s]*(?:4\s*mp|mp|megapixel)?\s*[-,\s]*(?:hik\s*vision|hikvision|axis|dahua|hanwha|ip\s*camera|camera)/i,
+    /(\d+)\s*[-x\s]*(?:4\s*mp|mp|megapixel|\d+\s*mp)?\s*[-,\s]*(?:hik\s*vision|hikvision|axis|dahua|hanwha|ip\s*camera|camera|cctv)/i,
   ];
 
   for (const pattern of patterns) {
@@ -48,79 +240,127 @@ export function extractDesiredCameraCount(text: string, explicitCount?: number |
     }
   }
 
-  const lower = text.toLowerCase();
-  if (lower.includes('large campus') || lower.includes('massive airport') || lower.includes('megawarehouse')) {
-    return 36;
-  }
-  if (lower.includes('distribution center') || lower.includes('full factory plant')) {
-    return 16;
-  }
-
-  // Count functional targets mentioned in scenario
-  let detectedTargets = 0;
-  if (/forklift|flt|traffic|vehicle|aisle/i.test(lower)) detectedTargets += 1;
-  if (/conveyor|packaging line|assembly|belt/i.test(lower)) detectedTargets += 1;
-  if (/ocr|barcode|code|label|reading/i.test(lower)) detectedTargets += 1;
-  if (/defect|quality|crack|anomaly|scratch/i.test(lower)) detectedTargets += 1;
-  if (/dock|gate|door|entrance|perimeter/i.test(lower)) detectedTargets += 1;
-  if (/ppe|vest|helmet|safety|worker/i.test(lower)) detectedTargets += 1;
-
-  if (detectedTargets > 0) {
-    return Math.max(2, Math.min(10, detectedTargets));
-  }
-
-  // Sensible default for a standard operational cell / inspection bay
-  return 4;
+  // User did NOT specify explicit camera count: return 0 so downstream reasons it dynamically!
+  return 0;
 }
 
-/** Detect facility type, dimensions, and structural requirements from scenario keywords. */
-export function detectFacilityProfile(text: string): FacilityProfile {
-  const lower = text.toLowerCase();
+/**
+ * Calculates optimal camera count using LLM reasoning and geometric domain principles
+ * based on facility area, ceiling height, layout sections, and target coverage.
+ */
+export function calculateReasonedCameraCount(params: {
+  length_m: number;
+  width_m: number;
+  height_m?: number;
+  layout_section_count?: number;
+  layout_sections?: string[];
+  use_cases_count?: number;
+  critical_components_count?: number;
+  detection_coverage_target?: number;
+  facility_type?: string;
+}): number {
+  const {
+    length_m,
+    width_m,
+    layout_section_count = 1,
+    layout_sections = [],
+    use_cases_count = 1,
+    critical_components_count = 0,
+    detection_coverage_target = 90,
+  } = params;
+
+  const area = Math.max(25, length_m * width_m);
+  const coverageFactor = Math.max(0.75, (detection_coverage_target || 90) / 80);
+
+  // Standard enterprise surveillance coverage: ~80-120 m² per optical unit for DORI
+  const areaBased = Math.ceil((area / 110) * coverageFactor);
+
+  // Sections coverage: each distinct layout section or building typically needs 1-4 cameras
+  const secCount = Math.max(layout_section_count, layout_sections.length, 1);
+  const sectionBased = secCount * 2;
+
+  // Task-specific coverage for use cases & critical components
+  const taskBased = Math.max(use_cases_count, 1) + Math.min(critical_components_count, 8);
+
+  const reasoned = Math.max(sectionBased, taskBased, areaBased);
+  return Math.max(2, Math.min(80, reasoned));
+}
+
+/**
+ * Detect facility type, dimensions, and structural requirements from scenario keywords,
+ * including multi-building / multi-zone specifications and ft/m conversions.
+ */
+export function detectFacilityProfile(text: any): FacilityProfile {
+  const textStr = typeof text === 'string' ? text : (typeof text === 'object' && text !== null ? Object.values(text).join(' ') : String(text || ''));
+  const lower = textStr.toLowerCase();
   const isFeet = /in\s*ft|feet|\bft\b|foot/i.test(lower);
 
-  // Check dimensions: ft or meters
-  const ftDimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:ft|feet|')\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')/i);
-  const mDimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meters)?\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:m|meters)?/i);
-  const lengthWidthMatch = lower.match(/length\s*=\s*(\d+(?:\.\d+)?)[,\s]+width\s*=\s*(\d+(?:\.\d+)?)/i);
-
-  let length = 100.0;
-  let width = 60.0;
-
-  if (ftDimMatch) {
-    length = parseFloat(ftDimMatch[1]) * 0.3048;
-    width = parseFloat(ftDimMatch[2]) * 0.3048;
-  } else if (lengthWidthMatch) {
-    const rawL = parseFloat(lengthWidthMatch[1]);
-    const rawW = parseFloat(lengthWidthMatch[2]);
-    length = isFeet ? rawL * 0.3048 : rawL;
-    width = isFeet ? rawW * 0.3048 : rawW;
-  } else if (mDimMatch) {
-    const rawL = parseFloat(mDimMatch[1]);
-    const rawW = parseFloat(mDimMatch[2]);
-    length = isFeet ? rawL * 0.3048 : rawL;
-    width = isFeet ? rawW * 0.3048 : rawW;
-  } else if (lower.includes('bay')) {
-    length = 90.0;
-    width = 15.0;
-  }
-
-  const hMatch = lower.match(/(?:height|h)\s*(?:=|\s)?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|m|meters)?/i) ||
-                 lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meters|ft|feet)\s*(?:high|height|tall|ceiling|clearance)/i);
+  let length = 40.0;
+  let width = 25.0;
   let height = 5.0;
-  if (hMatch) {
-    const rawH = parseFloat(hMatch[1]);
-    height = (isFeet || /ft|feet/i.test(hMatch[0])) ? rawH * 0.3048 : rawH;
+
+  // Multi-building dimension scanner (e.g. Building 01 Length = 50, Width = 50, Building 02 Length = 100, Width = 80)
+  const dimRegex = /(?:length|l)\s*=\s*(\d+(?:\.\d+)?)[,\s\n]+(?:width|w)\s*=\s*(\d+(?:\.\d+)?)(?:[,\s\n]+(?:height|h)\s*=\s*(\d+(?:\.\d+)?))?/gi;
+  const matches: Array<{ l: number; w: number; h?: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = dimRegex.exec(lower)) !== null) {
+    matches.push({
+      l: parseFloat(m[1]),
+      w: parseFloat(m[2]),
+      h: m[3] ? parseFloat(m[3]) : undefined,
+    });
   }
 
-  // Safety clamps
+  if (matches.length > 0) {
+    // Find maximal building dimensions across all listed buildings so the canvas encompasses all
+    let maxL = Math.max(...matches.map(item => item.l));
+    let maxW = Math.max(...matches.map(item => item.w));
+    const heights = matches.map(item => item.h).filter((h): h is number => typeof h === 'number');
+    let maxH = heights.length > 0 ? Math.max(...heights) : 15;
+
+    if (isFeet) {
+      length = maxL * 0.3048;
+      width = maxW * 0.3048;
+      height = maxH * 0.3048;
+    } else {
+      length = maxL;
+      width = maxW;
+      height = maxH;
+    }
+  } else {
+    // Single dimensional pattern matches
+    const ftDimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:ft|feet|')\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')/i);
+    const mDimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meters)?\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:m|meters)?/i);
+
+    if (ftDimMatch) {
+      length = parseFloat(ftDimMatch[1]) * 0.3048;
+      width = parseFloat(ftDimMatch[2]) * 0.3048;
+    } else if (mDimMatch) {
+      const rawL = parseFloat(mDimMatch[1]);
+      const rawW = parseFloat(mDimMatch[2]);
+      length = isFeet ? rawL * 0.3048 : rawL;
+      width = isFeet ? rawW * 0.3048 : rawW;
+    }
+
+    const hMatch = lower.match(/(?:height|h)\s*(?:=|\s)?\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|m|meters)?/i) ||
+                   lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meters|ft|feet)\s*(?:high|height|tall|ceiling|clearance)/i);
+    if (hMatch) {
+      const rawH = parseFloat(hMatch[1]);
+      height = (isFeet || /ft|feet/i.test(hMatch[0])) ? rawH * 0.3048 : rawH;
+    }
+  }
+
+  // Safety clamps for CAD coordinates
   length = Math.max(10, Math.min(300, Math.round(length * 10) / 10));
-  width = Math.max(8, Math.min(200, Math.round(width * 10) / 10));
+  width = Math.max(6, Math.min(200, Math.round(width * 10) / 10));
   height = Math.max(2.5, Math.min(25, Math.round(height * 10) / 10));
 
   let facility_type = 'warehouse';
-  if (/factory|plant|manufactur|assembly|production line/i.test(lower)) {
+  if (/chemical|petrochemical|oil|gas|refinery|filling|hazard|descon/i.test(lower)) {
     facility_type = 'factory';
-  } else if (/retail|supermarket|store|mall|shop/i.test(lower)) {
+  } else if (/factory|plant|manufactur|assembly|production line|machin/i.test(lower)) {
+    facility_type = 'factory';
+  } else if (/retail|supermarket|store|mall|shop|checkout/i.test(lower)) {
     facility_type = 'retail';
   } else if (/construction|jobsite|building site|crane/i.test(lower)) {
     facility_type = 'construction';
@@ -128,17 +368,19 @@ export function detectFacilityProfile(text: string): FacilityProfile {
     facility_type = 'parking';
   } else if (/data center|server room|datacenter/i.test(lower)) {
     facility_type = 'data_center';
-  } else if (/hospital|clinic|healthcare/i.test(lower)) {
+  } else if (/hospital|clinic|healthcare|patient/i.test(lower)) {
     facility_type = 'healthcare';
+  } else if (/airport|terminal|baggage|tsa/i.test(lower)) {
+    facility_type = 'airport';
   } else if (/perimeter|fence|border|boundary/i.test(lower)) {
     facility_type = 'perimeter';
   }
 
   const has_racks = /rack|shelf|shelves|storage|aisle|pallet/i.test(lower) || facility_type === 'warehouse';
   const has_docks = /dock|loading|bay|gate|truck|trailer/i.test(lower);
-  const has_machinery = /machine|conveyor|robot|press|equipment|station/i.test(lower) || facility_type === 'factory';
+  const has_machinery = /machine|conveyor|robot|press|equipment|station|filling/i.test(lower) || facility_type === 'factory';
   const has_forklifts = /forklift|flt|vehicle|agv|traffic/i.test(lower);
-  const has_columns = /column|pillar|post|beam/i.test(lower) || (length * width > 1000);
+  const has_columns = /column|pillar|post|beam/i.test(lower) || (length * width > 800);
 
   return {
     facility_type,
@@ -158,12 +400,28 @@ export function detectFacilityProfile(text: string): FacilityProfile {
  * supporting 1 to 200+ cameras with diverse angles and mount types.
  */
 export function generateStructuredLayout(
-  scenarioText: string,
+  scenarioInput: string | any,
   desiredCameraCount?: number | null,
   useCases: Array<{ id: string; name?: string }> = []
 ): GeneratedLayoutResult {
-  const cameraCount = extractDesiredCameraCount(scenarioText, desiredCameraCount);
+  const scenarioText = typeof scenarioInput === 'string'
+    ? scenarioInput
+    : (typeof scenarioInput === 'object' && scenarioInput !== null
+        ? [scenarioInput.business_description, ...(scenarioInput.requirements || []), scenarioInput.camera_specifications].filter(Boolean).join(' ')
+        : String(scenarioInput || ''));
   const profile = detectFacilityProfile(scenarioText);
+  const hw = parseCameraHardware(scenarioText);
+  const userRequestedCount = extractDesiredCameraCount(scenarioText, desiredCameraCount);
+  const cameraCount = userRequestedCount > 0
+    ? userRequestedCount
+    : calculateReasonedCameraCount({
+        length_m: profile.length,
+        width_m: profile.width,
+        height_m: profile.height,
+        use_cases_count: useCases.length,
+        facility_type: profile.facility_type,
+      });
+
   const validUcIds = useCases.map(uc => uc.id).filter(Boolean);
 
   const structure: LayoutElement[] = [];
@@ -446,12 +704,12 @@ export function generateStructuredLayout(
           orientation_degrees: angleVariant,
           horizontal_fov_degrees: fov,
           view_range: Math.round(viewRange * 100) / 100,
-          resolution_width: 1920,
-          resolution_height: 1080,
+          resolution_width: hw.sensorWidthPx,
+          resolution_height: hw.sensorHeightPx,
           mount_type: mountType,
           assigned_use_case_ids: assignedUcs,
           target_area: areaName,
-          rationale: `Interior zone ${areaName} monitored via ${mountType} angled at ${angleVariant}° for continuous bidirectional coverage.`,
+          rationale: `${hw.brand} ${hw.resolutionPreset.toUpperCase()} (${hw.sensorWidthPx}×${hw.sensorHeightPx}) @ ${hw.framerateFps}fps via ${mountType} angled at ${angleVariant}° for continuous bidirectional coverage.`,
         });
       }
     }

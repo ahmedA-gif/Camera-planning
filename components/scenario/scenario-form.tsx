@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Send, Loader2, AlertCircle, CheckCircle, Info, Brain, Camera, ImagePlus, X } from 'lucide-react';
+import { Send, Loader2, AlertCircle, CheckCircle, Info, Brain, Camera, ImagePlus, X, Sparkles } from 'lucide-react';
 import type { AnalysisResponse } from '@/lib/types';
 
 function asStringList(value: unknown, fallback: string[] = []): string[] {
@@ -13,6 +13,8 @@ function asStringList(value: unknown, fallback: string[] = []): string[] {
 interface ScenarioFormProps {
   onAnalysisComplete?: (response: AnalysisResponse) => void;
   onBriefChange?: (brief: { business_description: string; industry: string; company_name: string; requirements: string[]; facility_image?: string; facility_image_name?: string; image_observation?: string; camera_specifications?: string; available_hardware?: string; critical_components?: string[]; layout_section_count?: number; layout_sections?: string[]; detection_coverage_target?: number; output_scope?: string[] }) => void;
+  onGenerateAllInOne?: () => void;
+  isGeneratingAllInOne?: boolean;
   initialData?: {
     business_description: string;
     industry: string;
@@ -22,7 +24,13 @@ interface ScenarioFormProps {
   };
 }
 
-export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }: ScenarioFormProps) {
+export function ScenarioForm({ 
+  onAnalysisComplete, 
+  onBriefChange, 
+  onGenerateAllInOne,
+  isGeneratingAllInOne = false,
+  initialData 
+}: ScenarioFormProps) {
   const [formData, setFormData] = useState({
     business_description: initialData?.business_description || '',
     industry: initialData?.industry || '',
@@ -231,23 +239,47 @@ export function ScenarioForm({ onAnalysisComplete, onBriefChange, initialData }:
           </label>
         </div>
 
-        <button
-          type="submit"
-          disabled={isLoading || !formData.business_description.trim()}
-          className="w-full md:w-auto px-6 py-2.5 bg-primary text-primary-foreground rounded font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="w-5 h-5 animate-spin" />
-              Analyzing...
-            </>
-          ) : (
-            <>
-              <Send className="w-5 h-5" />
-              {formData.use_ai ? 'Run AI analysis' : 'Create project draft'}
-            </>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="submit"
+            disabled={isLoading || isGeneratingAllInOne || !formData.business_description.trim()}
+            className="w-full sm:w-auto px-6 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Analyzing...</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-5 h-5" />
+                <span>{formData.use_ai ? 'Run AI analysis' : 'Create project draft'}</span>
+              </>
+            )}
+          </button>
+
+          {onGenerateAllInOne && (
+            <button
+              type="button"
+              onClick={onGenerateAllInOne}
+              disabled={isLoading || isGeneratingAllInOne || !formData.business_description.trim()}
+              className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white rounded-lg font-bold hover:opacity-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+              title="End-to-End: Automatically analyze requirements, design 3D telemetry and structures, solve camera placements, and generate safety plan"
+            >
+              {isGeneratingAllInOne ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Auto-Designing System…</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 fill-current text-yellow-300 animate-pulse" />
+                  <span>Generate All-In-One Design</span>
+                </>
+              )}
+            </button>
           )}
-        </button>
+        </div>
       </form>
 
       {/* Error Display */}

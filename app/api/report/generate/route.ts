@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { 
+  generateSiteTelemetryMapSvg, 
+  generatePipelineArchitectureSvg, 
+  generateCoverageTelemetryMetricsSvg 
+} from '@/lib/report-diagrams';
 
 // Report rendering happens in the document service; allow it room to finish on Vercel.
 export const maxDuration = 60;
@@ -17,6 +22,11 @@ function renderHtmlReport(project: any) {
   const storage30dTb = ((camCount * bitrateKbps * 86400 * 30) / (8 * 1000 * 1000 * 1000)).toFixed(1);
   const estCabling = Math.round(cameras.reduce((acc: number, c: any) => acc + (c.x * fw * 0.7 + c.y * fl * 0.9 + 15), 0));
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  // High-resolution SVG visual diagrams
+  const telemetryMapSvg = generateSiteTelemetryMapSvg(project, { width: 850, height: 460 });
+  const pipelineSvg = generatePipelineArchitectureSvg(project, { width: 850, height: 210 });
+  const doriTelemetrySvg = generateCoverageTelemetryMetricsSvg(project, { width: 850, height: 260 });
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -105,6 +115,48 @@ function renderHtmlReport(project: any) {
           <tr><td style="font-weight: 600; color: #64748b;">Volume</td><td>${(fw * fl * fh).toLocaleString()} m³ (${(fw * fl).toLocaleString()} m²)</td></tr>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- VISUAL TELEMETRY MAP DIAGRAM -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>🗺️ VISUAL 2D/3D SITE TELEMETRY &amp; CAMERA COVERAGE BLUEPRINT</span>
+      <span class="badge badge-indigo">Raycasting Telemetry Twin</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      Vector architectural map rendering all physical 3D structures, discrete building zones, camera positions, pan angles, and directional FOV coverage cones.
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${telemetryMapSvg}
+    </div>
+  </div>
+
+  <!-- SYSTEM PIPELINE ARCHITECTURE DIAGRAM -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>⚡ END-TO-END VISION AI PIPELINE ARCHITECTURE</span>
+      <span class="badge badge-green">Real-Time Edge Loop</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      4-Stage high-throughput computer vision pipeline engineered for NVIDIA DeepStream / TensorRT with deterministic latency budget (≤35ms).
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${pipelineSvg}
+    </div>
+  </div>
+
+  <!-- 3D OPTICAL COVERAGE TELEMETRY & HARDWARE SIZING DIAGRAM -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>📊 3D OPTICAL COVERAGE TELEMETRY &amp; HARDWARE SIZING</span>
+      <span class="badge badge-indigo">IEC 62676-4 DORI</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      Optical resolution pyramid, coverage guarantees, 30-day NVR storage calculation, PoE power budgeting, and deterministic inference latency telemetry (≤35ms).
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${doriTelemetrySvg}
     </div>
   </div>
 
@@ -357,7 +409,26 @@ function renderHtmlReport(project: any) {
         </tr>
       </tbody>
     </table>
-  </div>
+  <!-- PART 6: SAFETY PLAN & COMPLIANCE MATRIX -->
+  ${project.safety_plan ? `
+  <div class="section-card">
+    <div class="section-title">
+      <span>🛡️ PART 6: OSHA / ISO Safety Plan &amp; Event Escalation Matrix</span>
+      <span class="badge badge-amber">Safety Engineering</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 10px;">
+      ${Object.entries(project.safety_plan.sections || {}).map(([key, val]) => `
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+          <div style="font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">
+            ${key.replace(/_/g, ' ')}
+          </div>
+          <p style="margin: 0; color: #334155; line-height: 1.45;">
+            ${String(val)}
+          </p>
+        </div>
+      `).join('')}
+    </div>
+  </div>` : ''}
 
   <div style="text-align: center; color: #94a3b8; font-size: 9px; margin-top: 15px;">
     Plan Vision • Automated Computer Vision Facility Engineering System

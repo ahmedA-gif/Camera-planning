@@ -96,10 +96,14 @@ import {
   BirdCameraView,
   FrustumSpatialInspector,
   camColor,
-  CAM_COLORS,
-  MOUNT_SYMBOLS
+  MOUNT_SYMBOLS,
 } from './coverage-views';
-import { detectFacilityProfile, extractDesiredCameraCount } from '@/lib/rule-based-planner';
+import { detectFacilityProfile, extractDesiredCameraCount, parseCameraHardware } from '@/lib/rule-based-planner';
+import { 
+  generateSiteTelemetryMapSvg, 
+  generatePipelineArchitectureSvg, 
+  generateCoverageTelemetryMetricsSvg 
+} from '@/lib/report-diagrams';
 
 interface CameraCoveragePlannerProps {
   project?: DetVisionProject;
@@ -308,42 +312,35 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   // Standard resolution mode: 'dori' | 'iec_2025'
   const [standardView, setStandardView] = useState<'dori' | 'iec_2025'>('dori');
 
-  // Camera hardware specifications
-  const initialCameraBrand = useMemo(() => {
+  // Dynamically parsed camera hardware specifications strictly honoring user input and LLM reasoning
+  const initialHw = useMemo(() => {
     const allText = `${project?.camera_specifications || ''} ${project?.business_description || ''}`;
-    if (/hikvision|hik\s*vision/i.test(allText)) {
-      return 'Hikvision 4MP IP Camera (DS-2CD2143G2-I / DS-2CD2043G2-I)';
-    }
-    if (/dahua/i.test(allText)) return 'Dahua 4MP WizSense IP Camera';
-    if (/axis/i.test(allText)) return 'Axis P32 4MP Network Camera';
-    return '4MP Wide-Dynamic AI Dome';
+    return parseCameraHardware(project?.camera_specifications || '', allText);
   }, [project?.camera_specifications, project?.business_description]);
 
-  const [cameraModel, setCameraModel] = useState<string>(initialCameraBrand);
-  const [resolutionPreset, setResolutionPreset] = useState<string>('4mp');
-  const [sensorWidthPx, setSensorWidthPx] = useState<number>(2688);
-  const [sensorHeightPx, setSensorHeightPx] = useState<number>(1520);
+  const [cameraModel, setCameraModel] = useState<string>(() => `${initialHw.brand} ${initialHw.model}`);
+  const [resolutionPreset, setResolutionPreset] = useState<string>(initialHw.resolutionPreset);
+  const [sensorWidthPx, setSensorWidthPx] = useState<number>(initialHw.sensorWidthPx);
+  const [sensorHeightPx, setSensorHeightPx] = useState<number>(initialHw.sensorHeightPx);
   const [sensorFormat, setSensorFormat] = useState<string>('1/2.8"');
-  const [framerateFps, setFramerateFps] = useState<number>(30);
-  const [videoCodec, setVideoCodec] = useState<string>('H.265');
-  const [bitrateKbps, setBitrateKbps] = useState<number>(4096);
-  const [minLux, setMinLux] = useState<number>(0.005);
-  const [irRangeM, setIrRangeM] = useState<number>(30);
+  const [framerateFps, setFramerateFps] = useState<number>(initialHw.framerateFps);
+  const [videoCodec, setVideoCodec] = useState<string>(initialHw.videoCodec);
+  const [bitrateKbps, setBitrateKbps] = useState<number>(initialHw.bitrateKbps);
+  const [minLux, setMinLux] = useState<number>(initialHw.minLux);
+  const [irRangeM, setIrRangeM] = useState<number>(initialHw.irRangeM);
   const [savedToast, setSavedToast] = useState<boolean>(false);
   const [showDiagramModal, setShowDiagramModal] = useState<boolean>(false);
   const [generatedDiagram, setGeneratedDiagram] = useState<any>(null);
 
   // Camera lens specifications
-  const [lens, setLens] = useState<LensSpec>({
-    focalMm: 2.8,
-    hfovDeg: 106,
-    vfovDeg: 56,
-    ranges: {
-      detect: 88,
-      observe: 35.2,
-      recognize: 17.6,
-      identify: 8.8,
-    },
+  const [lens, setLens] = useState<LensSpec>(() => {
+    const newRanges = rangesFromResolution(initialHw.sensorWidthPx, initialHw.hfovDeg);
+    return {
+      focalMm: initialHw.focalMm,
+      hfovDeg: initialHw.hfovDeg,
+      vfovDeg: initialHw.vfovDeg,
+      ranges: newRanges,
+    };
   });
 
   const handleResolutionPresetChange = (preset: string) => {
@@ -1006,6 +1003,51 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     const title = project?.name || 'Computer Vision Facility Plan';
     const estTotalCablingM = poses.reduce((acc, p) => acc + (p.x * 1.1 + p.y * 1.3) + 15, 0);
 
+    const effectiveProject: any = {
+      ...(project || {}),
+      id: project?.id || 'export-project',
+      name: title,
+      facility_width_m: bayWidth,
+      facility_length_m: bayLength,
+      facility_height_m: mountHeight,
+      detection_coverage_target: project?.detection_coverage_target || 95,
+      cameras: poses.map((p, idx) => ({
+        id: `CAM-${String(idx + 1).padStart(2, '0')}`,
+        name: `CAM-${String(idx + 1).padStart(2, '0')} (${p.mount.toUpperCase()})`,
+        x: p.x / bayLength,
+        y: p.y / bayWidth,
+        orientation_degrees: (p.panDeg + 360) % 360,
+        horizontal_fov_degrees: lens.hfovDeg,
+        view_range: 0.5,
+        resolution_width: sensorWidthPx,
+        resolution_height: sensorHeightPx,
+        status: 'active',
+        target_area: `Zone @ ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m`,
+        assigned_use_case_ids: [],
+      })),
+      structure: obstacles.map(o => ({
+        id: o.id,
+        name: o.name,
+        type: 'obstacle' as const,
+        points: [
+          { x: o.x / bayLength, y: o.y / bayWidth },
+          { x: (o.x + o.w) / bayLength, y: o.y / bayWidth },
+          { x: (o.x + o.w) / bayLength, y: (o.y + o.d) / bayWidth },
+          { x: o.x / bayLength, y: (o.y + o.d) / bayWidth },
+        ],
+        x_m: o.x,
+        y_m: o.y,
+        width_m: o.w,
+        depth_m: o.d,
+        height_m: o.h,
+        obstacle_type: o.type,
+      })),
+    };
+
+    const telemetryMapSvg = generateSiteTelemetryMapSvg(effectiveProject, { width: 850, height: 460 });
+    const pipelineSvg = generatePipelineArchitectureSvg(effectiveProject, { width: 850, height: 210 });
+    const doriTelemetrySvg = generateCoverageTelemetryMetricsSvg(effectiveProject, { width: 850, height: 260 });
+
     const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1102,6 +1144,48 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         ${project.requirements.map(r => `<div style="background: #f1f5f9; padding: 6px 8px; border-radius: 4px; border-left: 3px solid #2563eb;">• ${r}</div>`).join('')}
       </div>
     </div>` : ''}
+  </div>
+
+  <!-- VISUAL 2D/3D SITE TELEMETRY MAP -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>🗺️ VISUAL 2D/3D SITE TELEMETRY &amp; CAMERA COVERAGE BLUEPRINT</span>
+      <span class="badge badge-indigo">Raycasting Telemetry Twin</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      Vector architectural map rendering all physical 3D structures, multi-building zones, camera positions, pan angles, and directional optical FOV coverage cones.
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${telemetryMapSvg}
+    </div>
+  </div>
+
+  <!-- SYSTEM PIPELINE ARCHITECTURE -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>⚡ END-TO-END VISION AI PIPELINE ARCHITECTURE</span>
+      <span class="badge badge-green">Real-Time Edge Loop (≤35ms)</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      4-Stage high-throughput computer vision pipeline engineered for NVIDIA DeepStream / TensorRT with deterministic latency budget (≤35ms).
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${pipelineSvg}
+    </div>
+  </div>
+
+  <!-- 3D OPTICAL COVERAGE TELEMETRY & HARDWARE SIZING -->
+  <div class="section-card" style="page-break-inside: avoid;">
+    <div class="section-title">
+      <span>📊 3D OPTICAL COVERAGE TELEMETRY &amp; HARDWARE SIZING</span>
+      <span class="badge badge-indigo">IEC 62676-4 DORI</span>
+    </div>
+    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
+      Optical resolution pyramid, coverage guarantees, 30-day NVR storage calculation, PoE power budgeting, and deterministic inference latency telemetry.
+    </p>
+    <div style="margin: 6px 0; text-align: center;">
+      ${doriTelemetrySvg}
+    </div>
   </div>
 
   <!-- PART 0B: OPTICAL DORI STANDARDS, THERMAL JOHNSON'S CRITERIA & 3D MAPPING TECHNIQUES -->

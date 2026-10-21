@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { UserButton } from '@clerk/nextjs';
-import { Save, Download, Upload, AlertCircle, Info, FileText, FileType, ExternalLink, Camera } from 'lucide-react';
+import { Save, Download, Upload, AlertCircle, Info, FileText, FileType, ExternalLink, Camera, Sparkles, Loader2 } from 'lucide-react';
 import type { DetVisionProject } from '@/lib/types';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { useView } from '@/components/view-context';
@@ -13,6 +13,8 @@ interface ProjectHeaderProps {
   onExportJSON?: () => void;
   onImportJSON?: (file: File) => void;
   onPrint?: () => void;
+  onGenerateAllInOne?: () => void;
+  isGeneratingAllInOne?: boolean;
   isDirty?: boolean;
 }
 
@@ -22,6 +24,8 @@ export function ProjectHeader({
   onExportJSON, 
   onImportJSON, 
   onPrint,
+  onGenerateAllInOne,
+  isGeneratingAllInOne = false,
   isDirty = false 
 }: ProjectHeaderProps) {
   let viewCtx: any = null;
@@ -153,6 +157,28 @@ export function ProjectHeader({
               <span>Import</span>
             </label>
           </>
+        )}
+
+        {/* Unified "Generate All-In-One Design" Button */}
+        {onGenerateAllInOne && (
+          <button
+            onClick={onGenerateAllInOne}
+            disabled={isGeneratingAllInOne}
+            className="px-3.5 py-1.5 text-xs sm:text-sm font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white rounded-lg hover:opacity-95 transition-all flex items-center gap-1.5 shadow-sm hover:shadow-md disabled:opacity-50"
+            title="Automatically design structures, 3D telemetry AI, camera placements, and safety plan from user requirements"
+          >
+            {isGeneratingAllInOne ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Designing System…</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 fill-current text-yellow-300 animate-pulse" />
+                <span>Generate All-In-One Design</span>
+              </>
+            )}
+          </button>
         )}
 
         {/* Native 3D Camera Map Button */}

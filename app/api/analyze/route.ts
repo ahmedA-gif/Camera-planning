@@ -3,12 +3,12 @@ import { validateAnalysisRequest, validateProject } from '@/lib/validation';
 import { createEmptyProject } from '@/lib/project-factory';
 import type { DetVisionProject, UseCase, TaskType, FeasibilityStatus, Camera, Zone, LayoutElement } from '@/lib/types';
 import { getNvidiaConfig, getNvidiaCompletionsURL } from '@/lib/ai-provider';
-import { detectFacilityProfile, extractDesiredCameraCount } from '@/lib/rule-based-planner';
+import { detectFacilityProfile, extractDesiredCameraCount, parseCameraHardware, calculateReasonedCameraCount } from '@/lib/rule-based-planner';
 
 // Allow AI providers room to answer on serverless platforms
 export const maxDuration = 60;
 
-const SYSTEM_PROMPT = `You are an enterprise computer vision architect. Return ONLY a valid JSON object with these exact keys: "use_cases", "camera_recommendations", "assumptions", "missing_information".
+const SYSTEM_PROMPT = `You are an enterprise computer vision architect. Return ONLY a valid JSON object with these keys: "use_cases", "camera_recommendations", "assumptions", "missing_information", "recommended_camera_count", "recommended_hardware".
 Each item in "use_cases" must have:
 - name (string)
 - description (string)
@@ -21,7 +21,9 @@ Each item in "use_cases" must have:
 - acceptance_criteria (array of strings with at least one measurable criterion)
 - assumptions (array of strings)
 
-camera_recommendations must be an array of practical camera specification and placement suggestions (resolution, focal length/FOV, frame rate, lighting/IP rating).
+recommended_camera_count (integer): If the user explicitly provided a camera count in their prompt/specifications, return that EXACT integer. If the user did NOT specify camera count, calculate and reason the optimal number based on facility area (length × width), ceiling height, layout sections, target detection coverage %, and complexity of tasks.
+recommended_hardware (object): { "brand": string, "resolution": string, "lens_focal_mm": number, "framerate_fps": number, "video_codec": string } matching user specifications or reasoned for their specific task.
+camera_recommendations: array of practical camera specification and placement suggestions (resolution, focal length/FOV, frame rate, lighting/IP rating).
 Do not enclose in markdown ticks if possible, return raw JSON.`;
 
 /** Call NVIDIA NIM API with timeout and error protection */
@@ -104,15 +106,20 @@ function extractJsonFromContent(content: string | null): Record<string, unknown>
  * Synthesizes physical cameras, 3D structures, and zones tailored strictly
  * to the scenario use cases, layout sections, and critical components (never blind 24 cameras).
  */
-function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
-  business_description: string;
-  requirements: string[];
-  critical_components: string[];
-  layout_sections: string[];
-  layout_section_count: number;
-  detection_coverage_target: number;
-  camera_specifications: string;
-}) {
+function attachScenarioPhysicalLayout(
+  project: DetVisionProject, 
+  inputs: {
+    business_description: string;
+    requirements: string[];
+    critical_components: string[];
+    layout_sections: string[];
+    layout_section_count: number;
+    detection_coverage_target: number;
+    camera_specifications: string;
+    reasoned_camera_count?: number;
+  },
+  reasonedCameraCount?: number
+) {
   const text = `${inputs.business_description} ${inputs.requirements.join(' ')} ${inputs.critical_components.join(' ')}`.toLowerCase();
   
   // 1. Detect facility profile & dimensions
@@ -270,13 +277,30 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
   const cameras: Camera[] = [];
   const zones: Zone[] = [];
 
-  const targetCount = extractDesiredCameraCount(text, null);
-  const sections = (inputs.layout_sections || []).filter(s => s && s.trim());
-  const isHik4MP = /4\s*mp|4mp|hikvision|hik\s*vision/i.test(`${inputs.camera_specifications} ${text}`);
-  const defaultResW = isHik4MP ? 2688 : 3840;
-  const defaultResH = isHik4MP ? 1520 : 2160;
+  const hw = parseCameraHardware(inputs.camera_specifications, text);
+  const userRequestedCount = extractDesiredCameraCount(text, null);
+  const explicitReasoned = reasonedCameraCount ?? inputs.reasoned_camera_count;
+  const targetCount = userRequestedCount > 0
+    ? userRequestedCount
+    : (typeof explicitReasoned === 'number' && explicitReasoned > 0)
+      ? Math.min(80, explicitReasoned)
+      : calculateReasonedCameraCount({
+          length_m: L,
+          width_m: W,
+          height_m: H,
+          layout_section_count: inputs.layout_section_count,
+          layout_sections: inputs.layout_sections,
+          use_cases_count: project.use_cases?.length || 1,
+          critical_components_count: inputs.critical_components?.length || 0,
+          detection_coverage_target: inputs.detection_coverage_target,
+          facility_type: profile.facility_type,
+        });
 
-  const useCases = project.use_cases || [];
+  const sections = (inputs.layout_sections || []).filter(s => s && s.trim());
+  const defaultResW = hw.sensorWidthPx;
+  const defaultResH = hw.sensorHeightPx;
+
+  const useCases = (project.use_cases || []).slice(0, targetCount);
 
   useCases.forEach((uc, idx) => {
     const ucLower = `${uc.name} ${uc.description} ${uc.task_type}`.toLowerCase();
@@ -286,7 +310,7 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
     let camX = 0.15 + (idx % 4) * 0.22;
     let camY = 0.20 + Math.floor(idx / 4) * 0.25;
     let camDeg = 90;
-    let camFov = 95;
+    let camFov = hw.hfovDeg;
     let camRange = 0.40;
     let resW = defaultResW;
     let resH = defaultResH;
@@ -296,7 +320,7 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
       camX = 0.12;
       camY = 0.69;
       camDeg = 0;
-      camFov = 106;
+      camFov = Math.max(95, hw.hfovDeg);
       camRange = 0.50;
 
       zones.push({
@@ -312,7 +336,7 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
       camX = 0.45;
       camY = 0.20;
       camDeg = 90;
-      camFov = 65;
+      camFov = Math.min(75, hw.hfovDeg);
       camRange = 0.28;
 
       zones.push({
@@ -328,7 +352,7 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
       camX = 0.65;
       camY = 0.20;
       camDeg = 45;
-      camFov = 45;
+      camFov = Math.min(60, hw.hfovDeg);
       camRange = 0.22;
 
       zones.push({
@@ -344,7 +368,7 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
       camX = 0.78;
       camY = 0.22;
       camDeg = 180;
-      camFov = 75;
+      camFov = hw.hfovDeg;
       camRange = 0.32;
 
       zones.push({
@@ -375,8 +399,8 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
     });
   });
 
-  // If user requested an explicit higher camera count (e.g. 15 cameras), allocate units across layout sections
-  if (targetCount > cameras.length && targetCount <= 60) {
+  // If target count requires more cameras, allocate units systematically across sections
+  if (targetCount > cameras.length && targetCount <= 80) {
     const extraNeeded = targetCount - cameras.length;
     for (let e = 0; e < extraNeeded; e++) {
       const eIdx = cameras.length + 1;
@@ -398,7 +422,7 @@ function attachScenarioPhysicalLayout(project: DetVisionProject, inputs: {
         x: +Math.max(0.06, Math.min(0.94, camX)).toFixed(3),
         y: +Math.max(0.06, Math.min(0.94, camY)).toFixed(3),
         orientation_degrees: camDeg,
-        horizontal_fov_degrees: 95,
+        horizontal_fov_degrees: hw.hfovDeg,
         view_range: 0.45,
         resolution_width: defaultResW,
         resolution_height: defaultResH,
@@ -559,12 +583,14 @@ function synthesizeIntelligentProject(params: {
 
   project.use_cases = useCases;
 
+  const hw = parseCameraHardware(camera_specifications, combinedText);
+
   // Practical camera recommendations based on inputs
   project.camera_recommendations = [
-    camera_specifications || '4K (3840×2160) Ultra-HD resolution @ 30 FPS with wide dynamic range (WDR >= 120dB) for high-contrast indoor/doorway illumination.',
-    `Lens configuration: 2.8mm to 12mm motorized varifocal per section to maintain forensic DORI pixel densities (>= 125 PPM for object detection, >= 250 PPM for identification).`,
-    'Rigging & Infrastructure: Ceiling unistrut or wall brackets at 4.5m mount height with 15°–25° downward tilt to eliminate perspective distortion.',
-    'Electrical & Network: Cat6 shielded twisted pair (STP) with PoE+ (IEEE 802.3at, 30W/port) and managed Gigabit switch with dedicated VLAN for video feeds.',
+    camera_specifications || `${hw.brand} ${hw.resolutionPreset.toUpperCase()} (${hw.sensorWidthPx}×${hw.sensorHeightPx}) @ ${hw.framerateFps} FPS with WDR >= 120dB.`,
+    `Lens configuration: ${hw.focalMm}mm (HFOV ${hw.hfovDeg}°) to satisfy forensic DORI resolution standards.`,
+    `Infrastructure: Dedicated Gigabit PoE+ switch (${hw.bitrateKbps} kbps stream via ${hw.videoCodec}) on an isolated vision VLAN.`,
+    'Rigging & Infrastructure: Ceiling unistrut or adjustable wall brackets with downward tilt to eliminate perspective distortion.',
   ];
 
   project.assumptions = [
@@ -649,15 +675,18 @@ Suggest computer-vision use cases, practical techniques, camera placement/specif
       draft.requirements = requirements || [];
       Object.assign(draft, planningInputs);
 
+      const parsedHw = parsed.recommended_hardware as Record<string, unknown> | undefined;
+      const hwFallback = parseCameraHardware(planningInputs.camera_specifications, business_description);
+
       draft.camera_recommendations = Array.isArray(parsed.camera_recommendations)
         ? parsed.camera_recommendations.filter((v: unknown): v is string => typeof v === 'string')
         : [
-            planningInputs.camera_specifications || '4K Ultra-HD resolution @ 30 FPS with WDR >= 120dB.',
-            'Motorized varifocal 2.8–12mm lens to achieve minimum 125 PPM for target detection.',
-            'PoE+ (802.3at) network switch with Cat6 shielded cabling.',
+            planningInputs.camera_specifications || `${hwFallback.brand} ${hwFallback.resolutionPreset.toUpperCase()} (${hwFallback.sensorWidthPx}×${hwFallback.sensorHeightPx}) @ ${hwFallback.framerateFps} FPS with WDR >= 120dB.`,
+            `Lens configuration: ${hwFallback.focalMm}mm (HFOV ${hwFallback.hfovDeg}°) to achieve DORI resolution standards.`,
+            `Dedicated Gigabit PoE+ (${hwFallback.bitrateKbps} kbps ${hwFallback.videoCodec}) infrastructure on isolated VLAN.`,
           ];
 
-      draft.use_cases = (parsed.use_cases as Record<string, unknown>[]).slice(0, 4).map((item) => {
+      draft.use_cases = (parsed.use_cases as Record<string, unknown>[]).slice(0, 8).map((item) => {
         const candidateTechniques = Array.isArray(item.candidate_techniques) && item.candidate_techniques.length > 0
           ? item.candidate_techniques.filter((v: unknown): v is string => typeof v === 'string')
           : ['YOLOv11 Real-Time Detector', 'ByteTrack Multi-Object Tracker'];
@@ -690,7 +719,11 @@ Suggest computer-vision use cases, practical techniques, camera placement/specif
         ? parsed.missing_information.filter((v: unknown): v is string => typeof v === 'string')
         : ['Truss mounting heights and ceiling clearance obstacles.', 'Exact conveyor speeds and package dimension bounds.'];
 
-      attachScenarioPhysicalLayout(draft, planningInputs);
+      const reasonedCount = typeof parsed.recommended_camera_count === 'number' && parsed.recommended_camera_count > 0
+        ? parsed.recommended_camera_count
+        : undefined;
+
+      attachScenarioPhysicalLayout(draft, planningInputs, reasonedCount);
 
       project = validateProject(draft);
     } else {

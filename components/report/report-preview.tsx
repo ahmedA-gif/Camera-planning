@@ -23,6 +23,11 @@ import {
 } from 'lucide-react';
 import type { DetVisionProject, UseCase, Camera, Zone } from '@/lib/types';
 import { getNodeCategoryInfo } from '@/lib/workflow-generator';
+import { 
+  generateSiteTelemetryMapSvg, 
+  generatePipelineArchitectureSvg, 
+  generateCoverageTelemetryMetricsSvg 
+} from '@/lib/report-diagrams';
 
 interface ReportPreviewProps {
   project: DetVisionProject;
@@ -110,12 +115,16 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
       <div className="w-48 shrink-0 bg-white border-r border-border max-lg:w-full max-lg:border-r-0 max-lg:border-b">
         <nav className="flex flex-col gap-1 overflow-y-auto p-4 max-lg:flex-row max-lg:overflow-x-auto max-lg:overflow-y-hidden">
           <a href="#overview" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Overview</a>
+          <a href="#telemetry-map" className="block flex-none px-3 py-2 text-sm font-semibold text-blue-700 bg-blue-50/80 hover:bg-blue-100 rounded transition-colors flex items-center gap-1.5">🗺️ Site Telemetry Map</a>
+          <a href="#pipeline-architecture" className="block flex-none px-3 py-2 text-sm font-semibold text-teal-700 bg-teal-50/80 hover:bg-teal-100 rounded transition-colors flex items-center gap-1.5">⚡ Vision Pipeline</a>
+          <a href="#optical-telemetry" className="block flex-none px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100 rounded transition-colors flex items-center gap-1.5">📊 3D Telemetry Sizing</a>
           <a href="#objectives" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Objectives</a>
           <a href="#use-cases" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Use Cases</a>
           <a href="#techniques" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Techniques</a>
           <a href="#cameras" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Cameras</a>
           <a href="#installation-guide" className="block flex-none px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded transition-colors">Field Installation</a>
           <a href="#developer-guide" className="block flex-none px-3 py-2 text-sm font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded transition-colors">Developer Specs</a>
+          <a href="#safety-plan" className="block flex-none px-3 py-2 text-sm font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 rounded transition-colors flex items-center gap-1.5">🛡️ Safety Interlocks</a>
           <a href="#zones" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Zones</a>
           <a href="#workflow" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Workflow</a>
           <a href="#assumptions" className="block flex-none px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors">Assumptions</a>
@@ -206,6 +215,66 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </div>
               <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Camera assignment coverage: {project.zones.length ? Math.round(project.zones.filter(zone => zone.camera_ids.length > 0).length / project.zones.length * 100) : 0}% of configured zones have a camera assigned. This is an assignment check, not a measured field-of-view estimate.</p>
             </div>
+          </section>
+
+          {/* VISUAL SITE TELEMETRY MAP */}
+          <section id="telemetry-map" className="p-8 border-b border-border bg-slate-50/50">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900">
+                <Building2 className="w-5 h-5 text-blue-600" />
+                Visual 2D/3D Site Telemetry &amp; Camera Coverage Blueprint
+              </h2>
+              <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-blue-100 text-blue-800 border border-blue-200">
+                RAYCASTING TWIN
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Vector architectural map rendering all physical 3D structures, multi-building zones, camera positions, pan angles, and directional optical FOV coverage cones.
+            </p>
+            <div 
+              className="overflow-x-auto my-2 rounded-xl border border-slate-200 bg-white p-2 shadow-xs flex justify-center"
+              dangerouslySetInnerHTML={{ __html: generateSiteTelemetryMapSvg(project, { width: 840, height: 460 }) }} 
+            />
+          </section>
+
+          {/* SYSTEM PIPELINE ARCHITECTURE */}
+          <section id="pipeline-architecture" className="p-8 border-b border-border">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900">
+                <GitBranch className="w-5 h-5 text-teal-600" />
+                End-to-End Vision AI Pipeline Architecture
+              </h2>
+              <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-teal-100 text-teal-800 border border-teal-200">
+                REAL-TIME EDGE LOOP (≤35ms)
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              4-Stage high-throughput computer vision pipeline engineered for NVIDIA DeepStream / TensorRT with deterministic latency budget (≤35ms).
+            </p>
+            <div 
+              className="overflow-x-auto my-2 rounded-xl border border-slate-200 bg-white p-2 shadow-xs flex justify-center"
+              dangerouslySetInnerHTML={{ __html: generatePipelineArchitectureSvg(project, { width: 840, height: 210 }) }} 
+            />
+          </section>
+
+          {/* 3D OPTICAL COVERAGE TELEMETRY & HARDWARE SIZING */}
+          <section id="optical-telemetry" className="p-8 border-b border-border bg-slate-50/50">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-slate-900">
+                <Target className="w-5 h-5 text-indigo-600" />
+                3D Optical Coverage Telemetry &amp; Hardware Sizing Matrix
+              </h2>
+              <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200">
+                IEC 62676-4 DORI
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Optical resolution pyramid, coverage guarantees, 30-day NVR storage calculation, PoE power budgeting, and deterministic inference latency telemetry.
+            </p>
+            <div 
+              className="overflow-x-auto my-2 rounded-xl border border-slate-200 bg-white p-2 shadow-xs flex justify-center"
+              dangerouslySetInnerHTML={{ __html: generateCoverageTelemetryMetricsSvg(project, { width: 840, height: 260 }) }} 
+            />
           </section>
 
           {/* Business Objectives */}
@@ -1044,6 +1113,39 @@ msgconv + msgbroker: MQTT / Kafka Event Publishing`}
                 <p className="text-muted-foreground text-center py-8">No acceptance criteria defined yet.</p>
               )}
             </div>
+          </section>
+
+          {/* Safety Plan & Interlocks */}
+          <section id="safety-plan" className="p-8 border-b border-border bg-slate-50/50">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-900">
+                <Shield className="w-6 h-6 text-rose-600" />
+                Token-Free Safety Plan &amp; OSHA/ISO Escalation Matrix
+              </h2>
+              <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-rose-100 text-rose-800 border border-rose-200">
+                OSHA 1910 / ISO 13849
+              </span>
+            </div>
+            {project.safety_plan?.sections ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.entries(project.safety_plan.sections).map(([key, val]) => (
+                  <div key={key} className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2 text-rose-700">
+                      {key.replace(/_/g, ' ')}
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">
+                      {String(val)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-6 bg-white border border-dashed border-slate-200 rounded-xl text-center">
+                <p className="text-sm text-muted-foreground">
+                  Safety plan generated with this project. Click &ldquo;Generate All-In-One Design&rdquo; to auto-refresh all OSHA/ISO event matrices.
+                </p>
+              </div>
+            )}
           </section>
 
           {/* Project-specific next steps */}

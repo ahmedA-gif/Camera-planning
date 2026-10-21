@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { UserButton } from '@clerk/nextjs';
-import { Save, Download, Upload, AlertCircle, Info, FileText, FileType, ExternalLink } from 'lucide-react';
+import { Save, Download, Upload, AlertCircle, Info, FileText, FileType, ExternalLink, Camera } from 'lucide-react';
 import type { DetVisionProject } from '@/lib/types';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
+import { useView } from '@/components/view-context';
 
 interface ProjectHeaderProps {
   project: DetVisionProject | null;
@@ -23,6 +24,12 @@ export function ProjectHeader({
   onPrint,
   isDirty = false 
 }: ProjectHeaderProps) {
+  let viewCtx: any = null;
+  try {
+    viewCtx = useView();
+  } catch {
+    // optional outside provider
+  }
   const [reportError, setReportError] = useState<string | null>(null);
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -148,17 +155,15 @@ export function ProjectHeader({
           </>
         )}
 
-        {/* Coverage Planner Tool */}
-        <a
-          href="/camera-coverage-planner.html"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="px-3 py-1.5 text-sm font-medium bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors flex items-center gap-1 shadow-sm"
-          title="Open Large-Scale Camera Coverage Planner v3 (Supports 70+ cameras & 8 mount types)"
+        {/* Native 3D Camera Map Button */}
+        <button
+          onClick={() => viewCtx?.setActiveView('camera-map')}
+          className="px-3 py-1.5 text-sm font-medium bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors flex items-center gap-1.5 shadow-sm"
+          title="Open Native 3D Camera Map & Coverage Planner"
         >
-          <ExternalLink className="w-4 h-4" />
-          <span>Planner v3</span>
-        </a>
+          <Camera className="w-4 h-4" />
+          <span>Camera Map</span>
+        </button>
 
         {/* Generate PDF Report */}
         <button

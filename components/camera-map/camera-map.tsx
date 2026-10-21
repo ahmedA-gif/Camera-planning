@@ -44,11 +44,12 @@ export function CameraMap({ project, projects, onUpdate, onProjectSelect }: Came
       <div className="flex-1 min-h-0">
         <CameraCoveragePlanner
           project={project}
-          onApplyToProject={(cams, structs, dims) => {
+          onApplyToProject={(cams, structs, dims, wf) => {
             onUpdate({
               cameras: cams,
               ...(structs ? { structure: structs } : {}),
               ...(dims || {}),
+              ...(wf ? { workflow: wf } : {}),
             });
           }}
         />

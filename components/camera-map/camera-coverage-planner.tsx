@@ -47,9 +47,15 @@ import {
   Cpu,
   Aperture,
   Disc,
-  RefreshCw
+  RefreshCw,
+  GitBranch,
+  Network,
+  Workflow as WorkflowIcon,
+  ExternalLink,
 } from 'lucide-react';
-import type { Camera as ProjectCamera, DetVisionProject } from '@/lib/types';
+import type { Camera as ProjectCamera, DetVisionProject, Workflow } from '@/lib/types';
+import { useView } from '@/components/view-context';
+import { generateWorkflowFromUseCases } from '@/lib/workflow-generator';
 import {
   computeCoverage,
   optimizeLayout,
@@ -97,21 +103,50 @@ import { detectFacilityProfile, extractDesiredCameraCount } from '@/lib/rule-bas
 
 interface CameraCoveragePlannerProps {
   project?: DetVisionProject;
-  onApplyToProject?: (cameras: ProjectCamera[], structure?: any[], dimensions?: { facility_width_m: number; facility_length_m: number; facility_height_m: number; facility_type: string }) => void;
+  onApplyToProject?: (
+    cameras: ProjectCamera[], 
+    structure?: any[], 
+    dimensions?: { facility_width_m: number; facility_length_m: number; facility_height_m: number; facility_type: string },
+    workflow?: Workflow
+  ) => void;
   onClose?: () => void;
 }
 
 export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: CameraCoveragePlannerProps) {
+  let viewCtx: any = null;
+  try {
+    viewCtx = useView();
+  } catch {
+    // optional outside provider
+  }
+
   // Infer initial configuration from user scenario / project brief dynamically
   const initialFacility = useMemo(() => {
-    const text = project?.business_description || '';
-    const prof = detectFacilityProfile(text);
-    const count = project?.cameras?.length && project.cameras.length > 0
-      ? project.cameras.length
-      : (project?.use_cases?.length ? Math.max(2, project.use_cases.length) : extractDesiredCameraCount(text));
+    const allUserText = [
+      project?.business_description || '',
+      project?.camera_specifications || '',
+      ...(project?.requirements || []),
+      ...(project?.critical_components || []),
+      ...(project?.layout_sections || []),
+    ].join(' ');
+
+    const prof = detectFacilityProfile(allUserText);
+    const userRequestedCount = extractDesiredCameraCount(allUserText, null);
+
+    // Strictly prioritize user's explicit requirement/input:
+    let count = 15;
+    if (userRequestedCount > 0) {
+      count = userRequestedCount;
+    } else if (project?.cameras && project.cameras.length > 0) {
+      count = project.cameras.length;
+    } else if (project?.use_cases && project.use_cases.length > 0) {
+      count = Math.max(2, project.use_cases.length);
+    } else {
+      count = 4;
+    }
 
     // Detect target inspection mode based on scenario requirements / keywords
-    const lower = text.toLowerCase();
+    const lower = allUserText.toLowerCase();
     let initialMode: DoriMode = 'recognize';
     if (/facial|identity|plate|lpr|anpr|biometric/i.test(lower)) {
       initialMode = 'identify';
@@ -124,8 +159,10 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     }
 
     // Map to supported FacilityPresetType
-    let mappedType: FacilityPresetType = 'logistics_warehouse';
-    if (/airport|terminal|baggage|flight|tsa/i.test(lower)) {
+    let mappedType: FacilityPresetType = 'manufacturing_plant';
+    if (/chemical|petrochemical|oil|gas|refinery|filling|hazard/i.test(lower)) {
+      mappedType = 'manufacturing_plant';
+    } else if (/airport|terminal|baggage|flight|tsa/i.test(lower)) {
       mappedType = 'airport_terminal';
     } else if (/hospital|clinic|patient|triage|nurse|healthcare/i.test(lower) || prof.facility_type === 'healthcare') {
       mappedType = 'hospital_clinic';
@@ -139,8 +176,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       mappedType = 'perimeter_security';
     } else if (/office|corporate|desk|cubicle|conference/i.test(lower)) {
       mappedType = 'corporate_office';
-    } else if (/manufactur|factory|plant|assembly|conveyor|robot|weld/i.test(lower) || prof.facility_type === 'factory') {
-      mappedType = 'manufacturing_plant';
+    } else if (/warehouse|distribution|logistics|depot/i.test(lower)) {
+      mappedType = 'logistics_warehouse';
     }
 
     const dynLength = project?.facility_length_m || Math.max(10, Math.round(prof.length));
@@ -155,7 +192,18 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       mode: initialMode,
       facilityType: (project?.facility_type as FacilityPresetType) || mappedType,
     };
-  }, [project?.business_description, project?.cameras?.length, project?.facility_width_m, project?.facility_length_m, project?.facility_height_m, project?.facility_type]);
+  }, [
+    project?.business_description,
+    project?.camera_specifications,
+    project?.requirements,
+    project?.critical_components,
+    project?.layout_sections,
+    project?.cameras?.length,
+    project?.facility_width_m,
+    project?.facility_length_m,
+    project?.facility_height_m,
+    project?.facility_type
+  ]);
 
   // Global site specifications
   const [bayLength, setBayLength] = useState(initialFacility.length);
@@ -261,7 +309,17 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const [standardView, setStandardView] = useState<'dori' | 'iec_2025'>('dori');
 
   // Camera hardware specifications
-  const [cameraModel, setCameraModel] = useState<string>('4MP Wide-Dynamic AI Dome');
+  const initialCameraBrand = useMemo(() => {
+    const allText = `${project?.camera_specifications || ''} ${project?.business_description || ''}`;
+    if (/hikvision|hik\s*vision/i.test(allText)) {
+      return 'Hikvision 4MP IP Camera (DS-2CD2143G2-I / DS-2CD2043G2-I)';
+    }
+    if (/dahua/i.test(allText)) return 'Dahua 4MP WizSense IP Camera';
+    if (/axis/i.test(allText)) return 'Axis P32 4MP Network Camera';
+    return '4MP Wide-Dynamic AI Dome';
+  }, [project?.camera_specifications, project?.business_description]);
+
+  const [cameraModel, setCameraModel] = useState<string>(initialCameraBrand);
   const [resolutionPreset, setResolutionPreset] = useState<string>('4mp');
   const [sensorWidthPx, setSensorWidthPx] = useState<number>(2688);
   const [sensorHeightPx, setSensorHeightPx] = useState<number>(1520);
@@ -272,6 +330,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const [minLux, setMinLux] = useState<number>(0.005);
   const [irRangeM, setIrRangeM] = useState<number>(30);
   const [savedToast, setSavedToast] = useState<boolean>(false);
+  const [showDiagramModal, setShowDiagramModal] = useState<boolean>(false);
+  const [generatedDiagram, setGeneratedDiagram] = useState<any>(null);
 
   // Camera lens specifications
   const [lens, setLens] = useState<LensSpec>({
@@ -325,10 +385,11 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     obstacles,
   }), [bayLength, bayWidth, mountHeight, targetHeight, marginPct, obstacles]);
 
-  // Initialize camera poses: dynamically from project.cameras if present, else architecture-aware distribution
+  // Initialize camera poses: strictly prioritizing user-specified camera count
   const [poses, setPoses] = useState<CameraPose[]>(() => {
-    if (project?.cameras && project.cameras.length > 0) {
-      return project.cameras.map((c, i) => {
+    const targetCams = initialFacility.count;
+    if (project?.cameras && project.cameras.length >= targetCams) {
+      return project.cameras.slice(0, targetCams).map((c, i) => {
         const x = Math.max(0.5, Math.min(initialFacility.length - 0.5, c.x * initialFacility.length));
         const y = Math.max(0.5, Math.min(initialFacility.width - 0.5, c.y * initialFacility.width));
         const panDeg = Math.round(c.orientation_degrees || 0);
@@ -360,9 +421,9 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       ranges: { detect: 88, observe: 35.2, recognize: 17.6, identify: 8.8 },
     };
     if (initialObstacles.length > 0) {
-      return architectureAwareLayout(initialObstacles, initialSite, defaultLens, initialFacility.mode, initialFacility.count);
+      return architectureAwareLayout(initialObstacles, initialSite, defaultLens, initialFacility.mode, targetCams);
     }
-    return defaultLayout(initialFacility.count, initialSite, defaultLens, initialFacility.mode);
+    return defaultLayout(targetCams, initialSite, defaultLens, initialFacility.mode);
   });
 
   // UI state
@@ -421,14 +482,39 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       if (parsedObstacles.length > 0) {
         setObstacles(parsedObstacles);
       }
-    }
-
-    // 3. Synchronize camera count and poses if project has cameras
-    if (project.cameras && project.cameras.length > 0) {
+    } else if (project.layout_sections && project.layout_sections.length > 0 && obstacles.length === 0) {
+      // Auto-build physical structure directly from user layout sections (e.g. 4 buildings)
       const L = project.facility_length_m || bayLength;
       const W = project.facility_width_m || bayWidth;
       const H = project.facility_height_m || mountHeight;
-      const newPoses: CameraPose[] = project.cameras.map((c, i) => {
+      const secCount = project.layout_sections.length;
+      const autoSecObs: Obstacle[] = project.layout_sections.map((sec, idx) => {
+        const cleanName = sec.replace(/^[0-9.:\-\s]+/, '').trim();
+        const secW = Math.max(4, Math.round((L / secCount) * 0.75));
+        const secD = Math.max(3, Math.round(W * 0.40));
+        const posX = 0.05 * L + idx * ((0.85 * L - secW) / Math.max(1, secCount - 1));
+        const posY = idx % 2 === 0 ? 0.15 * W : 0.45 * W;
+        return {
+          id: `sec-${idx + 1}`,
+          name: cleanName,
+          x: +posX.toFixed(1),
+          y: +posY.toFixed(1),
+          w: secW,
+          d: secD,
+          h: Math.min(H, 3.2),
+          type: /filling|drum|chemical/i.test(cleanName) ? 'hazard' : /workshop|tool|lathe/i.test(cleanName) ? 'machine' : /loading|dock/i.test(cleanName) ? 'dock' : 'partition',
+        };
+      });
+      setObstacles(autoSecObs);
+    }
+
+    // 3. Synchronize camera count and poses strictly respecting user specification
+    const targetCams = initialFacility.count;
+    if (project.cameras && project.cameras.length >= targetCams) {
+      const L = project.facility_length_m || bayLength;
+      const W = project.facility_width_m || bayWidth;
+      const H = project.facility_height_m || mountHeight;
+      const newPoses: CameraPose[] = project.cameras.slice(0, targetCams).map((c, i) => {
         const x = Math.max(0.5, Math.min(L - 0.5, c.x * L));
         const y = Math.max(0.5, Math.min(W - 0.5, c.y * W));
         const panDeg = Math.round(c.orientation_degrees || 0);
@@ -446,8 +532,22 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       });
       setPoses(newPoses);
       setCameraCount(newPoses.length);
+    } else if (targetCams > 0 && poses.length !== targetCams) {
+      const curSite: SiteSpec = {
+        length: project.facility_length_m || bayLength,
+        width: project.facility_width_m || bayWidth,
+        mountHeight: project.facility_height_m || mountHeight,
+        targetHeight,
+        marginPct,
+        obstacles,
+      };
+      const newPoses = obstacles.length > 0
+        ? architectureAwareLayout(obstacles, curSite, lens, mode, targetCams)
+        : defaultLayout(targetCams, curSite, lens, mode);
+      setPoses(newPoses);
+      setCameraCount(newPoses.length);
     }
-  }, [project?.id, project?.updated_at, project?.cameras, project?.structure]);
+  }, [project?.id, project?.updated_at, project?.cameras, project?.structure, initialFacility.count]);
 
   // Update camera count and re-distribute (architecture-aware if obstacles exist)
   const handleCameraCountChange = (count: number) => {
@@ -749,11 +849,17 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     setMode(task.doriEquivalent);
   };
 
-  // Run deterministic greedy set-cover optimizer (0 LLM tokens, optimal >= 95% coverage)
+  // Run deterministic greedy set-cover optimizer strictly respecting user-specified camera count
   const handleOptimize = () => {
     setIsOptimizing(true);
     setTimeout(() => {
-      const opt = optimizeLayout(lens, site, mode, { targetPct: 95, maxCameras: 60 });
+      const targetReqCount = cameraCount || initialFacility.count;
+      const opt = optimizeLayout(lens, site, mode, { 
+        targetPct: project?.detection_coverage_target || 95, 
+        maxCameras: Math.max(60, targetReqCount),
+        minCameras: targetReqCount,
+        exactCameras: targetReqCount
+      });
       if (opt.poses.length > 0) {
         setPoses(opt.poses);
         setCameraCount(opt.poses.length);
@@ -761,6 +867,77 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       }
       setIsOptimizing(false);
     }, 40);
+  };
+
+  // Build pipeline architecture diagram based on user requirements and LLM reasoning
+  const handleBuildDiagram = () => {
+    const cameraList = poses.map(p => ({
+      id: `CAM-${String(p.id).padStart(2, '0')}`,
+      name: `CAM-${String(p.id).padStart(2, '0')} (${p.mount.toUpperCase()})`,
+    }));
+
+    const wf = generateWorkflowFromUseCases(project?.use_cases || [], cameraList);
+    setGeneratedDiagram({
+      workflow: wf,
+      cameraCount: poses.length,
+      modelCount: (project?.use_cases || []).length || 4,
+      fps: framerateFps,
+      resolution: `${sensorWidthPx}×${sensorHeightPx}`,
+      codec: videoCodec,
+      edgeDevice: 'NVIDIA Vision AI Accelerator / Jetson IGX Orin Enterprise',
+      generatedAt: new Date().toLocaleTimeString(),
+    });
+    setShowDiagramModal(true);
+
+    if (onApplyToProject) {
+      handleApplyToCanvas();
+      onApplyToProject(
+        poses.map((p, idx) => {
+          const normX = Math.max(0.02, Math.min(0.98, p.x / bayLength));
+          const normY = Math.max(0.02, Math.min(0.98, p.y / bayWidth));
+          const st = result.cameras[idx];
+          return {
+            id: crypto.randomUUID(),
+            name: `CAM-${String(p.id).padStart(2, '0')} (${p.mount.toUpperCase()})`,
+            x: normX,
+            y: normY,
+            orientation_degrees: (p.panDeg + 360) % 360,
+            horizontal_fov_degrees: lens.hfovDeg,
+            view_range: Math.min(0.9, Math.max(0.15, (st?.effectiveRange || 20) / bayLength)),
+            resolution_width: sensorWidthPx,
+            resolution_height: sensorHeightPx,
+            status: 'planned',
+            target_area: `Position ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m`,
+            assigned_use_case_ids: [],
+            rationale: `${cameraModel} · Codec: ${videoCodec} @ ${framerateFps}fps`
+          };
+        }),
+        obstacles.map(o => ({
+          id: o.id,
+          name: o.name,
+          type: 'obstacle' as const,
+          obstacle_type: o.type,
+          x_m: o.x,
+          y_m: o.y,
+          width_m: o.w,
+          depth_m: o.d,
+          height_m: o.h,
+          points: [
+            { x: o.x / bayLength, y: o.y / bayWidth },
+            { x: (o.x + o.w) / bayLength, y: o.y / bayWidth },
+            { x: (o.x + o.w) / bayLength, y: (o.y + o.d) / bayWidth },
+            { x: o.x / bayLength, y: (o.y + o.d) / bayWidth },
+          ]
+        })),
+        {
+          facility_width_m: bayLength,
+          facility_length_m: bayWidth,
+          facility_height_m: mountHeight,
+          facility_type: activeFacilityPreset !== 'custom' ? activeFacilityPreset : (initialFacility.facilityType || 'custom'),
+        },
+        wf
+      );
+    }
   };
 
   // Refocus lens (adjust focal length & re-derive HFOV and DORI ranges)
@@ -1457,10 +1634,19 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
             onClick={handleOptimize}
             disabled={isOptimizing}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 transition-colors shadow-xs disabled:opacity-50"
-            title="Automatically solve the Art Gallery problem for >= 95% coverage with minimum cameras"
+            title={`Optimize positioning, pan angles, and tilts for all ${poses.length} user-specified cameras across site geometry`}
           >
             <Sparkles className="w-3.5 h-3.5 fill-current" />
-            {isOptimizing ? 'Optimizing…' : 'Auto-Solve (≥95%)'}
+            {isOptimizing ? 'Optimizing…' : `Auto-Solve (${poses.length} Cams)`}
+          </button>
+
+          <button
+            onClick={handleBuildDiagram}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 text-white font-semibold text-xs hover:bg-indigo-700 transition-colors shadow-xs"
+            title="Automatically build pipeline architecture diagram based on user requirements and LLM reasoning"
+          >
+            <GitBranch className="w-3.5 h-3.5" />
+            Diagram Builder
           </button>
 
           {onApplyToProject && (
@@ -3556,6 +3742,228 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
         </div>
 
       </div>
+
+      {/* Interactive System Pipeline Architecture Diagram Modal */}
+      {showDiagramModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-border w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-slate-50/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600/10 border border-indigo-200 flex items-center justify-center text-indigo-600">
+                  <GitBranch className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                    System Architecture & Vision Pipeline Builder
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      Zero Hardware Reduction
+                    </span>
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Deterministic pipeline constructed from user requirements ({poses.length} Camera Feeds · NVIDIA Vision AI Inference · SCADA & Safety Interlocks)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDiagramModal(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-200/80 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content - Diagram Stages */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Telemetry & Spec Summary Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs">
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-bold">Inbound Streams</span>
+                  <span className="font-bold text-slate-900 font-mono">{poses.length}x IP Cameras</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-bold">Stream Resolution</span>
+                  <span className="font-bold text-slate-900 font-mono">{sensorWidthPx}×{sensorHeightPx} @ {framerateFps}fps</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-bold">Video Compression</span>
+                  <span className="font-bold text-slate-900 font-mono">{videoCodec} (PoE+ Gigabit)</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block text-[10px] uppercase font-bold">Edge AI Compute</span>
+                  <span className="font-bold text-indigo-700 font-mono">NVIDIA Vision AI</span>
+                </div>
+              </div>
+
+              {/* End-to-End Visual Architecture Diagram */}
+              <div className="space-y-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  End-to-End Vision AI Architecture Pipeline
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  {/* Stage 1: Ingestion */}
+                  <div className="bg-slate-50/80 border border-slate-200 rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-6 h-6 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                        1
+                      </div>
+                      <span className="font-bold text-xs text-slate-900">Ingestion Layer</span>
+                    </div>
+                    <div className="space-y-2 flex-1 text-xs">
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-blue-600" />
+                          <span>{poses.length}x {cameraModel}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          RTSP over Gigabit PoE+ switch. Distributed across all facility buildings.
+                        </p>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <Network className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Frame Sampling & Decode</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Hardware NVDEC/NVJPG decoding with 15–30 FPS adaptive rate.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stage 2: Preprocessing */}
+                  <div className="bg-indigo-50/40 border border-indigo-200/80 rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-6 h-6 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                        2
+                      </div>
+                      <span className="font-bold text-xs text-slate-900">Edge Preprocessing</span>
+                    </div>
+                    <div className="space-y-2 flex-1 text-xs">
+                      <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <Cpu className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>TensorRT Pipeline</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Letterboxing, FP16/INT8 normalization, and optical batch synchronization.
+                        </p>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-indigo-100">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Spatial ROI Cropping</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Dynamic cropping around filling nozzles, berms, and ingress gates.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stage 3: Neural Inference */}
+                  <div className="bg-purple-50/40 border border-purple-200/80 rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-6 h-6 rounded-md bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs">
+                        3
+                      </div>
+                      <span className="font-bold text-xs text-slate-900">Neural Inference</span>
+                    </div>
+                    <div className="space-y-2 flex-1 text-xs">
+                      <div className="bg-white p-2.5 rounded-lg border border-purple-100">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Chemical Spill & Leak</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Visual anomaly segmentation on secondary containment sumps.
+                        </p>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-purple-100">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Drum Fill Level & OCR</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          PaddleOCR for lot codes + liquid meniscus height estimation.
+                        </p>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-purple-100">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <Shield className="w-3.5 h-3.5 text-purple-600" />
+                          <span>PPE & Vehicle Safety</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Splash suit, respirator, and forklift collision trajectory tracking.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stage 4: Outputs & Interlocks */}
+                  <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-xl p-4 flex flex-col">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-6 h-6 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                        4
+                      </div>
+                      <span className="font-bold text-xs text-slate-900">Safety & Outputs</span>
+                    </div>
+                    <div className="space-y-2 flex-1 text-xs">
+                      <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>SCADA / PLC Interlock</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Modbus / OPC-UA emergency valve cutoff on spill confirmation.
+                        </p>
+                      </div>
+                      <div className="bg-white p-2.5 rounded-lg border border-emerald-100">
+                        <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>VMS Security Matrix</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Security operations center alert triggers & audit event logging.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between px-6 py-3.5 border-t border-border bg-slate-50 flex-wrap gap-3">
+              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Architecture diagram automatically synchronized with project blueprint.</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                {viewCtx && (
+                  <button
+                    onClick={() => {
+                      setShowDiagramModal(false);
+                      viewCtx.setActiveView('workflow');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold text-xs hover:bg-indigo-700 transition-colors shadow-xs"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open in Workflow Editor
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowDiagramModal(false)}
+                  className="px-4 py-2 rounded-lg border border-border bg-white text-xs font-semibold hover:bg-muted text-slate-700 transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

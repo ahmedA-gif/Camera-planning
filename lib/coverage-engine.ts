@@ -976,13 +976,17 @@ export function computeCoverage(
 /* Optimizer — greedy set cover (ln(n)-approximation of the ILP)        */
 /* ------------------------------------------------------------------ */
 
-export interface OptimizeOptions { targetPct: number; maxCameras: number }
+export interface OptimizeOptions {
+  targetPct: number;
+  maxCameras: number;
+  minCameras?: number;
+  exactCameras?: number;
+}
 export interface OptimizeResult { poses: CameraPose[]; achievedPct: number; candidates: number }
 
 /**
- * Minimise camera count subject to coverage ≥ target:
- *   min Σ x_j   s.t.  Σ_{j : i ∈ V_j} x_j ≥ 1  for ≥ target·|U| cells,  x_j ∈ {0,1}
- * Solved with greedy max-marginal-gain selection followed by a redundancy-pruning pass.
+ * Minimise camera count subject to coverage ≥ target, while strictly respecting
+ * user-specified exactCameras or minCameras if provided in user requirements.
  */
 export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, opts: OptimizeOptions): OptimizeResult {
   const L = site.length, W = site.width, H = site.mountHeight, ht = site.targetHeight;
@@ -1001,7 +1005,7 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
 
   // ---- candidate generation ----
   const cand: Omit<CameraPose, 'id'>[] = [];
-  const step = clamp(R * 0.4, 1, Math.max(1, L / 6));
+  const step = clamp(R * 0.4, 1, Math.max(1, L / 8));
   const e = 0.05;
   const wallTilt = aimTilt(H, ht, 0.55 * R);
   for (let x = step / 2; x < L; x += step) {
@@ -1026,9 +1030,23 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
 
   // Inject architecture-aware candidates (aisles, machine perimeters, dock portals)
   if (site.obstacles && site.obstacles.length > 0) {
-    const archPoses = architectureAwareLayout(site.obstacles, site, lens, mode, opts.maxCameras);
+    const archPoses = architectureAwareLayout(site.obstacles, site, lens, mode, Math.max(opts.maxCameras, (opts.exactCameras || 15) * 2));
     for (const ap of archPoses) {
       cand.push({ mount: ap.mount, x: ap.x, y: ap.y, z: ap.z, panDeg: ap.panDeg, tiltDeg: ap.tiltDeg });
+    }
+  }
+
+  // Ensure plenty of candidates if exactCameras is required
+  const targetRequired = opts.exactCameras || opts.minCameras || 0;
+  if (cand.length < targetRequired * 2) {
+    const gridCols = Math.max(3, Math.ceil(Math.sqrt(targetRequired * 2)));
+    const gridRows = Math.max(2, Math.ceil((targetRequired * 2) / gridCols));
+    for (let r = 0; r < gridRows; r++) {
+      for (let c = 0; c < gridCols; c++) {
+        const gx = ((c + 0.5) / gridCols) * L;
+        const gy = ((r + 0.5) / gridRows) * W;
+        cand.push({ mount: 'roof-tilt', x: gx, y: gy, z: H, panDeg: (c * 60 + r * 90) % 360, tiltDeg: 28 });
+      }
     }
   }
 
@@ -1047,33 +1065,45 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
     return Int32Array.from(hits);
   });
 
-  // ---- greedy selection ----
+  // ---- greedy selection respecting user-specified camera count ----
   const coveredBy = new Uint16Array(U);
   let covered = 0;
   const chosen: number[] = [];
   const goal = Math.ceil((clamp(opts.targetPct, 1, 100) / 100) * U);
-  while (covered < goal && chosen.length < opts.maxCameras) {
-    let bestIdx = -1, bestGain = 0;
+
+  while ((covered < goal || chosen.length < targetRequired) && chosen.length < opts.maxCameras && chosen.length < cand.length) {
+    let bestIdx = -1, bestGain = -1;
     for (let c = 0; c < sets.length; c++) {
+      if (chosen.includes(c)) continue;
       const s = sets[c];
-      if (s.length <= bestGain) continue;
       let g = 0;
-      for (let k = 0; k < s.length; k++) if (coveredBy[s[k]] === 0) g++;
+      for (let k = 0; k < s.length; k++) {
+        if (coveredBy[s[k]] === 0) g += 3;
+        else if (coveredBy[s[k]] === 1) g += 1; // Multi-angle coverage bonus
+      }
       if (g > bestGain) { bestGain = g; bestIdx = c; }
+    }
+    if (bestIdx < 0) {
+      for (let c = 0; c < cand.length; c++) {
+        if (!chosen.includes(c)) { bestIdx = c; break; }
+      }
     }
     if (bestIdx < 0) break;
     chosen.push(bestIdx);
     for (const k of sets[bestIdx]) { if (coveredBy[k] === 0) covered++; coveredBy[k]++; }
   }
 
-  // ---- prune redundant cameras (every cell they see is seen by another) ----
-  for (let i = chosen.length - 1; i >= 0; i--) {
-    const s = sets[chosen[i]];
-    let unique = 0;
-    for (const k of s) if (coveredBy[k] === 1) unique++;
-    if (unique === 0 || covered - unique >= goal) {
-      for (const k of s) { coveredBy[k]--; if (coveredBy[k] === 0) covered--; }
-      chosen.splice(i, 1);
+  // ---- prune redundant cameras (NEVER prune below user's targetRequired count) ----
+  if (!opts.exactCameras) {
+    for (let i = chosen.length - 1; i >= 0; i--) {
+      if (chosen.length <= targetRequired) break;
+      const s = sets[chosen[i]];
+      let unique = 0;
+      for (const k of s) if (coveredBy[k] === 1) unique++;
+      if (unique === 0 || covered - unique >= goal) {
+        for (const k of s) { coveredBy[k]--; if (coveredBy[k] === 0) covered--; }
+        chosen.splice(i, 1);
+      }
     }
   }
 

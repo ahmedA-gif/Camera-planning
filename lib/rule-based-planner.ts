@@ -1394,16 +1394,23 @@ export function ensureMultiBuildingFleet(project: Partial<DetVisionProject>, tar
   const userRequested = explicitTarget > 0 ? explicitTarget : extractDesiredCameraCount(desc);
   const existingCams = project.cameras || [];
   
-  // Effective count: strictly respect user request, or user's existing configured cameras
+  // Effective count: explicit target > cameras the user already has > count typed in brief > geometry reasoning
   const effectiveCount = explicitTarget > 0 
     ? explicitTarget 
-    : existingCams.length > userRequested 
+    : existingCams.length > 0 
       ? existingCams.length 
       : userRequested > 0 
         ? userRequested 
-        : existingCams.length > 0 
-          ? existingCams.length 
-          : 12;
+        : (() => {
+            const prof = detectFacilityProfile(desc);
+            return calculateReasonedCameraCount({
+              length_m: project.facility_length_m || prof.length,
+              width_m: project.facility_width_m || prof.width,
+              height_m: project.facility_height_m || prof.height,
+              use_cases_count: project.use_cases?.length || 1,
+              detection_coverage_target: project.detection_coverage_target || 95,
+            });
+          })();
 
   const bldgs: FacilityBuilding[] = (project.buildings && project.buildings.length >= 2)
     ? project.buildings.map((b: FacilityBuilding) => ({ ...b, camera_ids: [...(b.camera_ids || [])] }))
@@ -1412,8 +1419,8 @@ export function ensureMultiBuildingFleet(project: Partial<DetVisionProject>, tar
   // Synchronize building camera allocation
   distributeCameras(bldgs, effectiveCount);
 
-  // Check if we should preserve existing user-configured cameras
-  if (existingCams.length > 0 && (userRequested === 0 || existingCams.length === effectiveCount)) {
+  // Preserve the user's cameras whenever they match the effective count
+  if (existingCams.length > 0 && existingCams.length === effectiveCount) {
     let camOffset = 0;
     bldgs.forEach((b: FacilityBuilding) => {
       b.camera_ids = [];

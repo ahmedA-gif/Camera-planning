@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { 
   Camera, 
   RotateCcw, 
@@ -98,7 +98,7 @@ import {
   camColor,
   MOUNT_SYMBOLS,
 } from './coverage-views';
-import { detectFacilityProfile, extractDesiredCameraCount, parseCameraHardware } from '@/lib/rule-based-planner';
+import { detectFacilityProfile, extractDesiredCameraCount, parseCameraHardware, calculateReasonedCameraCount } from '@/lib/rule-based-planner';
 import { 
   generateSiteTelemetryMapSvg, 
   generatePipelineArchitectureSvg, 
@@ -137,16 +137,20 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     const prof = detectFacilityProfile(allUserText);
     const userRequestedCount = extractDesiredCameraCount(allUserText, null);
 
-    // Strictly prioritize user's explicit requirement/input:
-    let count = 15;
-    if (userRequestedCount > 0) {
+    // Priority: cameras the user actually has/edited > count typed in brief > geometry-based reasoning
+    let count: number;
+    if (project?.cameras && project.cameras.length > 0) {
+      count = project.cameras.length;
+    } else if (userRequestedCount > 0) {
       count = userRequestedCount;
-    } else if (project?.cameras && project.cameras.length > 0) {
-      count = Math.max(15, project.cameras.length);
-    } else if (project?.use_cases && project.use_cases.length > 0) {
-      count = Math.max(15, project.use_cases.length);
     } else {
-      count = 15;
+      count = calculateReasonedCameraCount({
+        length_m: project?.facility_length_m || prof.length,
+        width_m: project?.facility_width_m || prof.width,
+        height_m: project?.facility_height_m || prof.height,
+        use_cases_count: project?.use_cases?.length || 1,
+        detection_coverage_target: project?.detection_coverage_target || 95,
+      });
     }
 
     // Detect target inspection mode based on scenario requirements / keywords
@@ -436,6 +440,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     return computeCoverage(poses, lens, site, mode);
   }, [poses, lens, site, mode]);
 
+  const lastCamSigRef = useRef<string>('');
   // Synchronize camera poses, obstacles, and bounds whenever project is analyzed or updated
   useEffect(() => {
     if (!project) return;
@@ -505,8 +510,12 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       setObstacles(autoSecObs);
     }
 
-    // 3. Synchronize camera count and poses strictly respecting user specification
-    const targetCams = initialFacility.count;
+    // 3. Synchronize camera count and poses strictly respecting user specification.
+    // Only re-sync when the project's camera set really changed (not on unrelated clicks).
+    const camSig = (project.cameras || []).map(c => `${c.id}:${c.x.toFixed(3)}:${c.y.toFixed(3)}:${c.orientation_degrees}`).join('|');
+    if (lastCamSigRef.current === `${project.id}#${camSig}`) return;
+    lastCamSigRef.current = `${project.id}#${camSig}`;
+    const targetCams = project.cameras && project.cameras.length > 0 ? project.cameras.length : initialFacility.count;
     if (project.cameras && project.cameras.length >= targetCams) {
       const L = project.facility_length_m || bayLength;
       const W = project.facility_width_m || bayWidth;
@@ -544,7 +553,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       setPoses(newPoses);
       setCameraCount(newPoses.length);
     }
-  }, [project?.id, project?.updated_at, project?.cameras, project?.structure, initialFacility.count]);
+  }, [project?.id, project?.cameras, project?.structure, initialFacility.count]);
 
   // Update camera count and re-distribute (architecture-aware if obstacles exist)
   const handleCameraCountChange = (count: number) => {

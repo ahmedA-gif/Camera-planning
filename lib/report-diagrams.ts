@@ -210,7 +210,7 @@ export function generatePipelineArchitectureSvg(
 ): string {
   const width = options.width || 860;
   const height = options.height || 220;
-  const camCount = project.cameras?.length || 15;
+  const camCount = project.cameras?.length || 0;
 
   const colW = (width - 60) / 4;
   const colH = height - 50;
@@ -331,7 +331,7 @@ export function generateCoverageTelemetryMetricsSvg(
 ): string {
   const width = options.width || 860;
   const height = options.height || 260;
-  const camCount = project.cameras?.length || 15;
+  const camCount = project.cameras?.length || 0;
   const targetCoverage = project.detection_coverage_target || 95;
   const bitrateKbps = 4096;
   const storage30dTb = ((camCount * bitrateKbps * 86400 * 30) / (8 * 1000 * 1000 * 1000)).toFixed(1);

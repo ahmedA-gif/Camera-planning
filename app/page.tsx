@@ -230,14 +230,20 @@ function DashboardContent() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             project: analyzedProject,
+            business_description: analyzedProject.business_description,
+            industry: analyzedProject.industry,
+            company_name: analyzedProject.company_name,
+            requirements: analyzedProject.requirements,
+            cameras: analyzedProject.cameras,
             provider: 'auto',
           }),
         });
 
         if (planResp.ok) {
           const planData = await planResp.json();
-          if (planData?.safety_plan) {
-            analyzedProject.safety_plan = planData.safety_plan;
+          const safetyPlan = planData?.safety_plan || planData;
+          if (safetyPlan && (safetyPlan.sections || safetyPlan.state)) {
+            analyzedProject.safety_plan = safetyPlan;
           }
         }
       } catch (planErr) {

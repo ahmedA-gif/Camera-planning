@@ -1,4 +1,4 @@
-import { parseCameraHardware, extractDesiredCameraCount, detectFacilityProfile, generateStructuredLayout } from '../lib/rule-based-planner';
+import { parseCameraHardware, extractDesiredCameraCount, detectFacilityProfile, generateStructuredLayout, generateTokenFreeSafetyPlan } from '../lib/rule-based-planner';
 import { generateSiteTelemetryMapSvg, generatePipelineArchitectureSvg, generateCoverageTelemetryMetricsSvg } from '../lib/report-diagrams';
 import type { DetVisionProject } from '../lib/types';
 
@@ -190,6 +190,57 @@ const resolvedSixteen = ensureMultiBuildingFleet(sixteenCamProject);
 if (resolvedSixteen.cameras.length !== 16) {
   throw new Error(`Expected 16 cameras preserved, got ${resolvedSixteen.cameras.length}`);
 }
-console.log('✓ ensureMultiBuildingFleet successfully preserved user-incremented 16 cameras!');
+// Test 8: Verify Token-Free Safety Plan generates all 12 standard sections with optical blind-spot mitigation
+const safetyPlan = generateTokenFreeSafetyPlan({
+  business_description: desconPrompt,
+  industry: 'Chemical Manufacturing',
+  company_name: 'Descon Chemical',
+  requirements: ['100% coverage needed', 'Forklift collision avoidance', 'Zero blind spots'],
+  cameras: sampleProject.cameras,
+});
+
+if (!safetyPlan.complete) throw new Error('Expected safetyPlan.complete to be true');
+if (!safetyPlan.state) throw new Error('Expected safetyPlan.state to exist');
+if (!safetyPlan.state.outline?.sections) throw new Error('Expected safetyPlan.state.outline.sections to exist');
+if (safetyPlan.state.outline.sections.length !== 12) {
+  throw new Error(`Expected 12 outline sections, got ${safetyPlan.state.outline.sections.length}`);
+}
+
+const sectionKeys = Object.keys(safetyPlan.sections);
+console.log('Safety Plan generated sections count:', sectionKeys.length);
+if (sectionKeys.length !== 12) {
+  throw new Error(`Expected exactly 12 sections in safety plan, got ${sectionKeys.length}: ${sectionKeys.join(', ')}`);
+}
+
+// Verify essential 12 section keys are all present
+const expected12Keys = [
+  'executive_summary',
+  'facility_context',
+  'hazard_identification',
+  'risk_assessment',
+  'control_gaps',
+  'recommended_controls',
+  'corrective_actions',
+  'implementation_roadmap',
+  'sop_recommendations',
+  'monitoring_kpis',
+  'cost_analysis',
+  'unresolved_questions',
+];
+for (const key of expected12Keys) {
+  if (!safetyPlan.sections[key]) {
+    throw new Error(`Missing expected section key: ${key}`);
+  }
+}
+
+// Verify optical blind spot and line-of-sight mitigation content
+const combinedPlanText = Object.values(safetyPlan.sections).join(' ');
+if (!combinedPlanText.includes('blind') || !combinedPlanText.includes('cone') || !combinedPlanText.includes('dropper')) {
+  throw new Error('Safety plan missing optical blind spot or dropper pole mitigations');
+}
+if (!combinedPlanText.includes('15 Optical Sensor Nodes') && !combinedPlanText.includes('15 continuous video streams')) {
+  throw new Error('Safety plan did not reflect the 15 camera fleet size');
+}
+console.log('✓ Safety plan generated all 12/12 standard sections with optical blind-spot mitigation and 15 cameras!');
 
 console.log('\n--- ALL UNIFIED VERIFICATION TESTS PASSED SUCCESSFULLY! ---');

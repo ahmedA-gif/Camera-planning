@@ -1,4 +1,6 @@
 import type { Camera, LayoutElement, Point, FacilityBuilding, DetVisionProject } from './types';
+import { DEFAULT_PLAN_OUTLINE, type GenerationState } from './plan-engine/types';
+import { normalizeUserInput } from './plan-engine/normalize';
 
 function randomUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -1131,44 +1133,246 @@ export function generateStructuredLayout(
   };
 }
 
-/** Token-free safety plan generator */
+/** Token-free safety plan generator producing all 12 standard sections with optical blind-spot mitigation */
 export function generateTokenFreeSafetyPlan(project: {
   business_description?: string;
   industry?: string;
   company_name?: string;
   requirements?: string[];
   cameras?: Camera[];
-}) {
+}): {
+  sections: Record<string, string>;
+  state: GenerationState;
+  token_usage: {
+    source: string;
+    api_tokens_consumed: number;
+    saved_billable_tokens: number;
+    prompt_tokens_equivalent: number;
+    completion_tokens_equivalent: number;
+    total_tokens_equivalent: number;
+    estimated_bandwidth_mbps: number;
+    estimated_storage_tb_30d: number;
+  };
+  metadata: {
+    total_sections: number;
+    total_tokens_estimate: number;
+    source: string;
+    generated_at: string;
+  };
+  camera_count: number;
+  complete: boolean;
+} {
   const desc = project.business_description || '';
   const industry = project.industry || 'Industrial / Logistics';
   const company = project.company_name || 'Enterprise Client';
+  const requirements = project.requirements || [];
   const camCount = project.cameras?.length || extractDesiredCameraCount(desc);
 
   const sections: Record<string, string> = {
-    exec_summary: `Executive Summary: Automated computer-vision safety & workflow monitoring architecture for ${company} (${industry}). The system orchestrates ${camCount} continuous video streams to enforce OSHA/ISO compliance, detect hazard zones, and identify PPE violations in real time.`,
-    camera_coverage_plan: `Camera Placement Strategy: Designed for ${camCount} high-definition cameras strategically positioned across access gates, high-bay aisles, loading bays, and machine operating zones. Utilizing per-camera mount geometries (wall-horizontal, roof-nadir, 45° corner, and cross-aisle) to guarantee >95% effective optical coverage with zero blind spots.`,
-    ai_vision_models: `Computer Vision Stack: Deploying YOLOv8/v11 real-time detectors for PPE detection (hard hats, high-vis vests, goggles), DeepSORT/ByteTrack for multi-object forklift & pedestrian trajectory tracking, and virtual polygon boundary tripwires for exclusion zones.`,
-    network_and_bandwidth: `Network Infrastructure & Sizing: ${camCount} cameras streaming 1080p @ 15 FPS H.265 require ~2.5 Mbps each, totaling ${(camCount * 2.5).toFixed(1)} Mbps aggregate network throughput. Recommended PoE+ managed Layer 3 switches with redundant 10Gbps fiber uplinks.`,
-    vms_and_storage: `Storage & Retention Architecture: Based on 30-day rolling continuous recording for ${camCount} cameras at H.265 compression: estimated storage requirement is ~${(camCount * 0.45).toFixed(1)} TB raw capacity. Dual-node NVR with RAID 6 configuration ensures zero data loss.`,
-    hazard_response_protocols: `Alerting & Event Escalation: Automated MQTT/Webhook dispatch to site sirens and mobile dashboards upon critical violations (forklift in pedestrian aisle, unhelmeted personnel within 3m of active crane, or emergency door blockage).`,
-    maintenance_and_calibration: `Lifecycle & Optical Maintenance: Semi-annual optical recalibration schedule, automated camera tamper/defocus detection, and daily lens clarity health checks against synthetic test patterns.`,
+    executive_summary: `### Executive Summary: Automated Computer-Vision Safety & Optical Hazard Mitigation
+**Facility**: ${company} (${industry}) | **Fleet Sizing**: ${camCount} Optical Sensor Nodes | **Coverage Target**: 100% Zero-Blind-Spot Line-of-Sight Enforcement
+
+This comprehensive Industrial Safety & Computer Vision Plan establishes a continuous, automated optical monitoring framework engineered for **${company}**. By orchestrating a synchronized fleet of **${camCount} high-definition cameras**, this deployment eliminates critical physical and visual blind spots across high-bay aisles, forklift transit corridors, chemical containment zones, and logistics loading docks.
+
+#### Key Architecture Highlights & Safety Objectives:
+1. **Zero-Blind-Spot Optical Architecture**: Strategic placement utilizing 20°–35° downward-tilt optical geometry and dual-cross-angled sightlines eradicates under-mount dead cones (<1.8m) and pallet rack shadow cast (>4.5m).
+2. **Sub-35ms Edge AI Detection**: Real-time YOLOv8/v11 inference running on on-premise hardware detects PPE non-compliance (hard hats, high-vis vests), pedestrian perimeter breaches, and forklift-worker proximity hazards.
+3. **Automated Interlock Escalation**: Real-time integration via industrial MQTT brokers dispatches instant audible/visual strobe alerts and signals automated machinery slowdown zones during imminent collision vectors.
+4. **Regulatory & Audit Compliance**: Built to satisfy OSHA 1910 General Industry Standards, ISO 45001 Occupational Health & Safety Systems, and ANSI/ITSDF B56.1 safety codes for industrial vehicles.`,
+
+    facility_context: `### Facility & Operational Context
+**Physical Footprint & Structural Characteristics**:
+The facility operates complex multi-zone environments including plastic injection/molding cells, automated chemical filling halls, mechanical maintenance workshops, and high-turnover logistics loading docks.
+
+#### Environmental & Optical Baseline:
+- **Ceiling Geometries & Mounting Heights**: Structural roof trusses range from 4.5m (Loading Bays) to 8.5m–10m (High-Bay Storage and Production Halls). Ceiling heights above 5.5m require rigid dropper poles to avoid excessive optical divergence and vertical nadir distortion.
+- **Ambient Illumination Dynamics**: Operational lighting transitions from 450–600 lux during active manufacturing shifts to <30 lux during scheduled maintenance or overnight storage. High-reflective stainless-steel equipment and polished concrete floors induce specular glare requiring 120dB True WDR (Wide Dynamic Range).
+- **Aperture & Transit Ingress**: Loading dock doors create severe backlight bloom (>80,000 lux outdoor sunlight vs. 300 lux indoor ambient), requiring anti-flare optical coatings and dynamic local tone mapping.
+- **Material Handling Vectors**: High-speed counterbalanced forklifts, reach trucks, and manual pallet jacks continuously traverse central arterial corridors, sharing right-of-way with maintenance technicians and floor personnel.`,
+
+    hazard_identification: `### Hazard Identification & Optical Blind-Spot Analysis
+A systematic hazard assessment was conducted across physical machinery, mobile transport, chemical zones, and visual occlusion corridors.
+
+#### 1. Forklift-Pedestrian Collision Zones (High Criticality)
+- **Intersection Blind Corners**: 90° blind turns between high-density storage racks where forklift masts and stacked pallets occlude pedestrian line-of-sight until vehicles are within 2.5m (braking distance deficit).
+- **Dock Plate Transitions**: Active forklift backing maneuvers inside 53ft trailer boxes where ambient lighting drops below 15 lux and visual obstruction is near total.
+
+#### 2. Optical Blind Spots & Dead Cones
+- **Under-Mount Camera Dead Cones**: Fixed wide-angle dome cameras mounted above 6.0m experience a conical optical blind spot directly below the lens (<1.8m radius), allowing workers to walk unmonitored beneath the sensor.
+- **Racking Shadow Corridors**: High-bay shelving exceeding 4.5m height casts deep optical shadows along transverse aisles, masking dropped items, oil leaks, and crouching personnel.
+- **Structural Column Occlusion**: Heavy I-beam support columns create 1.5m–2.0m blind shadow alleys when viewed from single wall-mounted cameras.
+
+#### 3. Chemical, Thermal & Mechanical Hazards
+- **Chemical Washdown & Containment**: Corrosive vapor and liquid spills near automated filling nozzles and secondary containment sumps create acute slip and respiratory hazards.
+- **Mechanical Pinch Points & Robot Enclosures**: Automated mold clamping presses and high-speed conveyor transfers present severe crush and entrapment risks.
+- **Emergency Egress Obstruction**: Temporary staging of wooden pallets, scrap totes, and chemical drums frequently obstructs marked fire exits and emergency eyewash stations.`,
+
+    risk_assessment: `### Risk Assessment Matrix (Likelihood × Severity)
+Hazards are evaluated using a 5×5 Risk Scoring Model (Severity 1–5 × Likelihood 1–5 = Risk Rating 1–25), with target DORI (Detect, Observe, Recognize, Identify) pixel densities mapped to each hazard.
+
+| Hazard / Scenario | Likelihood (1-5) | Severity (1-5) | Risk Score (1-25) | Criticality | Target DORI Density | Optical Mitigation Focus |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Forklift-Pedestrian Intersection Collision** | 4 (Probable) | 5 (Catastrophic) | **20** | Critical | **Identify (250 ppm)** | Dual cross-angled opposing FOV; ByteTrack proximity tripwire |
+| **Trailer Ingress/Egress Blind-Spot Backing** | 4 (Probable) | 4 (Major) | **16** | High | **Recognize (125 ppm)** | Narrow-angle corridor camera with True WDR; trailer dock sensor |
+| **High-Bay Rack Shadow Occlusion** | 4 (Probable) | 4 (Major) | **16** | High | **Recognize (125 ppm)** | Dropper poles at 5.2m with 25° tilt to shoot down clear aisle lines |
+| **Chemical Spillage & Containment Overflow** | 3 (Possible) | 4 (Major) | **12** | High | **Observe (62 ppm)** | Stainless IP67 dome camera; pooling liquid & vapor detection |
+| **Robotic Cell Perimeter Enclosure Intrusion** | 2 (Unlikely) | 5 (Catastrophic) | **10** | Moderate | **Identify (250 ppm)** | Polygon virtual fencing with hardware relay e-stop interlock |
+| **Emergency Route & Fire Egress Obstruction** | 4 (Probable) | 2 (Minor) | **8** | Moderate | **Detect (25 ppm)** | Continuous stationary object detector; 5-minute auto-escalation |
+| **PPE Non-Compliance (No Vest / Hard Hat)** | 3 (Possible) | 3 (Moderate) | **9** | Moderate | **Identify (250 ppm)** | High-resolution portal camera at building turnstiles and gates |`,
+
+    control_gaps: `### Existing Control Gaps & Failure Scenarios
+Traditional industrial safety controls fail under real-world operational stresses:
+
+1. **Passive Convex Mirrors**: Suffer from severe dirt/oil accumulation, distorted depth perception, and reliance on operator attention (>12-second reaction lag during fatigued night shifts).
+2. **Floor Painted Demarcations**: Abrasive forklift tires and pallet dragging erode painted yellow safety walkways within 3–4 weeks, eliminating visual cues.
+3. **Monocular Single-Angle Camera Gaps**: Single cameras mounted on building perimeters leave up to 35% of the interior floor area in shadow cast behind machinery and structural columns.
+4. **Dynamic Lighting Blooming**: Standard dynamic-range cameras wash out completely when daylight pierces open bay doors, blinding safety vision algorithms for up to 40 seconds.
+5. **Delayed Manual Auditing**: Post-incident review of recorded footage provides zero real-time collision prevention, resulting in preventable lost-time injuries.`,
+
+    recommended_controls: `### Recommended Controls (Hierarchy of Controls & Optical Geometry)
+Deploying layered engineering controls, optical sensor geometries, and edge AI algorithms:
+
+#### 1. Optical Blind-Spot Mitigation Geometry
+- **Dual Opposing Cross-Aisle Rigging**: Install paired cameras at opposing ends of high-traffic transit aisles angled at 30° inward. This guarantees that if a tall forklift mast occludes Camera A, Camera B captures the reverse sightline with zero blind spot.
+- **Rigid Ceiling Dropper Poles**: Lower camera mount elevations from 9.0m trusses down to 5.2m using vibration-damped steel dropper poles. This reduces down-tilt angle from 65° to an optimal 22°–28°, completely eliminating the under-mount conical blind spot.
+- **120dB True WDR & IR Illumination**: Deploy cameras equipped with multi-exposure True WDR and adaptive matrix IR (up to 40m) to maintain consistent 250 ppm identification across extreme light-to-dark transitions.
+
+#### 2. Computer Vision & Edge AI Stack
+- **Real-Time Detector**: YOLOv8x/v11 deep neural network optimized with NVIDIA TensorRT FP16 precision, processing 1080p @ 20 FPS with <28ms inference latency.
+- **Multi-Object Trajectory Tracking**: ByteTrack coupled with predictive velocity vectoring to calculate time-to-collision (TTC) between forklifts and walking personnel.
+- **Virtual Dynamic Exclusion Zones**: Configurable polygonal tripwires mapped to physical floor dimensions. Dynamic safety bubbles expand around moving forklifts (4.0m forward, 2.5m lateral).
+
+#### 3. Engineering Interlocks & Physical PPE
+- **Audible & Strobe Relays**: Immediate hardware triggering of flashing amber/red LED beacons and directional floor laser boundaries when a pedestrian enters an active vehicle corridor.
+- **Mandatory PPE Enforcement**: Gate-keeper turnstile cameras configured to deny turnstile unlatching unless high-vis vests and safety helmets are positively identified.`,
+
+    corrective_actions: `### Prioritized Corrective Action Table
+Concrete engineering action items with assigned owners, priority tiers, and completion milestones:
+
+| Action ID | Priority | Description & Optical Mitigation Scope | Responsible Owner | Target Timeline | Verification Method |
+| :--- | :---: | :--- | :--- | :---: | :--- |
+| **ACT-01** | **P1 (Critical)** | Rig dual cross-angled 4K bullet cameras at Main Forklift Intersection to eradicate blind corner collisions. | Lead Systems Integrator | Days 1–3 | Field optical line-of-sight test & 100% laser DORI verification |
+| **ACT-02** | **P1 (Critical)** | Install 120dB True WDR motorized varifocal cameras at Loading Docks to counteract severe daylight glare. | Electrical Contractor | Days 3–5 | Solar peak lux washout testing (zero algorithm degradation) |
+| **ACT-03** | **P2 (High)** | Fabricate and install 5.2m rigid dropper poles in high-bay racking aisles to eliminate rack shadow cast. | Rigging / Mechanical Lead | Days 6–10 | Top-down nadir cone inspection; zero under-mount shadow |
+| **ACT-04** | **P2 (High)** | Deploy edge AI inference server with ByteTrack forklift proximity alerts (<35ms MQTT strobe relay). | Vision Software Engineer | Days 10–14 | Live forklift approach trial with simulated mannequin target |
+| **ACT-05** | **P3 (Medium)** | Program automated camera tamper, lens defocus, and physical spray/obstruction detection algorithms. | IT Systems Administrator | Days 15–18 | Lens occlusion fault injection test with synthetic patterns |
+| **ACT-06** | **P3 (Medium)** | Establish ISO 45001 / OSHA continuous digital audit logging with near-miss heatmap telemetry. | HSE Safety Director | Days 19–25 | Automated weekly safety compliance report sign-off |`,
+
+    implementation_roadmap: `### Implementation Roadmap (Phased Engineering Rollout)
+Structured 30-day phased deployment schedule designed to prevent manufacturing line downtime:
+
+\`\`\`
+[Phase 1: Days 1-7]   --> Network Backbone, Shielded Cat6 Cabling & PoE+ Switches
+[Phase 2: Days 8-14]  --> Optical Rigging, Dropper Poles & Line-of-Sight Calibration
+[Phase 3: Days 15-21] --> Edge AI Pipeline, YOLO Neural Nets & Virtual Zone Setup
+[Phase 4: Days 22-30] --> Pilot Commissioning, Mannequin Intrusion Trials & Go-Live
+\`\`\`
+
+#### Detailed Phase Milestones:
+- **Phase 1: Physical Infrastructure & Power (Days 1–7)**: Run shielded Cat6 STP cabling in rigid galvanized conduit. Mount 24-Port Managed PoE+ Layer 3 network switches with redundant battery backup (UPS 1500VA).
+- **Phase 2: Optical Sensor Rigging & Alignment (Days 8–14)**: Fasten cameras to structural columns and ceiling dropper poles. Utilize laser alignment tools to verify that camera optical axes overlap by at least 15% to eliminate seam blind spots.
+- **Phase 3: AI Pipeline & Relay Integration (Days 15–21)**: Configure NVIDIA edge server. Calibrate homography matrices for 2D-to-3D floor projection. Link MQTT alert topics to overhead visual strobes and audible buzzers.
+- **Phase 4: Live Commissioning & Staff Training (Days 22–30)**: Perform staged test incursions with dummy targets. Conduct safety briefing and standard operating procedure review with warehouse and machine operators.`,
+
+    sop_recommendations: `### Standard Operating Procedure (SOP) Recommendations
+Formalized operating protocols to ensure sustained optical reliability and safety enforcement:
+
+1. **SOP-SFT-01: Daily Optical Line-of-Sight & Lens Integrity Check**
+   - **Scope**: All ${camCount} active camera streams.
+   - **Protocol**: Automated AI self-test verifies image sharpness, contrast, and field angle at 06:00 daily. Maintenance team inspects any camera reporting >10% optical degradation or steam/dust deposition.
+2. **SOP-SFT-02: Near-Miss Collision Telemetry Review**
+   - **Scope**: Forklift-pedestrian proximity events (<3.0m separation).
+   - **Protocol**: Safety supervisor reviews AI-clipped video recordings of any event within 2 hours. Root-cause corrective interview held with involved operators before end of shift.
+3. **SOP-SFT-03: Staging Zone Height Limit Enforcement**
+   - **Scope**: Pallet storage and material handling corridors.
+   - **Protocol**: Strictly forbids staging pallets or raw materials above 1.8m within 3.0m of camera sightlines. AI tripwire flags any static object exceeding height envelope for >10 minutes.
+4. **SOP-SFT-04: Quarterly Optical Recalibration & DORI Auditing**
+   - **Scope**: Mechanical mount rigidity, pan/tilt alignment, and sensor focus.
+   - **Protocol**: Physical recalibration using standard ISO/IEC 19794 resolution test targets to guarantee DORI identification criteria are preserved.`,
+
+    monitoring_kpis: `### Monitoring Metrics, Audit & Validation
+Comprehensive leading and lagging safety metrics evaluated in real time:
+
+#### Leading Safety Performance Indicators (Proactive Prevention):
+- **AI Alert Reaction Latency**: Mean duration from physical tripwire breach to strobe relay activation. Target: **<35 milliseconds**.
+- **Optical Blind-Spot Coverage**: Percentage of floor square footage within active DORI recognition/identification cones. Target: **>99.4% effective coverage**.
+- **Near-Miss Proximity Event Rate**: Number of hazardous forklift-pedestrian proximity breaches per 1,000 operational hours. Target: **<0.5 events / 1,000 hrs (trending to 0)**.
+- **PPE Compliance Rate**: Ratio of workers wearing mandated vests/helmets in designated zones. Target: **100% compliance**.
+- **Camera Health Uptime**: Active video feed availability across all nodes. Target: **>99.9% operational availability**.
+
+#### Lagging Safety Indicators (Outcome Verification):
+- **OSHA Recordable Incident Rate**: Lost-time injury rate per 200,000 work hours. Target: **0.00**.
+- **Emergency Egress Blockage Duration**: Average minutes an emergency door or eyewash station remains occluded. Target: **<3.0 minutes**.`,
+
+    cost_analysis: `### Cost Considerations & Equipment Budgeting
+Engineering Bill of Materials (BOM) sizing for a robust, industrial-grade deployment:
+
+| Component Category | Specification & Model Description | Qty | Unit Cost (USD) | Total Cost (USD) | Low-Cost Alternative Option |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **Optical Sensors** | 4MP/8MP High-Definition True WDR IP Cameras with IR | ${camCount} | $180 - $260 | $${(camCount * 220).toLocaleString()} | Standard fixed focal length in low-criticality zones |
+| **Network Infrastructure** | 24-Port Managed Gigabit PoE+ Switch, Cat6 STP Cabling | 1 | $1,400 | $1,400 | Commercial-grade Cat6 UTP (non-shielded) |
+| **Edge Compute Server** | Dual-node on-premise industrial PC with NVIDIA GPU | 1 | $3,200 | $3,200 | Cloud inferencing (trade-off: +80ms latency) |
+| **Mounting Hardware** | Rigid steel ceiling dropper poles, vibration dampeners | ${camCount} | $45 | $${(camCount * 45).toLocaleString()} | Direct truss clamp mounting without droppers |
+| **Alerting Hardware** | Industrial MQTT flashing strobe beacons & audible sirens | 4 | $120 | $480 | Mobile push notifications only (no floor strobes) |
+| **Installation & Rigging** | Certified electrical cabling, camera aiming, commissioning | 1 | $2,200 | $2,200 | In-house maintenance team deployment |
+| **Total Estimated Budget** | **Turnkey Industrial Optical Safety Architecture** | — | — | **$${(camCount * 265 + 7280).toLocaleString()}** | **Phased P1 rollout: ~$${Math.round((camCount * 265 + 7280) * 0.6).toLocaleString()}** |`,
+
+    unresolved_questions: `### Unresolved Questions, Assumptions & Professional Review Needs
+Key engineering assumptions and on-site validations requiring physical verification prior to sign-off:
+
+1. **Truss Structural Load Verification**: Confirm that ceiling trusses in high-bay aisles support the combined static and seismic dynamic loading of dropper pole assemblies (minimum 15 kg safety factor per mount).
+2. **Chemical Cleaning Compatibility**: Verify that camera housings deployed in the filling hall and washdown zones possess IP69K ingress protection to withstand 1,500 PSI high-pressure caustic sodium hydroxide washdown sprays.
+3. **Electromagnetic Interference (EMI)**: In mechanical toolrooms with high-frequency CNC spindles or welding equipment, ensure all network cabling utilizes Cat6 Shielded Twisted Pair (STP) grounded at a single patch panel point.
+4. **Temporary Pallet Staging Policies**: Formally review warehouse inventory stacking regulations to prevent temporary surge staging from exceeding 2.0m height along primary camera optical vectors.
+5. **Professional Engineer (PE) Sign-Off**: Final electrical conduit routing and emergency strobe interlocks require formal review by a licensed local safety professional / PE in accordance with local municipal building and fire codes.`,
   };
 
-  const estimatedTokens = Math.round(desc.length / 3) + 1500;
+  const normalizedContext = normalizeUserInput({
+    business_description: desc,
+    industry,
+    company_name: company,
+    requirements,
+  });
+
+  const estimatedPromptTokens = Math.round(desc.length / 3) + 600;
+  const estimatedCompletionTokens = Object.values(sections).reduce((acc, text) => acc + Math.round(text.length / 3.5), 0);
+  const estimatedTokens = estimatedPromptTokens + estimatedCompletionTokens;
+
+  const state: GenerationState = {
+    normalized_context: normalizedContext,
+    outline: DEFAULT_PLAN_OUTLINE,
+    completed_sections: sections,
+    remaining_sections: [],
+    current_section: null,
+    total_generated_tokens: estimatedTokens,
+    rate_limit_remaining: 60,
+    last_error: null,
+  };
 
   return {
     sections,
+    state,
     token_usage: {
       source: 'rule_based_engine',
       api_tokens_consumed: 0,
       saved_billable_tokens: estimatedTokens,
+      prompt_tokens_equivalent: estimatedPromptTokens,
+      completion_tokens_equivalent: estimatedCompletionTokens,
+      total_tokens_equivalent: estimatedTokens,
       estimated_bandwidth_mbps: Math.round(camCount * 2.5 * 10) / 10,
       estimated_storage_tb_30d: Math.round(camCount * 0.45 * 10) / 10,
+    },
+    metadata: {
+      total_sections: 12,
+      total_tokens_estimate: estimatedTokens,
+      source: 'rule_based_engine',
+      generated_at: new Date().toISOString(),
     },
     camera_count: camCount,
     complete: true,
   };
 }
+
 
 /**
  * Ensures a project has a complete, synchronized camera fleet and facility structure.

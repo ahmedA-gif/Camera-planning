@@ -491,35 +491,103 @@ def generate_token_free_safety_plan(project_data: Dict[str, Any]) -> Dict[str, A
     cam_count = len(cameras) or extract_desired_camera_count(desc)
     
     sections = {
+        "executive_summary": (
+            f"### Executive Summary: Automated Computer-Vision Safety & Optical Hazard Mitigation\n"
+            f"**Facility**: {company} ({industry}) | **Fleet Sizing**: {cam_count} Optical Sensor Nodes | **Coverage Target**: 100% Zero-Blind-Spot Line-of-Sight Enforcement\n\n"
+            f"This comprehensive Industrial Safety & Computer Vision Plan establishes a continuous, automated optical monitoring framework engineered for **{company}**. "
+            f"By orchestrating a synchronized fleet of **{cam_count} high-definition cameras**, this deployment eliminates critical physical and visual blind spots across high-bay aisles, "
+            f"forklift transit corridors, chemical containment zones, and logistics loading docks."
+        ),
+        "facility_context": (
+            f"### Facility & Operational Context\n"
+            f"The facility operates complex multi-zone environments including manufacturing cells, chemical containment zones, mechanical workshops, and loading docks. "
+            f"Ceiling heights range from 4.5m to 10m requiring dropper poles to eliminate under-mount camera dead spots (<1.8m radius). Specular glare and dynamic lighting changes are mitigated via 120dB True WDR."
+        ),
+        "hazard_identification": (
+            f"### Hazard Identification & Optical Blind-Spot Analysis\n"
+            f"Key hazards identified:\n"
+            f"1. Forklift-pedestrian collision risks at 90° blind intersections.\n"
+            f"2. Optical dead cones directly under high-mounted sensors and rack shadow corridors.\n"
+            f"3. Chemical washdown vapor and pooling fluid hazards.\n"
+            f"4. Mechanical pinch points and robotic perimeter intrusions.\n"
+            f"5. Blocked emergency egress routes and fire equipment."
+        ),
+        "risk_assessment": (
+            f"### Risk Assessment Matrix (Likelihood × Severity)\n"
+            f"Evaluated using a 5x5 matrix:\n"
+            f"- Forklift-Pedestrian Intersection: Severity 5 x Likelihood 4 = Risk Rating 20 (Critical). Target DORI: Identify (250 ppm).\n"
+            f"- High-Bay Rack Shadow: Severity 4 x Likelihood 4 = Risk Rating 16 (High). Target DORI: Recognize (125 ppm).\n"
+            f"- Chemical Spill / Leak: Severity 4 x Likelihood 3 = Risk Rating 12 (High). Target DORI: Observe (62 ppm).\n"
+            f"- Robot Enclosure Intrusion: Severity 5 x Likelihood 2 = Risk Rating 10 (Moderate). Target DORI: Identify (250 ppm)."
+        ),
+        "control_gaps": (
+            f"### Existing Control Gaps & Failure Scenarios\n"
+            f"Identified physical and optical deficiencies:\n"
+            f"1. Convex mirrors suffer from dirt build-up and human reaction latency (>12s).\n"
+            f"2. Floor paint lines wear away under heavy forklift traffic.\n"
+            f"3. Monocular cameras suffer from rack and structural column shadow cast.\n"
+            f"4. Sensor washout occurs under sudden daylight bloom at exterior bay doors."
+        ),
+        "recommended_controls": (
+            f"### Recommended Controls (Hierarchy of Controls & Optical Geometry)\n"
+            f"1. Optical Blind-Spot Mitigation: Dual opposing cross-aisle cameras with 25° down-tilt and rigid ceiling dropper poles.\n"
+            f"2. Edge AI Computer Vision: Real-time YOLOv8/v11 deep-learning models for PPE compliance and ByteTrack multi-object tracking.\n"
+            f"3. Low-Latency Relays: Industrial MQTT broker triggering audible strobes and sirens within <35ms of perimeter breach."
+        ),
+        "corrective_actions": (
+            f"### Prioritized Corrective Action Table\n"
+            f"- ACT-01 (Priority 1): Mount cross-angled 4K cameras at main forklift intersection (Lead Integrator, Days 1-3).\n"
+            f"- ACT-02 (Priority 1): Install 120dB True WDR cameras at loading bays (Electrical Contractor, Days 3-5).\n"
+            f"- ACT-03 (Priority 2): Deploy 5.2m dropper poles in high-bay aisles (Rigging Lead, Days 6-10).\n"
+            f"- ACT-04 (Priority 2): Integrate MQTT edge AI strobe relays (Vision Engineer, Days 10-14).\n"
+            f"- ACT-05 (Priority 3): Implement ISO 45001 / OSHA continuous audit dashboard (HSE Director, Days 15-20)."
+        ),
+        "implementation_roadmap": (
+            f"### Implementation Roadmap (Phased Engineering Rollout)\n"
+            f"- Phase 1 (Days 1-7): Cabling infrastructure, PoE+ switches, and UPS backup.\n"
+            f"- Phase 2 (Days 8-14): Camera rigging, dropper poles, and optical alignment.\n"
+            f"- Phase 3 (Days 15-21): Edge AI pipeline deployment, YOLO models, and virtual tripwires.\n"
+            f"- Phase 4 (Days 22-30): Commissioning, simulated intrusion trials, and staff training."
+        ),
+        "sop_recommendations": (
+            f"### Standard Operating Procedure (SOP) Recommendations\n"
+            f"1. SOP-01: Daily optical line-of-sight & lens integrity automated self-check.\n"
+            f"2. SOP-02: Near-miss collision telemetry review within 2 hours of alert.\n"
+            f"3. SOP-03: Material staging height limit enforcement (<1.8m within sightlines).\n"
+            f"4. SOP-04: Quarterly optical recalibration and DORI pixel density auditing."
+        ),
+        "monitoring_kpis": (
+            f"### Monitoring Metrics, Audit & Validation\n"
+            f"- Leading KPI: AI alert reaction latency <35ms.\n"
+            f"- Leading KPI: Optical blind-spot coverage >99.4% of total floor area.\n"
+            f"- Leading KPI: PPE compliance rate = 100%.\n"
+            f"- Lagging KPI: OSHA lost-time recordable collision rate = 0.00."
+        ),
+        "cost_analysis": (
+            f"### Cost Considerations & Equipment Budgeting\n"
+            f"Estimated deployment costs for {cam_count} camera nodes:\n"
+            f"- Optical Sensors ({cam_count}x IP True WDR cameras): ${cam_count * 220:,}\n"
+            f"- Network Infrastructure & PoE+ Switch: $1,400\n"
+            f"- Edge AI Server (NVIDIA GPU): $3,200\n"
+            f"- Mounting & Dropper Hardware: ${cam_count * 45:,}\n"
+            f"- Strobe Alert Relays: $480\n"
+            f"- Professional Installation & Commissioning: $2,200\n"
+            f"**Total Turnkey Budget**: ${cam_count * 265 + 7280:,}"
+        ),
+        "unresolved_questions": (
+            f"### Unresolved Questions, Assumptions & Professional Review Needs\n"
+            f"1. Structural truss load verification for ceiling dropper pole suspension.\n"
+            f"2. IP69K sealing verification for chemical washdown areas.\n"
+            f"3. Shielded Cat6 STP verification against high-frequency motor EMI.\n"
+            f"4. Site safety engineer sign-off for strobe relay integration."
+        ),
+        # Backward-compatibility for legacy assertions
         "exec_summary": (
-            f"Executive Summary: Automated computer-vision safety & workflow monitoring architecture for {company} "
-            f"({industry}). The system orchestrates {cam_count} continuous video streams to enforce OSHA/ISO compliance, "
-            f"detect hazard zones, and identify PPE violations in real time."
+            f"Executive Summary: Automated computer-vision safety & optical hazard mitigation architecture for {company} "
+            f"({industry}). Orchestrates {cam_count} camera streams with sub-35ms edge AI alerting."
         ),
         "camera_coverage_plan": (
-            f"Camera Placement Strategy: Designed for {cam_count} high-definition cameras strategically positioned across "
-            f"access gates, high-bay aisles, loading bays, and machine operating zones. Utilizing per-camera mount geometries "
-            f"(wall-horizontal, roof-nadir, 45° corner, and cross-aisle) to guarantee >95% effective optical coverage with zero blind spots."
-        ),
-        "ai_vision_models": (
-            f"Computer Vision Stack: Deploying YOLOv8/v11 real-time detectors for PPE detection (hard hats, high-vis vests, goggles), "
-            f"DeepSORT/ByteTrack for multi-object forklift & pedestrian trajectory tracking, and virtual polygon boundary tripwires for exclusion zones."
-        ),
-        "network_and_bandwidth": (
-            f"Network Infrastructure & Sizing: {cam_count} cameras streaming 1080p @ 15 FPS H.265 require ~2.5 Mbps each, "
-            f"totaling {cam_count * 2.5:.1f} Mbps aggregate network throughput. Recommended PoE+ managed Layer 3 switches with redundant 10Gbps fiber uplinks."
-        ),
-        "vms_and_storage": (
-            f"Storage & Retention Architecture: Based on 30-day rolling continuous recording for {cam_count} cameras at H.265 compression: "
-            f"estimated storage requirement is ~{cam_count * 0.45:.1f} TB raw capacity. Dual-node NVR with RAID 6 configuration ensures zero data loss."
-        ),
-        "hazard_response_protocols": (
-            f"Alerting & Event Escalation: Automated MQTT/Webhook dispatch to site sirens and mobile dashboards upon critical violations "
-            f"(forklift in pedestrian aisle, unhelmeted personnel within 3m of active crane, or emergency door blockage)."
-        ),
-        "maintenance_and_calibration": (
-            f"Lifecycle & Optical Maintenance: Semi-annual optical recalibration schedule, automated camera tamper/defocus detection, "
-            f"and daily lens clarity health checks against synthetic test patterns."
+            f"Camera Placement Strategy: Sized for {cam_count} high-definition cameras with cross-aisle rigging and dropper poles to guarantee zero blind spots."
         )
     }
 
@@ -544,6 +612,7 @@ def generate_token_free_safety_plan(project_data: Dict[str, Any]) -> Dict[str, A
         "camera_count": cam_count,
         "complete": True,
     }
+
 
 
 if __name__ == "__main__":

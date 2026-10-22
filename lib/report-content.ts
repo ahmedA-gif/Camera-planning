@@ -165,23 +165,11 @@ export async function buildReportHtml(rawProject: any, mode: ReportMode): Promis
   let figs: Figure[] = raw.map(([t, svg, what, read]) => ({ title: t, svg, what, read }));
 
   if (mode === 'docx') {
-    // Word cannot show inline SVG, so convert each diagram to a PNG picture when possible.
-    try {
-      const sharp = (await import('sharp')).default;
-      figs = await Promise.all(
-        figs.map(async f => {
-          try {
-            const svgFixed = f.svg.replace('width="100%" height="auto"', `width="${w}" height="${h}"`);
-            const png = await sharp(Buffer.from(svgFixed), { density: 144 }).png().toBuffer();
-            return { ...f, svg: `<img src="data:image/png;base64,${png.toString('base64')}" width="${w}" style="width:${w}px" alt="${esc(f.title)}"/>` };
-          } catch {
-            return f;
-          }
-        }),
-      );
-    } catch {
-      /* keep inline SVG */
-    }
+    // Word-compatible HTML: wrap SVG with explicit width/height
+    figs = figs.map(f => ({
+      ...f,
+      svg: f.svg.replace('width="100%" height="auto"', `width="${w}" height="${h}" style="width:${w}px;height:${h}px;display:block;margin:0 auto;"`),
+    }));
   }
 
   const figHtml = (n: number) => {

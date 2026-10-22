@@ -142,11 +142,11 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     if (userRequestedCount > 0) {
       count = userRequestedCount;
     } else if (project?.cameras && project.cameras.length > 0) {
-      count = project.cameras.length;
+      count = Math.max(15, project.cameras.length);
     } else if (project?.use_cases && project.use_cases.length > 0) {
-      count = Math.max(2, project.use_cases.length);
+      count = Math.max(15, project.use_cases.length);
     } else {
-      count = 4;
+      count = 15;
     }
 
     // Detect target inspection mode based on scenario requirements / keywords
@@ -1797,10 +1797,10 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
       </div>
 
       {/* Main Grid: Left Controls & Right Visualizer */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-5 p-5 overflow-y-auto lg:overflow-hidden min-h-0">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-5 p-5 overflow-y-auto min-h-0">
         
         {/* Left Column: Interactive Parameters */}
-        <div className="flex flex-col gap-4 lg:overflow-y-auto pr-1 min-h-0">
+        <div className="flex flex-col gap-4 overflow-y-auto pr-1 min-h-0">
           
           {/* Facility & Target Height */}
           <div className="bg-white border border-border rounded-xl shadow-xs overflow-hidden">
@@ -3096,7 +3096,7 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
         </div>
 
         {/* Right Column: Visualization & Mathematical Metrics */}
-        <div className="flex flex-col gap-4 lg:overflow-y-auto min-h-0">
+        <div className="flex flex-col gap-4 overflow-y-auto min-h-0">
           
           {/* Top KPI Metrics Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">

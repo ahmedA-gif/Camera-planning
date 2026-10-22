@@ -510,8 +510,8 @@ function DashboardContent() {
 
       case 'camera-map':
         return (
-          <div className="min-h-0 flex-1 overflow-hidden">
-              {project ? (
+          <div className="flex-1 min-h-0 h-full flex flex-col">
+            {project ? (
               <CameraMap
                 key={project.id}
                 project={project}
@@ -535,7 +535,7 @@ function DashboardContent() {
 
       case 'workflow':
         return (
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="flex-1 min-h-0 h-full flex flex-col">
             {project ? (
               <WorkflowEditor 
                 project={project} 
@@ -551,7 +551,7 @@ function DashboardContent() {
 
       case 'report':
         return (
-          <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="flex-1 min-h-0 h-full flex flex-col overflow-y-auto">
             {project ? (
               <ReportPreview 
                 project={project} 
@@ -585,14 +585,14 @@ function DashboardContent() {
   };
 
   return (
-    <div className="flex flex-col h-screen h-dvh overflow-hidden bg-background">
+    <div className="flex flex-col min-h-screen bg-background">
       {hasUnassignedLegacyProjects && (
         <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-sm text-amber-950">
           <p>Previous browser projects are unassigned. Import them only if they belong to your account.</p>
           <button onClick={handleClaimLegacyProjects} className="rounded-md bg-amber-900 px-3 py-1.5 font-medium text-white hover:bg-amber-800">Import my previous projects</button>
         </div>
       )}
-      <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden max-lg:flex-col">
+      <div className="flex flex-1 min-w-0 max-lg:flex-col">
         <Sidebar
           userId={userId}
           onNavigate={handleSidebarNavigate}
@@ -607,7 +607,7 @@ function DashboardContent() {
             setIsDirty(false);
           }}
         />
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0">
           <ProjectHeader
             project={project}
             onSave={handleSave}
@@ -618,7 +618,7 @@ function DashboardContent() {
             isGeneratingAllInOne={isGeneratingAllInOne}
             isDirty={isDirty}
           />
-          <main key={activeView} className="flex-1 min-h-0 overflow-hidden flex flex-col animate-fade-in">
+          <main key={activeView} className="flex-1 min-h-0 flex flex-col overflow-y-auto animate-fade-in">
             {renderView()}
           </main>
         </div>

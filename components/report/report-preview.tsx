@@ -144,7 +144,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
   };
 
   return (
-    <div className="flex flex-1 min-h-0 bg-slate-100 flex-col overflow-y-auto">
+    <div className="report-container flex flex-1 min-h-0 bg-slate-100 flex-col overflow-y-auto print:bg-white print:overflow-visible">
       {/* Top Action Ribbon (Hidden when printing) */}
       <div className="no-print sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
@@ -195,7 +195,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
         {/* ========================================================================= */}
         {/* PAGE 1: EXECUTIVE BLUEPRINT & MULTI-BUILDING FACILITY ARCHITECTURE        */}
         {/* ========================================================================= */}
-        <div className="w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:h-[280mm] print:overflow-hidden print:break-after-page flex flex-col justify-between">
+        <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-page flex flex-col justify-between">
           <div>
             {/* Header Box */}
             <div className="border-b-2 border-blue-600 pb-3 mb-3 flex items-start justify-between">
@@ -341,7 +341,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
         {/* ========================================================================= */}
         {/* PAGE 2: PER-BUILDING CAMERA PLACEMENT & BLIND SPOT MITIGATION             */}
         {/* ========================================================================= */}
-        <div className="w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:h-[280mm] print:overflow-hidden print:break-after-page flex flex-col justify-between">
+        <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-page flex flex-col justify-between">
           <div>
             {/* PART 3: PER-BUILDING CAMERA PLACEMENT & ENVIRONMENTAL CONDITIONS */}
             <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
@@ -535,7 +535,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
         {/* ========================================================================= */}
         {/* PAGE 3: LOGIC APPLIED, FALSE POSITIVE RISKS & EDGE AI INFRASTRUCTURE       */}
         {/* ========================================================================= */}
-        <div className="w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:h-[280mm] print:overflow-hidden print:break-after-page flex flex-col justify-between">
+        <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-avoid flex flex-col justify-between">
           <div>
             {/* PART 5: MATHEMATICAL & GEOMETRIC LOGIC APPLIED */}
             <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">

@@ -31,9 +31,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta name="theme-color" content="#1e293b" />
       </head>
-      <body className="h-screen h-dvh overflow-hidden bg-background text-foreground flex flex-col">
+      <body className="min-h-screen bg-background text-foreground flex flex-col">
         <ClerkProvider>
-          <main className="flex-1 min-h-0 h-full overflow-hidden flex flex-col">{children}</main>
+          <div className="flex-1 flex flex-col min-h-0">{children}</div>
         </ClerkProvider>
       </body>
     </html>

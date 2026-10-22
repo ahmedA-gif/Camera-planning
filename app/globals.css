@@ -194,91 +194,85 @@ html { scroll-behavior: smooth; }
 
 /* Print styles for report */
 @media print {
-  body * {
-    visibility: hidden !important;
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
   }
 
-  .report-container,
-  .report-container * {
-    visibility: visible !important;
-  }
-
-  .report-container {
-    position: absolute !important;
-    inset: 0 auto auto 0 !important;
-    width: 100% !important;
+  /* Hide navigation, sidebar, header, action buttons, and non-printable elements */
+  header,
+  aside,
+  nav,
+  .no-print,
+  button,
+  [data-no-print="true"] {
+    display: none !important;
   }
 
   html,
   body {
+    background: #ffffff !important;
+    color: #0f172a !important;
     height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  main {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .report-container {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+  }
+
+  .report-page {
+    background: #ffffff !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 0 10mm 0 !important;
+    padding: 8mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    page-break-after: always !important;
+    break-after: page !important;
     overflow: visible !important;
   }
 
-  .no-print {
-    display: none !important;
+  .report-page:last-child {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    margin-bottom: 0 !important;
   }
-  
+
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  body {
-    background: white !important;
-    color: black !important;
-    font-size: 11pt;
-    line-height: 1.5;
-  }
-  
-  .report-container {
-    max-width: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-  }
-  
-  .diagram-card,
-  .section-card,
   svg {
-    break-inside: avoid !important;
+    max-width: 100% !important;
+    height: auto !important;
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
-  .report-page {
-    page-break-after: always;
-    min-height: 100%;
-  }
-  
-  .report-page:last-child {
-    page-break-after: auto;
-  }
-  
   table {
-    page-break-inside: avoid;
-  }
-  
-  tr {
-    page-break-inside: avoid;
-    page-break-after: auto;
-  }
-  
-  thead {
-    display: table-header-group;
-  }
-  
-  @page {
-    margin: 2cm;
-    @top-center {
-      content: "TechHub Plan Vision · Technical Blueprint";
-      font-size: 8pt;
-      color: #666;
-    }
-    @bottom-center {
-      content: "Page " counter(page) " of " counter(pages);
-      font-size: 8pt;
-      color: #666;
-    }
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
 

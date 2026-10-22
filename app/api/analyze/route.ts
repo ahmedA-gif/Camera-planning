@@ -281,9 +281,12 @@ function attachScenarioPhysicalLayout(
   const hw = parseCameraHardware(inputs.camera_specifications, text);
   const userRequestedCount = extractDesiredCameraCount(text, null);
   const explicitReasoned = reasonedCameraCount ?? inputs.reasoned_camera_count;
-  const targetCount = userRequestedCount > 0
+  const isMultiBuilding = Boolean(profile.buildings && profile.buildings.length >= 2);
+  const minFleet = isMultiBuilding ? Math.max(15, (profile.buildings?.length || 4) * 3) : 15;
+
+  let targetCount = userRequestedCount > 0
     ? userRequestedCount
-    : (typeof explicitReasoned === 'number' && explicitReasoned > 0)
+    : (typeof explicitReasoned === 'number' && explicitReasoned >= 15)
       ? Math.min(80, explicitReasoned)
       : calculateReasonedCameraCount({
           length_m: L,
@@ -295,7 +298,12 @@ function attachScenarioPhysicalLayout(
           critical_components_count: inputs.critical_components?.length || 0,
           detection_coverage_target: inputs.detection_coverage_target,
           facility_type: profile.facility_type,
+          buildings: profile.buildings,
         });
+
+  if (userRequestedCount === 0 && targetCount < minFleet) {
+    targetCount = minFleet;
+  }
 
   const sections = (inputs.layout_sections || []).filter(s => s && s.trim());
   const defaultResW = hw.sensorWidthPx;
@@ -677,19 +685,20 @@ export async function POST(request: NextRequest) {
       `${planningInputs.camera_specifications || ''} ${business_description} ${(requirements || []).join(' ')} ${planningInputs.available_hardware || ''}`,
       null
     );
+    const effectiveTargetCount = userCameraCount > 0 ? userCameraCount : 15;
 
     const prompt = `Facility description: ${business_description}
 ${industry ? `Industry: ${industry}` : ''}
 ${company_name ? `Company: ${company_name}` : ''}
 ${requirements?.length ? `Requirements:\n${requirements.map((item: string) => `- ${item}`).join('\n')}` : ''}
 Camera specifications: ${planningInputs.camera_specifications || 'Not provided'}
-${userCameraCount > 0 ? `Target Camera Fleet: User requires exactly ${userCameraCount} cameras. DO NOT suggest, alter, or downgrade this count. You must set recommended_camera_count to ${userCameraCount} and plan all use cases for this full fleet.` : ''}
+Target Camera Fleet: User requires an enterprise multi-building facility fleet of ${effectiveTargetCount} cameras (at least 15 cameras across all functional buildings and operational zones, typically 3-5 cameras per building/section). DO NOT suggest or downgrade to only 4 cameras. recommended_camera_count MUST be ${effectiveTargetCount}.
 Available hardware and input feeds: ${planningInputs.available_hardware || 'Not provided'}
 Critical components: ${planningInputs.critical_components.join(', ') || 'Not provided'}
 Site image suggestion: ${planningInputs.image_observation || 'No image uploaded'}
 Layout sections: ${planningInputs.layout_sections.join('; ') || planningInputs.layout_section_count}; target detection coverage: ${planningInputs.detection_coverage_target}%
 
-Suggest computer-vision use cases, practical techniques, camera placement/specification considerations based on the supplied inputs, assumptions, and missing information. Return JSON only.`;
+Suggest computer-vision use cases, practical techniques, camera placement/specification considerations based on the supplied inputs, assumptions, and missing information. Set recommended_camera_count to ${effectiveTargetCount}. Return JSON only.`;
 
     const rawResponse = await callNvidiaAI(prompt);
     const parsed = extractJsonFromContent(rawResponse);
@@ -756,9 +765,9 @@ Suggest computer-vision use cases, practical techniques, camera placement/specif
 
       const reasonedCount = userCameraCount > 0
         ? userCameraCount
-        : (typeof parsed.recommended_camera_count === 'number' && parsed.recommended_camera_count > 0
+        : (typeof parsed.recommended_camera_count === 'number' && parsed.recommended_camera_count >= 15
           ? parsed.recommended_camera_count
-          : undefined);
+          : 15);
 
       attachScenarioPhysicalLayout(draft, planningInputs, reasonedCount);
 

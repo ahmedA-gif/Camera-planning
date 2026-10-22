@@ -270,6 +270,7 @@ export function calculateReasonedCameraCount(params: {
   critical_components_count?: number;
   detection_coverage_target?: number;
   facility_type?: string;
+  buildings?: FacilityBuilding[];
 }): number {
   const {
     length_m,
@@ -279,7 +280,13 @@ export function calculateReasonedCameraCount(params: {
     use_cases_count = 1,
     critical_components_count = 0,
     detection_coverage_target = 90,
+    buildings = [],
   } = params;
+
+  // Multi-building industrial complex (e.g. 2-4+ buildings) requires complete multi-zone coverage
+  if (buildings && buildings.length >= 2) {
+    return Math.max(15, buildings.reduce((acc, b) => acc + (b.camera_count || 3), 0));
+  }
 
   const area = Math.max(25, length_m * width_m);
   const coverageFactor = Math.max(0.75, (detection_coverage_target || 90) / 80);
@@ -287,15 +294,15 @@ export function calculateReasonedCameraCount(params: {
   // Standard enterprise surveillance coverage: ~80-120 m² per optical unit for DORI
   const areaBased = Math.ceil((area / 110) * coverageFactor);
 
-  // Sections coverage: each distinct layout section or building typically needs 1-4 cameras
+  // Sections coverage: each distinct layout section or building typically needs 2-4 cameras
   const secCount = Math.max(layout_section_count, layout_sections.length, 1);
-  const sectionBased = secCount * 2;
+  const sectionBased = secCount * 3;
 
   // Task-specific coverage for use cases & critical components
   const taskBased = Math.max(use_cases_count, 1) + Math.min(critical_components_count, 8);
 
   const reasoned = Math.max(sectionBased, taskBased, areaBased);
-  return Math.max(2, Math.min(80, reasoned));
+  return Math.max(12, Math.min(80, reasoned));
 }
 
 /**
@@ -403,7 +410,7 @@ export function parseFacilityBuildings(text: any, totalCameraCount: number = 15)
     const rawLine = lines[i].trim();
     if (!rawLine) continue;
 
-    const bldgMatch = rawLine.match(/(?:building|bldg|section|block)\s*(\d+|[a-z0-9]+)\s*[-:]*\s*(.*)/i);
+    const bldgMatch = rawLine.match(/\b(?:building|bldg|section|block)\b\s+([0-9]+|[A-Z])\b(?:\s*[-:]*\s*(.*))?/i);
     if (bldgMatch) {
       if (currentBldg && currentBldg.name) {
         buildings.push(finalizeBuilding(currentBldg, isFeet, buildings.length + 1));

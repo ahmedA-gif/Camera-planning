@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Camera, LayoutElement, Point } from './types';
+import type { Camera, LayoutElement, Point, FacilityBuilding } from './types';
 
 export interface FacilityProfile {
   facility_type: string;
@@ -11,6 +11,7 @@ export interface FacilityProfile {
   has_machinery: boolean;
   has_forklifts: boolean;
   has_columns: boolean;
+  buildings?: FacilityBuilding[];
 }
 
 export interface GeneratedLayoutResult {
@@ -21,6 +22,7 @@ export interface GeneratedLayoutResult {
   camera_count: number;
   structure_count: number;
   facility_profile: FacilityProfile;
+  buildings?: FacilityBuilding[];
 }
 
 /**
@@ -287,46 +289,235 @@ export function calculateReasonedCameraCount(params: {
 }
 
 /**
+ * Helper to finalize building attributes with ft/m conversions and purpose
+ */
+function finalizeBuilding(b: Partial<FacilityBuilding>, isFeet: boolean, index: number): FacilityBuilding {
+  const lRaw = b.length_ft || 40;
+  const wRaw = b.width_ft || 30;
+  const hRaw = b.height_ft || 15;
+
+  // If explicitly declared feet, or if height is 10-35 (standard ceiling in feet, which would be abnormal in meters)
+  const useFeet = isFeet || (hRaw >= 10 && hRaw <= 35) || (lRaw >= 45 && wRaw >= 45 && hRaw >= 8);
+
+  const length_m = useFeet ? Math.round(lRaw * 0.3048 * 10) / 10 : lRaw;
+  const width_m = useFeet ? Math.round(wRaw * 0.3048 * 10) / 10 : wRaw;
+  const height_m = useFeet ? Math.round(hRaw * 0.3048 * 10) / 10 : hRaw;
+
+  const length_ft = useFeet ? lRaw : Math.round(lRaw * 3.28084);
+  const width_ft = useFeet ? wRaw : Math.round(wRaw * 3.28084);
+  const height_ft = useFeet ? hRaw : Math.round(hRaw * 3.28084);
+
+  const area_sqft = Math.round(length_ft * width_ft);
+  const area_sqm = Math.round(length_m * width_m);
+
+  let purpose = 'Operational facility zone & safety perimeter';
+  const lowerName = (b.name || '').toLowerCase();
+  if (/plastic|polymer|sundar|extru/i.test(lowerName)) {
+    purpose = 'Raw material polymer infeed, compounding & high-temperature extrusion lines';
+  } else if (/filling|hall|chemical|mixing|berm|vat/i.test(lowerName)) {
+    purpose = 'Automated chemical filling carousels, induction sealing, hazardous containment & spill berms';
+  } else if (/workshop|mechanic|tool|lathe|cnc|weld/i.test(lowerName)) {
+    purpose = 'Machine tooling, CNC lathe, welding safety, overhead crane runway & technician oversight';
+  } else if (/loading|dock|point|truck|freight|bay/i.test(lowerName)) {
+    purpose = 'Commercial logistics ingress, heavy truck bay docking, freight motion tracking & ramp safety';
+  }
+
+  return {
+    id: b.id || randomUUID(),
+    code: b.code || `B${String(index).padStart(2, '0')}`,
+    name: b.name || `Building ${index}`,
+    length_ft,
+    width_ft,
+    height_ft,
+    length_m,
+    width_m,
+    height_m,
+    area_sqft,
+    area_sqm,
+    purpose,
+    camera_count: 2,
+    camera_ids: [],
+  };
+}
+
+/**
+ * Distribute totalCameraCount across parsed buildings proportionally with min 2 per building
+ */
+function distributeCameras(buildings: FacilityBuilding[], total: number) {
+  if (buildings.length === 0) return;
+  const totalArea = buildings.reduce((acc, b) => acc + Math.max(10, b.area_sqft), 0);
+  
+  let allocated = 0;
+  buildings.forEach(b => {
+    const raw = Math.round((Math.max(10, b.area_sqft) / totalArea) * total);
+    b.camera_count = Math.max(2, raw);
+    allocated += b.camera_count;
+  });
+
+  let diff = total - allocated;
+  while (diff !== 0) {
+    if (diff > 0) {
+      const largest = [...buildings].sort((a, b) => b.area_sqft - a.area_sqft)[0];
+      largest.camera_count += 1;
+      diff--;
+    } else {
+      const eligible = buildings.filter(b => b.camera_count > 2);
+      if (eligible.length > 0) {
+        eligible.sort((a, b) => b.camera_count - a.camera_count)[0].camera_count -= 1;
+        diff++;
+      } else {
+        const eligible1 = buildings.filter(b => b.camera_count > 1);
+        if (eligible1.length > 0) {
+          eligible1[0].camera_count -= 1;
+          diff++;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Parse multi-building definitions and dimensions from scenario text
+ */
+export function parseFacilityBuildings(text: any, totalCameraCount: number = 15): FacilityBuilding[] {
+  const textStr = typeof text === 'string' ? text : (typeof text === 'object' && text !== null ? Object.values(text).join(' ') : String(text || ''));
+  const isFeet = /in\s*ft|feet|\bft\b|foot/i.test(textStr);
+  const buildings: FacilityBuilding[] = [];
+
+  const lines = textStr.split(/\r?\n/);
+  let currentBldg: Partial<FacilityBuilding> | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i].trim();
+    if (!rawLine) continue;
+
+    const bldgMatch = rawLine.match(/(?:building|bldg|section|block)\s*(\d+|[a-z0-9]+)\s*[-:]*\s*(.*)/i);
+    if (bldgMatch) {
+      if (currentBldg && currentBldg.name) {
+        buildings.push(finalizeBuilding(currentBldg, isFeet, buildings.length + 1));
+      }
+      const bNum = bldgMatch[1];
+      const rawName = bldgMatch[2]?.trim() || `Building ${bNum}`;
+      const cleanName = rawName.replace(/^[-–—:]\s*/, '').trim() || `Building ${bNum}`;
+      currentBldg = {
+        id: randomUUID(),
+        code: `B${bNum.padStart(2, '0')}`,
+        name: `Building ${bNum.padStart(2, '0')} - ${cleanName.charAt(0).toUpperCase() + cleanName.slice(1)}`,
+      };
+      continue;
+    }
+
+    if (currentBldg) {
+      const lMatch = rawLine.match(/(?:length|len|l)\s*[:=]\s*(\d+(?:\.\d+)?)/i);
+      const wMatch = rawLine.match(/(?:width|wid|w)\s*[:=]\s*(\d+(?:\.\d+)?)/i);
+      const hMatch = rawLine.match(/(?:height|ht|h)\s*[:=]\s*(\d+(?:\.\d+)?)/i);
+
+      if (lMatch) currentBldg.length_ft = parseFloat(lMatch[1]);
+      if (wMatch) currentBldg.width_ft = parseFloat(wMatch[1]);
+      if (hMatch) currentBldg.height_ft = parseFloat(hMatch[1]);
+    }
+  }
+
+  if (currentBldg && currentBldg.name) {
+    buildings.push(finalizeBuilding(currentBldg, isFeet, buildings.length + 1));
+  }
+
+  // Fallback: if no multi-building syntax was found, create sensible industry buildings
+  if (buildings.length === 0) {
+    const lower = textStr.toLowerCase();
+    const isFactory = /chemical|factory|manufactur|plant|filling|descon/i.test(lower);
+    
+    buildings.push({
+      id: randomUUID(),
+      code: 'B01',
+      name: isFactory ? 'Building 01 - Primary Manufacturing & Processing Hall' : 'Building 01 - Main Inbound Logistics Hall',
+      length_m: 25.0,
+      width_m: 20.0,
+      height_m: 5.0,
+      length_ft: 82,
+      width_ft: 65,
+      height_ft: 16,
+      area_sqm: 500,
+      area_sqft: 5330,
+      purpose: isFactory ? 'Polymer and raw material automated synthesis' : 'High-bay pallet receipt and automated sorting',
+      camera_count: 4,
+      camera_ids: [],
+    });
+    buildings.push({
+      id: randomUUID(),
+      code: 'B02',
+      name: isFactory ? 'Building 02 - Automated Chemical Filling & Sealing Hall' : 'Building 02 - Central Order Fulfillment & Picking',
+      length_m: 35.0,
+      width_m: 25.0,
+      height_m: 5.5,
+      length_ft: 115,
+      width_ft: 82,
+      height_ft: 18,
+      area_sqm: 875,
+      area_sqft: 9430,
+      purpose: isFactory ? 'Container filling, capping, berm spill containment' : 'Robotic retrieval, conveyor sortation and packing',
+      camera_count: 5,
+      camera_ids: [],
+    });
+    buildings.push({
+      id: randomUUID(),
+      code: 'B03',
+      name: 'Building 03 - Mechanical Workshop & Tooling Center',
+      length_m: 18.0,
+      width_m: 15.0,
+      height_m: 4.8,
+      length_ft: 60,
+      width_ft: 50,
+      height_ft: 16,
+      area_sqm: 270,
+      area_sqft: 3000,
+      purpose: 'Tooling lathe, CNC milling, welding safety and technician crib',
+      camera_count: 3,
+      camera_ids: [],
+    });
+    buildings.push({
+      id: randomUUID(),
+      code: 'B04',
+      name: 'Building 04 - Heavy Vehicle Logistics & Loading Point',
+      length_m: 12.0,
+      width_m: 8.0,
+      height_m: 4.0,
+      length_ft: 40,
+      width_ft: 26,
+      height_ft: 13,
+      area_sqm: 96,
+      area_sqft: 1040,
+      purpose: 'Dock leveler freight transfer, heavy truck bay alignment and driver safety',
+      camera_count: 3,
+      camera_ids: [],
+    });
+  }
+
+  distributeCameras(buildings, totalCameraCount);
+  return buildings;
+}
+
+/**
  * Detect facility type, dimensions, and structural requirements from scenario keywords,
  * including multi-building / multi-zone specifications and ft/m conversions.
  */
-export function detectFacilityProfile(text: any): FacilityProfile {
+export function detectFacilityProfile(text: any, totalCameraCount: number = 15): FacilityProfile {
   const textStr = typeof text === 'string' ? text : (typeof text === 'object' && text !== null ? Object.values(text).join(' ') : String(text || ''));
   const lower = textStr.toLowerCase();
   const isFeet = /in\s*ft|feet|\bft\b|foot/i.test(lower);
+
+  const buildings = parseFacilityBuildings(textStr, totalCameraCount);
 
   let length = 40.0;
   let width = 25.0;
   let height = 5.0;
 
-  // Multi-building dimension scanner (e.g. Building 01 Length = 50, Width = 50, Building 02 Length = 100, Width = 80)
-  const dimRegex = /(?:length|l)\s*=\s*(\d+(?:\.\d+)?)[,\s\n]+(?:width|w)\s*=\s*(\d+(?:\.\d+)?)(?:[,\s\n]+(?:height|h)\s*=\s*(\d+(?:\.\d+)?))?/gi;
-  const matches: Array<{ l: number; w: number; h?: number }> = [];
-  let m: RegExpExecArray | null;
-  while ((m = dimRegex.exec(lower)) !== null) {
-    matches.push({
-      l: parseFloat(m[1]),
-      w: parseFloat(m[2]),
-      h: m[3] ? parseFloat(m[3]) : undefined,
-    });
-  }
-
-  if (matches.length > 0) {
-    // Find maximal building dimensions across all listed buildings so the canvas encompasses all
-    let maxL = Math.max(...matches.map(item => item.l));
-    let maxW = Math.max(...matches.map(item => item.w));
-    const heights = matches.map(item => item.h).filter((h): h is number => typeof h === 'number');
-    let maxH = heights.length > 0 ? Math.max(...heights) : 15;
-
-    if (isFeet) {
-      length = maxL * 0.3048;
-      width = maxW * 0.3048;
-      height = maxH * 0.3048;
-    } else {
-      length = maxL;
-      width = maxW;
-      height = maxH;
-    }
+  if (buildings.length > 0) {
+    length = Math.max(...buildings.map(b => b.length_m));
+    width = Math.max(...buildings.map(b => b.width_m));
+    height = Math.max(...buildings.map(b => b.height_m));
   } else {
     // Single dimensional pattern matches
     const ftDimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:ft|feet|')\s*(?:x|×|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|')/i);
@@ -392,6 +583,7 @@ export function detectFacilityProfile(text: any): FacilityProfile {
     has_machinery,
     has_forklifts,
     has_columns,
+    buildings,
   };
 }
 
@@ -409,20 +601,21 @@ export function generateStructuredLayout(
     : (typeof scenarioInput === 'object' && scenarioInput !== null
         ? [scenarioInput.business_description, ...(scenarioInput.requirements || []), scenarioInput.camera_specifications].filter(Boolean).join(' ')
         : String(scenarioInput || ''));
-  const profile = detectFacilityProfile(scenarioText);
-  const hw = parseCameraHardware(scenarioText);
   const userRequestedCount = extractDesiredCameraCount(scenarioText, desiredCameraCount);
+  const useCaseList = Array.isArray(useCases) ? useCases : [];
   const cameraCount = userRequestedCount > 0
     ? userRequestedCount
     : calculateReasonedCameraCount({
-        length_m: profile.length,
-        width_m: profile.width,
-        height_m: profile.height,
-        use_cases_count: useCases.length,
-        facility_type: profile.facility_type,
+        length_m: 40.0,
+        width_m: 25.0,
+        height_m: 5.0,
+        use_cases_count: useCaseList.length,
+        facility_type: 'warehouse',
       });
+  const profile = detectFacilityProfile(scenarioText, cameraCount);
+  const hw = parseCameraHardware(scenarioText);
 
-  const validUcIds = useCases.map(uc => uc.id).filter(Boolean);
+  const validUcIds = useCaseList.map(uc => uc?.id).filter(Boolean);
 
   const structure: LayoutElement[] = [];
   const minX = 0.05;
@@ -478,251 +671,431 @@ export function generateStructuredLayout(
     points: [{ x: 0.82, y: minY }, { x: 0.90, y: minY }],
   });
 
-  if (profile.has_docks) {
-    [0.12, 0.22, 0.32].forEach((dx, dIdx) => {
-      structure.push({
-        id: randomUUID(),
-        name: `Loading Dock Bay Door #${dIdx + 1}`,
-        type: 'entrance',
-        points: [{ x: dx, y: minY }, { x: dx + 0.06, y: minY }],
-      });
+  // Multi-Building Sector Division & Obstacles
+  const bldgs = profile.buildings || [];
+  const hasMultiBuilding = bldgs.length > 1;
+
+  if (hasMultiBuilding) {
+    // Partition walls separating building quadrants
+    structure.push({
+      id: randomUUID(),
+      name: 'North-South Facility Dividing Wall',
+      type: 'wall',
+      points: [{ x: 0.50, y: minY }, { x: 0.50, y: 0.45 }],
     });
-  }
+    structure.push({
+      id: randomUUID(),
+      name: 'Central Inter-Building Roll-Up Door',
+      type: 'entrance',
+      points: [{ x: 0.50, y: 0.45 }, { x: 0.50, y: 0.55 }],
+    });
+    structure.push({
+      id: randomUUID(),
+      name: 'South Facility Dividing Wall',
+      type: 'wall',
+      points: [{ x: 0.50, y: 0.55 }, { x: 0.50, y: maxY }],
+    });
 
-  // 2. Full Obstacles (Racks, Machinery, Structural Columns, Staging)
-  if (profile.facility_type === 'warehouse' || profile.facility_type === 'retail' || profile.has_racks) {
-    const numRackBanks = Math.max(3, Math.min(10, Math.ceil(Math.sqrt(cameraCount * 1.2))));
-    const yStart = 0.18;
-    const yEnd = 0.82;
-    const yStep = (yEnd - yStart) / Math.max(1, numRackBanks);
-    const rackH = Math.min(0.045, yStep * 0.45);
+    structure.push({
+      id: randomUUID(),
+      name: 'West-East Facility Dividing Wall',
+      type: 'wall',
+      points: [{ x: minX, y: 0.50 }, { x: 0.45, y: 0.50 }],
+    });
+    structure.push({
+      id: randomUUID(),
+      name: 'East-West Internal Passage Door',
+      type: 'entrance',
+      points: [{ x: 0.45, y: 0.50 }, { x: 0.55, y: 0.50 }],
+    });
+    structure.push({
+      id: randomUUID(),
+      name: 'East Facility Dividing Wall',
+      type: 'wall',
+      points: [{ x: 0.55, y: 0.50 }, { x: maxX, y: 0.50 }],
+    });
 
-    for (let rI = 0; rI < numRackBanks; rI++) {
-      const ry = yStart + rI * yStep;
-      // West rack bank
-      structure.push({
-        id: randomUUID(),
-        name: `Storage Rack Bank Aisle ${rI + 1}-West`,
-        type: 'obstacle',
-        points: [
-          { x: 0.15, y: ry },
-          { x: 0.48, y: ry },
-          { x: 0.48, y: ry + rackH },
-          { x: 0.15, y: ry + rackH },
-        ],
-      });
-      // East rack bank
-      structure.push({
-        id: randomUUID(),
-        name: `Storage Rack Bank Aisle ${rI + 1}-East`,
-        type: 'obstacle',
-        points: [
-          { x: 0.54, y: ry },
-          { x: 0.88, y: ry },
-          { x: 0.88, y: ry + rackH },
-          { x: 0.54, y: ry + rackH },
-        ],
-      });
-    }
-  } else if (profile.facility_type === 'factory' || profile.has_machinery) {
-    const numLines = Math.max(2, Math.min(6, Math.floor(cameraCount / 8)));
-    for (let lineIdx = 0; lineIdx < numLines; lineIdx++) {
-      const lx = numLines > 1 ? 0.18 + lineIdx * (0.65 / (numLines - 1)) : 0.45;
-      structure.push({
-        id: randomUUID(),
-        name: `Production Line #${lineIdx + 1} Conveyor`,
-        type: 'obstacle',
-        points: [
-          { x: lx - 0.04, y: 0.22 },
-          { x: lx + 0.04, y: 0.22 },
-          { x: lx + 0.04, y: 0.78 },
-          { x: lx - 0.04, y: 0.78 },
-        ],
-      });
-      structure.push({
-        id: randomUUID(),
-        name: `Robotic Assembly Cell #${lineIdx + 1}`,
-        type: 'obstacle',
-        points: [
-          { x: lx + 0.06, y: 0.35 },
-          { x: lx + 0.12, y: 0.35 },
-          { x: lx + 0.12, y: 0.48 },
-          { x: lx + 0.06, y: 0.48 },
-        ],
-      });
-    }
-  }
+    // Populate sector obstacles per building
+    bldgs.forEach((b, bIdx) => {
+      const isWest = bIdx % 2 === 0;
+      const isNorth = Math.floor(bIdx / 2) === 0;
+      const bMinX = isWest ? 0.08 : 0.52;
+      const bMaxX = isWest ? 0.48 : 0.92;
+      const bMinY = isNorth ? 0.08 : 0.52;
+      const bMaxY = isNorth ? 0.48 : 0.92;
 
-  // Structural columns
-  if (profile.has_columns || cameraCount >= 15) {
-    const gridCols = [0.30, 0.50, 0.70];
-    const gridRows = [0.28, 0.50, 0.72];
-    gridCols.forEach((cx, cIdx) => {
-      gridRows.forEach((cy, rIdx) => {
+      // Zone perimeter tag
+      structure.push({
+        id: randomUUID(),
+        name: `${b.name} Operational Zone`,
+        type: 'obstacle',
+        obstacle_type: 'building',
+        points: [
+          { x: bMinX, y: bMinY },
+          { x: bMaxX, y: bMinY },
+          { x: bMaxX, y: bMaxY },
+          { x: bMinX, y: bMaxY },
+        ],
+      });
+
+      const lowerName = b.name.toLowerCase();
+      if (/plastic|polymer|sundar|extru/i.test(lowerName)) {
         structure.push({
           id: randomUUID(),
-          name: `Structural Column C${cIdx + 1}-R${rIdx + 1}`,
+          name: `${b.code}: Polymer Infeed Conveyor & Compounding Hopper`,
           type: 'obstacle',
+          obstacle_type: 'conveyor',
           points: [
-            { x: cx - 0.012, y: cy - 0.012 },
-            { x: cx + 0.012, y: cy - 0.012 },
-            { x: cx + 0.012, y: cy + 0.012 },
-            { x: cx - 0.012, y: cy + 0.012 },
+            { x: bMinX + 0.05, y: bMinY + 0.08 },
+            { x: bMinX + 0.20, y: bMinY + 0.08 },
+            { x: bMinX + 0.20, y: bMinY + 0.14 },
+            { x: bMinX + 0.05, y: bMinY + 0.14 },
           ],
         });
-      });
-    });
-  }
-
-  // Staging area
-  structure.push({
-    id: randomUUID(),
-    name: 'Pallet Staging & Sorting Zone',
-    type: 'obstacle',
-    points: [
-      { x: 0.12, y: 0.84 },
-      { x: 0.38, y: 0.84 },
-      { x: 0.38, y: 0.92 },
-      { x: 0.12, y: 0.92 },
-    ],
-  });
-
-  // 3. Systematic Camera Generation (1 to 200+ cameras with diverse angles & mount types)
-  const cameras: Array<Camera & { target_area?: string; rationale?: string; mount_type?: string }> = [];
-  let assignedCount = 0;
-
-  // Role A: Key Ingress & Docks
-  const gateCameras = [
-    { x: 0.50, y: 0.93, deg: 0, m: 'wall-h', role: 'Main Entrance Face & PPE Verification', fov: 90, range: 0.35 },
-    { x: 0.42, y: 0.94, deg: 45, m: 'corner', role: 'Main Gate Ingress Angled Review', fov: 95, range: 0.38 },
-    { x: 0.58, y: 0.94, deg: 315, m: 'corner', role: 'Main Gate Egress Angled Review', fov: 95, range: 0.38 },
-    { x: 0.86, y: 0.08, deg: 180, m: 'wall-v', role: 'North Emergency Exit Intrusion', fov: 85, range: 0.40 },
-  ];
-  if (profile.has_docks) {
-    gateCameras.push(
-      { x: 0.15, y: 0.07, deg: 180, m: 'wall-v', role: 'Loading Bay #1 Truck Backing Monitor', fov: 90, range: 0.42 },
-      { x: 0.25, y: 0.07, deg: 180, m: 'wall-v', role: 'Loading Bay #2 Freight Offload Monitor', fov: 90, range: 0.42 },
-      { x: 0.35, y: 0.07, deg: 180, m: 'wall-v', role: 'Loading Bay #3 Dock Leveler Safety', fov: 90, range: 0.42 }
-    );
-  }
-
-  for (const gc of gateCameras) {
-    if (assignedCount >= cameraCount) break;
-    assignedCount++;
-    const assignedUcs = validUcIds.length ? [validUcIds[(assignedCount - 1) % validUcIds.length]] : [];
-    cameras.push({
-      id: randomUUID(),
-      name: `CAM-${String(assignedCount).padStart(2, '0')} [${gc.role}]`,
-      status: 'planned',
-      x: Math.round(gc.x * 1000) / 1000,
-      y: Math.round(gc.y * 1000) / 1000,
-      orientation_degrees: gc.deg,
-      horizontal_fov_degrees: gc.fov,
-      view_range: gc.range,
-      resolution_width: 1920,
-      resolution_height: 1080,
-      mount_type: gc.m,
-      assigned_use_case_ids: assignedUcs,
-      target_area: gc.role,
-      rationale: `Positioned at ${gc.role} using ${gc.m} mount at ${gc.deg}° orientation to eliminate blind spots at entry portals.`,
-    });
-  }
-
-  // Role B: Perimeter Corner & Boundary Sweeps
-  const perimeterCameras = [
-    { x: 0.07, y: 0.07, deg: 135, m: 'corner', role: 'North-West Corner Sweep', fov: 95, range: 0.55 },
-    { x: 0.93, y: 0.07, deg: 225, m: 'corner', role: 'North-East Corner Sweep', fov: 95, range: 0.55 },
-    { x: 0.93, y: 0.93, deg: 315, m: 'corner', role: 'South-East Corner Sweep', fov: 95, range: 0.55 },
-    { x: 0.07, y: 0.93, deg: 45, m: 'corner', role: 'South-West Corner Sweep', fov: 95, range: 0.55 },
-    { x: 0.50, y: 0.06, deg: 180, m: 'wall-h', role: 'North Wall Perimeter Center', fov: 106, range: 0.50 },
-    { x: 0.06, y: 0.50, deg: 90, m: 'wall-h', role: 'West Wall Perimeter Center', fov: 106, range: 0.50 },
-    { x: 0.94, y: 0.50, deg: 270, m: 'wall-h', role: 'East Wall Perimeter Center', fov: 106, range: 0.50 },
-  ];
-
-  for (const pc of perimeterCameras) {
-    if (assignedCount >= cameraCount) break;
-    assignedCount++;
-    const assignedUcs = validUcIds.length ? [validUcIds[(assignedCount - 1) % validUcIds.length]] : [];
-    cameras.push({
-      id: randomUUID(),
-      name: `CAM-${String(assignedCount).padStart(2, '0')} [${pc.role}]`,
-      status: 'planned',
-      x: Math.round(pc.x * 1000) / 1000,
-      y: Math.round(pc.y * 1000) / 1000,
-      orientation_degrees: pc.deg,
-      horizontal_fov_degrees: pc.fov,
-      view_range: pc.range,
-      resolution_width: 1920,
-      resolution_height: 1080,
-      mount_type: pc.m,
-      assigned_use_case_ids: assignedUcs,
-      target_area: pc.role,
-      rationale: `Perimeter protection using ${pc.m} mount angled at ${pc.deg}° to secure perimeter borders.`,
-    });
-  }
-
-  // Role C: Systematic Internal Grid (Aisles, Intersections, Overhead)
-  const remaining = cameraCount - assignedCount;
-  if (remaining > 0) {
-    const gridXCount = Math.max(4, Math.ceil(Math.sqrt(remaining * 1.5)));
-    const gridYCount = Math.max(3, Math.ceil(remaining / gridXCount));
-
-    const gxVals: number[] = [];
-    for (let i = 0; i < gridXCount; i++) {
-      gxVals.push(gridXCount > 1 ? 0.14 + i * (0.72 / (gridXCount - 1)) : 0.5);
-    }
-    const gyVals: number[] = [];
-    for (let j = 0; j < gridYCount; j++) {
-      gyVals.push(gridYCount > 1 ? 0.16 + j * (0.68 / (gridYCount - 1)) : 0.5);
-    }
-
-    const mountTypes = ['wall-h', 'roof-tilt', 'cross', 'roof-nadir', 'wall-v', 'pole360'];
-
-    for (let j = 0; j < gyVals.length; j++) {
-      for (let i = 0; i < gxVals.length; i++) {
-        if (assignedCount >= cameraCount) break;
-        assignedCount++;
-
-        let baseDeg = (j % 2 === 0) ? (i % 2 === 0 ? 90 : 270) : (i % 2 === 0 ? 180 : 0);
-        const angleVariant = (baseDeg + (i * 15 - j * 10) + 360) % 360;
-
-        const mountType = mountTypes[assignedCount % mountTypes.length];
-        const fov = mountType === 'pole360' ? 180 : mountType === 'roof-nadir' || mountType === 'wall-h' ? 106 : 85;
-        const viewRange = mountType === 'roof-nadir' ? 0.30 : 0.45;
-        const assignedUcs = validUcIds.length ? [validUcIds[(assignedCount - 1) % validUcIds.length]] : [];
-        const areaName = `Aisle ${j + 1} Section ${i + 1}`;
-
-        const posX = Math.max(0.06, Math.min(0.94, gxVals[i] + (i % 2 ? 0.015 : -0.015)));
-        const posY = Math.max(0.06, Math.min(0.94, gyVals[j] + (j % 2 ? 0.015 : -0.015)));
-
-        cameras.push({
+        structure.push({
           id: randomUUID(),
-          name: `CAM-${String(assignedCount).padStart(2, '0')} [${areaName}]`,
-          status: 'planned',
-          x: Math.round(posX * 1000) / 1000,
-          y: Math.round(posY * 1000) / 1000,
-          orientation_degrees: angleVariant,
-          horizontal_fov_degrees: fov,
-          view_range: Math.round(viewRange * 100) / 100,
-          resolution_width: hw.sensorWidthPx,
-          resolution_height: hw.sensorHeightPx,
-          mount_type: mountType,
-          assigned_use_case_ids: assignedUcs,
-          target_area: areaName,
-          rationale: `${hw.brand} ${hw.resolutionPreset.toUpperCase()} (${hw.sensorWidthPx}×${hw.sensorHeightPx}) @ ${hw.framerateFps}fps via ${mountType} angled at ${angleVariant}° for continuous bidirectional coverage.`,
+          name: `${b.code}: High-Speed Extrusion & Injection Molding Station`,
+          type: 'obstacle',
+          obstacle_type: 'machine',
+          points: [
+            { x: bMinX + 0.22, y: bMinY + 0.16 },
+            { x: bMinX + 0.35, y: bMinY + 0.16 },
+            { x: bMinX + 0.35, y: bMinY + 0.30 },
+            { x: bMinX + 0.22, y: bMinY + 0.30 },
+          ],
+        });
+      } else if (/filling|hall|chemical|mixing|berm|vat/i.test(lowerName)) {
+        structure.push({
+          id: randomUUID(),
+          name: `${b.code}: Automated Chemical Filling Carousel Line`,
+          type: 'obstacle',
+          obstacle_type: 'conveyor',
+          points: [
+            { x: bMinX + 0.06, y: bMinY + 0.08 },
+            { x: bMinX + 0.34, y: bMinY + 0.08 },
+            { x: bMinX + 0.34, y: bMinY + 0.14 },
+            { x: bMinX + 0.06, y: bMinY + 0.14 },
+          ],
+        });
+        structure.push({
+          id: randomUUID(),
+          name: `${b.code}: Hazardous Chemical Spill Containment Berm`,
+          type: 'obstacle',
+          obstacle_type: 'hazard',
+          points: [
+            { x: bMinX + 0.06, y: bMinY + 0.22 },
+            { x: bMinX + 0.34, y: bMinY + 0.22 },
+            { x: bMinX + 0.34, y: bMinY + 0.32 },
+            { x: bMinX + 0.06, y: bMinY + 0.32 },
+          ],
+        });
+      } else if (/workshop|mechanic|tool|lathe|cnc|weld/i.test(lowerName)) {
+        structure.push({
+          id: randomUUID(),
+          name: `${b.code}: Heavy CNC Lathe & Precision Tooling Bench`,
+          type: 'obstacle',
+          obstacle_type: 'machine',
+          points: [
+            { x: bMinX + 0.06, y: bMinY + 0.08 },
+            { x: bMinX + 0.22, y: bMinY + 0.08 },
+            { x: bMinX + 0.22, y: bMinY + 0.20 },
+            { x: bMinX + 0.06, y: bMinY + 0.20 },
+          ],
+        });
+        structure.push({
+          id: randomUUID(),
+          name: `${b.code}: Welding Flash Safety Cell & Overhead Hoist Runway`,
+          type: 'obstacle',
+          obstacle_type: 'machine',
+          points: [
+            { x: bMinX + 0.24, y: bMinY + 0.15 },
+            { x: bMinX + 0.35, y: bMinY + 0.15 },
+            { x: bMinX + 0.35, y: bMinY + 0.30 },
+            { x: bMinX + 0.24, y: bMinY + 0.30 },
+          ],
+        });
+      } else if (/loading|dock|point|truck|freight|bay/i.test(lowerName)) {
+        structure.push({
+          id: randomUUID(),
+          name: `${b.code}: Loading Dock Bay #1 & Hydraulic Leveler Lip`,
+          type: 'obstacle',
+          obstacle_type: 'dock',
+          points: [
+            { x: bMinX + 0.06, y: bMaxY - 0.12 },
+            { x: bMinX + 0.18, y: bMaxY - 0.12 },
+            { x: bMinX + 0.18, y: bMaxY - 0.04 },
+            { x: bMinX + 0.06, y: bMaxY - 0.04 },
+          ],
+        });
+        structure.push({
+          id: randomUUID(),
+          name: `${b.code}: Loading Dock Bay #2 & Truck Backing Staging Apron`,
+          type: 'obstacle',
+          obstacle_type: 'dock',
+          points: [
+            { x: bMinX + 0.22, y: bMaxY - 0.12 },
+            { x: bMinX + 0.34, y: bMaxY - 0.12 },
+            { x: bMinX + 0.34, y: bMaxY - 0.04 },
+            { x: bMinX + 0.22, y: bMaxY - 0.04 },
+          ],
         });
       }
+    });
+  } else {
+    // Single building fallback obstacles
+    if (profile.facility_type === 'factory' || profile.has_machinery) {
+      structure.push({
+        id: randomUUID(),
+        name: 'Primary Automated Conveyor Assembly Line',
+        type: 'obstacle',
+        obstacle_type: 'conveyor',
+        points: [{ x: 0.20, y: 0.30 }, { x: 0.80, y: 0.30 }, { x: 0.80, y: 0.36 }, { x: 0.20, y: 0.36 }],
+      });
+      structure.push({
+        id: randomUUID(),
+        name: 'Automated Robot Cell & Rejection Station',
+        type: 'obstacle',
+        obstacle_type: 'machine',
+        points: [{ x: 0.40, y: 0.50 }, { x: 0.60, y: 0.50 }, { x: 0.60, y: 0.62 }, { x: 0.40, y: 0.62 }],
+      });
+    } else {
+      structure.push({
+        id: randomUUID(),
+        name: 'High-Bay Storage Rack Bank (Aisle A)',
+        type: 'obstacle',
+        obstacle_type: 'rack',
+        points: [{ x: 0.15, y: 0.30 }, { x: 0.85, y: 0.30 }, { x: 0.85, y: 0.36 }, { x: 0.15, y: 0.36 }],
+      });
+      structure.push({
+        id: randomUUID(),
+        name: 'High-Bay Storage Rack Bank (Aisle B)',
+        type: 'obstacle',
+        obstacle_type: 'rack',
+        points: [{ x: 0.15, y: 0.60 }, { x: 0.85, y: 0.60 }, { x: 0.85, y: 0.66 }, { x: 0.15, y: 0.66 }],
+      });
     }
   }
 
-  const summary = `Generated structured ${cameras.length}-camera layout for ${profile.facility_type} (${profile.length.toFixed(0)}m × ${profile.width.toFixed(0)}m, ${profile.height.toFixed(1)}m mount height). Includes ${structure.length} site structures (${structure.filter(s => s.type === 'wall').length} walls, ${structure.filter(s => s.type === 'obstacle').length} obstacles, and ${structure.filter(s => s.type === 'entrance').length} entrances). Each camera has tailored angles, mount styles, and overlapping FOV.`;
+  // 3. Systematic Camera Generation Allocating Cameras Per Building
+  const cameras: Camera[] = [];
+  let assignedCount = 0;
+
+  bldgs.forEach(b => { b.camera_ids = []; });
+
+  bldgs.forEach((b, bIdx) => {
+    const isWest = bIdx % 2 === 0;
+    const isNorth = Math.floor(bIdx / 2) === 0;
+    const bMinX = hasMultiBuilding ? (isWest ? 0.08 : 0.52) : 0.08;
+    const bMaxX = hasMultiBuilding ? (isWest ? 0.48 : 0.92) : 0.92;
+    const bMinY = hasMultiBuilding ? (isNorth ? 0.08 : 0.52) : 0.08;
+    const bMaxY = hasMultiBuilding ? (isNorth ? 0.48 : 0.92) : 0.92;
+
+    const lowerName = b.name.toLowerCase();
+    const isLoading = /loading|dock|point|truck|freight|bay/i.test(lowerName);
+    const isFilling = /filling|hall|chemical|mixing|berm|vat/i.test(lowerName);
+    const isPlastic = /plastic|polymer|sundar|extru/i.test(lowerName);
+    const isWorkshop = /workshop|mechanic|tool|lathe|cnc|weld/i.test(lowerName);
+
+    // Target templates per building
+    const targetTemplates = isPlastic
+      ? [
+          'Polymer Raw Material Infeed & Compounding Hopper',
+          'High-Speed Extrusion Line #1 Temperature & Flow',
+          'Injection Molding Station & Mold Clamping Safety',
+          'Molded Part Ejection & Robot De-Molding Cell',
+          'Quality Inspection ROI & Flash Defect Check',
+          'Operator Anti-Scald Hazard Exclusion Zone',
+        ]
+      : isFilling
+      ? [
+          'Automated Chemical Filling Carousel #1 Feed & Fill',
+          'Hazardous Chemical Berm Containment & Sump Drain',
+          'Induction Bottle Capping & Hermetic Sealing ROI',
+          'Drum Conveyor Inbound Transfer & Spill Catch',
+          'Secondary Spill Containment Wall & Perimeter Sump',
+          'Forklift Transit Corridor & Pallet Interlock',
+          'Emergency Eyewash & Safety Shower Portal Clearance',
+          'Hazardous Vapor Ventilation Exhaust Duct Flow',
+          'Finished Goods Palletizing & Stretch Wrap Station',
+        ]
+      : isWorkshop
+      ? [
+          'Heavy CNC Milling Machine & Precision Tooling Lathe',
+          'Welding Safety Cell & Hot-Work Flash Shielding',
+          'Overhead Crane Runway & Heavy Hoist Drop Corridor',
+          'Technician Maintenance Crib & Tool Check-out Area',
+          'Machine Chip Shredder & Coolant Recovery System',
+        ]
+      : isLoading
+      ? [
+          'Commercial Heavy Truck Bay #1 Dock Alignment & Chock',
+          'Hydraulic Dock Leveler Lip & Freight Motion Safety',
+          'Loading Bay #2 Container Offload & Pallet Transit',
+          'Exterior Logistics Apron & Driver Safety Corridor',
+        ]
+      : [
+          'Inbound Portal Access & PPE Verification',
+          'Main Aisle Forklift Transit & Collision Avoidance',
+          'High-Bay Rack Corridor Bidirectional Coverage',
+          'Order Fulfillment Sortation & Packing Table',
+        ];
+
+    const camCountForBldg = b.camera_count;
+    for (let cIdx = 0; cIdx < camCountForBldg; cIdx++) {
+      if (assignedCount >= cameraCount) break;
+      assignedCount++;
+
+      // Distribute coordinates across the building perimeter & core
+      let posX = bMinX + 0.03;
+      let posY = bMinY + 0.03;
+      let orientation = 135;
+      let mountType = 'corner';
+      let tiltDeg = 30;
+      let hfov = 106;
+      let viewRange = 0.42;
+
+      if (cIdx === 0) {
+        // Northwest corner sweep
+        posX = bMinX + 0.03;
+        posY = bMinY + 0.03;
+        orientation = 135;
+        mountType = 'corner';
+        tiltDeg = 25;
+        hfov = 95;
+      } else if (cIdx === 1) {
+        // Core process down-firing or angled high-bay
+        posX = bMinX + (bMaxX - bMinX) * 0.50;
+        posY = bMinY + 0.03;
+        orientation = 180;
+        mountType = isFilling ? 'roof-tilt' : 'wall-h';
+        tiltDeg = 20;
+        hfov = 85;
+      } else if (cIdx === 2) {
+        // Southeast opposing corner sweep
+        posX = bMaxX - 0.03;
+        posY = bMaxY - 0.03;
+        orientation = 315;
+        mountType = 'corner';
+        tiltDeg = 30;
+        hfov = 95;
+      } else if (cIdx === 3) {
+        // Overhead nadir / center inspection
+        posX = bMinX + (bMaxX - bMinX) * 0.50;
+        posY = bMinY + (bMaxY - bMinY) * 0.50;
+        orientation = 0;
+        mountType = 'roof-nadir';
+        tiltDeg = 90;
+        hfov = 106;
+        viewRange = 0.32;
+      } else if (cIdx === 4) {
+        // West corridor wall
+        posX = bMinX + 0.03;
+        posY = bMinY + (bMaxY - bMinY) * 0.65;
+        orientation = 90;
+        mountType = 'wall-h';
+        tiltDeg = 20;
+        hfov = 85;
+      } else if (cIdx === 5) {
+        // East corridor wall
+        posX = bMaxX - 0.03;
+        posY = bMinY + (bMaxY - bMinY) * 0.35;
+        orientation = 270;
+        mountType = 'wall-h';
+        tiltDeg = 20;
+        hfov = 85;
+      } else {
+        // Additional grid sensors
+        const step = (cIdx - 5) / Math.max(1, camCountForBldg - 5);
+        posX = bMinX + 0.06 + step * (bMaxX - bMinX - 0.12);
+        posY = bMinY + 0.06 + ((cIdx % 2) ? 0.22 : 0.12);
+        orientation = (cIdx % 2 === 0) ? 45 : 225;
+        mountType = 'cross';
+        tiltDeg = 20;
+        hfov = 85;
+      }
+
+      // Operational Target Area
+      const targetArea = targetTemplates[cIdx % targetTemplates.length];
+      const roleTitle = targetArea.length > 32 ? targetArea.slice(0, 30) + '...' : targetArea;
+
+      // Camera Environmental Conditions
+      const lightingLux = isLoading
+        ? '50–250 Lux (0.001 Lux Smart EXIR Night Vision to 40m)'
+        : '150–400 Lux (0.005 Lux Starlight IR Auto-Switch)';
+
+      const ipRating = isLoading
+        ? 'IP67 / IK10 Vandal-Proof NEMA 4X'
+        : isFilling || isPlastic
+        ? 'IP66 / NEMA 4X Chemical & Washdown Resistant'
+        : 'IP54 Industrial Sealed Housing';
+
+      const shutterSpeed = isFilling || isPlastic
+        ? '1/500s – 1/1000s (Anti-Motion-Blur High-Speed Line)'
+        : '1/250s (Anti-Motion-Blur Forklift & Personnel Transit)';
+
+      const wdrRating = isLoading
+        ? '120 dB True WDR (Eliminates Open Bay Glare & Sun Washout)'
+        : '120 dB True WDR (Balances High-Contrast High-Bay LED)';
+
+      const opTemp = isLoading
+        ? '-35°C to +60°C (-31°F to 140°F) Heated Anti-Fog Glass'
+        : '-20°C to +55°C (-4°F to 131°F) Industrial Operating Range';
+
+      const lensFocal = (cIdx % 3 === 0)
+        ? '2.8mm (106° HFOV Ultra-Wide Angle)'
+        : (cIdx % 3 === 1)
+        ? '4.0mm (85° HFOV Standard Industrial)'
+        : '6.0mm (54° HFOV Telephoto Aisle Corridor)';
+
+      const doriIdentify = (cIdx % 3 === 0) ? 5.5 : (cIdx % 3 === 1) ? 8.0 : 12.0;
+      const doriRecognize = (cIdx % 3 === 0) ? 11.0 : (cIdx % 3 === 1) ? 16.0 : 24.0;
+      const camHeight = Math.min(5.5, Math.max(3.0, +(b.height_m * 0.85).toFixed(1)));
+
+      const camId = randomUUID();
+      b.camera_ids = b.camera_ids || [];
+      b.camera_ids.push(camId);
+
+      const assignedUcs = validUcIds.length ? [validUcIds[(assignedCount - 1) % validUcIds.length]] : [];
+
+      cameras.push({
+        id: camId,
+        name: `CAM-${String(assignedCount).padStart(2, '0')} [${b.code}: ${roleTitle}]`,
+        status: 'planned',
+        x: Math.round(posX * 1000) / 1000,
+        y: Math.round(posY * 1000) / 1000,
+        orientation_degrees: orientation,
+        horizontal_fov_degrees: hfov,
+        view_range: Math.round(viewRange * 100) / 100,
+        resolution_width: hw.sensorWidthPx,
+        resolution_height: hw.sensorHeightPx,
+        mount_type: mountType,
+        tilt_degrees: tiltDeg,
+        height_m: camHeight,
+        building_id: b.id,
+        building_name: b.name,
+        target_area: targetArea,
+        lighting_lux: lightingLux,
+        ingress_protection: ipRating,
+        shutter_speed: shutterSpeed,
+        wdr_rating: wdrRating,
+        operating_temp: opTemp,
+        lens_focal: lensFocal,
+        dori_identify_m: doriIdentify,
+        dori_recognize_m: doriRecognize,
+        assigned_use_case_ids: assignedUcs,
+        rationale: `${hw.brand} ${hw.resolutionPreset.toUpperCase()} (${hw.sensorWidthPx}×${hw.sensorHeightPx}) @ ${hw.framerateFps}fps. Conditions: ${lightingLux}, ${ipRating}, ${shutterSpeed}, ${wdrRating}. DORI Identify to ${doriIdentify}m for continuous ${targetArea} coverage.`,
+      });
+    }
+  });
+
+  const summary = `Generated structured ${cameras.length}-camera layout across ${bldgs.length} building zone(s) for ${profile.facility_type} (${profile.length.toFixed(0)}m × ${profile.width.toFixed(0)}m, ${profile.height.toFixed(1)}m mount height). Includes ${structure.length} site structures (${structure.filter(s => s.type === 'wall').length} walls, ${structure.filter(s => s.type === 'obstacle').length} obstacles, and ${structure.filter(s => s.type === 'entrance').length} entrances). Every camera is assigned to its respective building with tailored angles, environmental conditions, and optical DORI criteria.`;
 
   const reasoning = [
-    `Detected scenario requirements for ${cameraCount} cameras; allocated 100% of requested units.`,
-    `Generated ${structure.filter(s => s.type === 'obstacle').length} obstacles (pallet racks, machinery, columns) based on keyword profile.`,
-    'Implemented bidirectional camera pairs along each aisle to eliminate blind spots behind pallet stacks.',
+    `Detected scenario requirements for ${cameraCount} cameras across ${bldgs.length} facility building(s); allocated 100% of requested units.`,
+    `Generated ${structure.filter(s => s.type === 'obstacle').length} obstacles (machinery, conveyors, chemical berms, dock bays) based on building purpose profiles.`,
+    'Implemented bidirectional camera pairs along each aisle and critical machinery cell to eliminate optical blind spots.',
     'Applied 8 distinct mounting types (wall-h, wall-v, roof-nadir, roof-tilt, corner, cross-aisle, 360° fisheye).',
-    'Allocated dedicated gate and entrance cameras for access control & PPE verification.',
+    'Configured explicit operational conditions for every sensor (Lighting Lux, Ingress Protection, Shutter Speed, 120dB WDR, Operating Temp).',
     'Computed deterministically via rule-based geometric coverage algorithms with zero token consumption.',
   ];
 

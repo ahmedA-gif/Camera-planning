@@ -30,8 +30,26 @@ export interface DetVisionProject {
   facility_length_m?: number;
   facility_height_m?: number;
   facility_type?: string;
+  buildings?: FacilityBuilding[];
   safety_plan?: SafetyPlanDocument;
   revisions?: ProjectRevision[];
+}
+
+export interface FacilityBuilding {
+  id: string;
+  name: string;
+  code: string;
+  length_ft?: number;
+  width_ft?: number;
+  height_ft?: number;
+  length_m: number;
+  width_m: number;
+  height_m: number;
+  area_sqm: number;
+  area_sqft: number;
+  purpose: string;
+  camera_count: number;
+  camera_ids?: string[];
 }
 
 export interface ProjectRevision {
@@ -85,6 +103,21 @@ export interface Camera {
   resolution_width: number;
   resolution_height: number;
   assigned_use_case_ids: string[];
+  mount_type?: string;
+  tilt_degrees?: number;
+  height_m?: number;
+  building_id?: string;
+  building_name?: string;
+  target_area?: string;
+  lighting_lux?: string;
+  ingress_protection?: string;
+  shutter_speed?: string;
+  wdr_rating?: string;
+  operating_temp?: string;
+  lens_focal?: string;
+  dori_identify_m?: number;
+  dori_recognize_m?: number;
+  rationale?: string;
 }
 
 export interface Zone {

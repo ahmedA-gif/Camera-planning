@@ -423,6 +423,43 @@ function attachScenarioPhysicalLayout(
     });
   }
 
+  // 5. Associate cameras with facility buildings and attach complete conditions metadata
+  const bldgs = profile.buildings || [];
+  bldgs.forEach(b => { b.camera_ids = []; });
+
+  if (bldgs.length > 0) {
+    let camOffset = 0;
+    bldgs.forEach(b => {
+      const count = b.camera_count;
+      for (let i = 0; i < count && camOffset < cameras.length; i++, camOffset++) {
+        const cam = cameras[camOffset];
+        cam.building_id = b.id;
+        cam.building_name = b.name;
+        b.camera_ids = b.camera_ids || [];
+        b.camera_ids.push(cam.id);
+
+        const lowerB = b.name.toLowerCase();
+        const isLoading = /loading|dock|point|truck/i.test(lowerB);
+        const isChemical = /filling|chemical|spill|plastic/i.test(lowerB);
+
+        cam.mount_type = i === 0 ? 'corner' : i === 1 ? 'roof-tilt' : i === 2 ? 'wall-h' : i === 3 ? 'roof-nadir' : 'cross';
+        cam.tilt_degrees = cam.mount_type === 'roof-nadir' ? 90 : cam.mount_type === 'roof-tilt' ? 25 : 20;
+        cam.height_m = Math.min(5.5, Math.max(3.0, +(b.height_m * 0.85).toFixed(1)));
+        cam.target_area = cam.target_area || `${b.name} Primary Monitored Zone`;
+        cam.lighting_lux = isLoading ? '50–250 Lux (0.001 Lux Smart EXIR Night Vision to 40m)' : '150–400 Lux (0.005 Lux Starlight IR Auto-Switch)';
+        cam.ingress_protection = isLoading ? 'IP67 / IK10 Vandal-Proof NEMA 4X' : isChemical ? 'IP66 / NEMA 4X Chemical & Washdown Resistant' : 'IP54 Industrial Sealed Housing';
+        cam.shutter_speed = isChemical ? '1/500s – 1/1000s (Anti-Motion-Blur High-Speed Line)' : '1/250s (Anti-Motion-Blur Forklift & Personnel Transit)';
+        cam.wdr_rating = '120 dB True WDR (Eliminates Backlight & Glare Washout)';
+        cam.operating_temp = isLoading ? '-35°C to +60°C (-31°F to 140°F) Heated Anti-Fog Glass' : '-20°C to +55°C (-4°F to 131°F) Industrial Operating Range';
+        cam.lens_focal = i % 3 === 0 ? '2.8mm (106° HFOV Ultra-Wide Angle)' : i % 3 === 1 ? '4.0mm (85° HFOV Standard Industrial)' : '6.0mm (54° HFOV Telephoto Aisle Corridor)';
+        cam.dori_identify_m = i % 3 === 0 ? 5.5 : i % 3 === 1 ? 8.0 : 12.0;
+        cam.dori_recognize_m = i % 3 === 0 ? 11.0 : i % 3 === 1 ? 16.0 : 24.0;
+      }
+    });
+  }
+
+  project.buildings = bldgs;
+
   // Link cameras to corresponding zones
   zones.forEach((z, i) => {
     if (cameras[i]) z.camera_ids = [cameras[i].id];

@@ -249,6 +249,8 @@ export async function POST(request: NextRequest) {
       reasoning: ruleResult.reasoning,
       cameras: ruleResult.cameras,
       structure: ruleResult.structure,
+      buildings: ruleResult.facility_profile.buildings,
+      facility_profile: ruleResult.facility_profile,
       model_used: 'Rule-Based Engine (Fallback)',
       usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       source: 'local_rule_engine',

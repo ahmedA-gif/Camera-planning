@@ -283,9 +283,9 @@ export function calculateReasonedCameraCount(params: {
     buildings = [],
   } = params;
 
-  // Multi-building industrial complex (e.g. 2-4+ buildings) requires complete multi-zone coverage
+  // Multi-building industrial complex (e.g. 2-4+ buildings) requires proportional multi-zone coverage
   if (buildings && buildings.length >= 2) {
-    return Math.max(15, buildings.reduce((acc, b) => acc + (b.camera_count || 3), 0));
+    return Math.max(buildings.length, buildings.reduce((acc, b) => acc + (b.camera_count || 2), 0));
   }
 
   const area = Math.max(25, length_m * width_m);
@@ -302,7 +302,7 @@ export function calculateReasonedCameraCount(params: {
   const taskBased = Math.max(use_cases_count, 1) + Math.min(critical_components_count, 8);
 
   const reasoned = Math.max(sectionBased, taskBased, areaBased);
-  return Math.max(12, Math.min(80, reasoned));
+  return Math.max(4, Math.min(80, reasoned));
 }
 
 /**
@@ -358,34 +358,38 @@ function finalizeBuilding(b: Partial<FacilityBuilding>, isFeet: boolean, index: 
 }
 
 /**
- * Distribute totalCameraCount across parsed buildings proportionally with min 2 per building
+ * Distribute totalCameraCount across parsed buildings proportionally based on area and user specification
  */
 function distributeCameras(buildings: FacilityBuilding[], total: number) {
   if (buildings.length === 0) return;
+  const targetTotal = Math.max(1, total);
   const totalArea = buildings.reduce((acc, b) => acc + Math.max(10, b.area_sqft), 0);
   
   let allocated = 0;
+  const minPerBldg = targetTotal >= buildings.length ? 1 : 0;
   buildings.forEach(b => {
-    const raw = Math.round((Math.max(10, b.area_sqft) / totalArea) * total);
-    b.camera_count = Math.max(2, raw);
+    const raw = Math.round((Math.max(10, b.area_sqft) / totalArea) * targetTotal);
+    b.camera_count = Math.max(minPerBldg, raw);
     allocated += b.camera_count;
   });
 
-  let diff = total - allocated;
-  while (diff !== 0) {
+  let diff = targetTotal - allocated;
+  let safetyIter = 0;
+  while (diff !== 0 && safetyIter < 200) {
+    safetyIter++;
     if (diff > 0) {
-      const largest = [...buildings].sort((a, b) => b.area_sqft - a.area_sqft)[0];
-      largest.camera_count += 1;
+      const candidates = [...buildings].sort((a, b) => (b.area_sqft / (b.camera_count + 1)) - (a.area_sqft / (a.camera_count + 1)));
+      candidates[0].camera_count += 1;
       diff--;
     } else {
-      const eligible = buildings.filter(b => b.camera_count > 2);
+      const eligible = buildings.filter(b => b.camera_count > minPerBldg);
       if (eligible.length > 0) {
         eligible.sort((a, b) => b.camera_count - a.camera_count)[0].camera_count -= 1;
         diff++;
       } else {
-        const eligible1 = buildings.filter(b => b.camera_count > 1);
-        if (eligible1.length > 0) {
-          eligible1[0].camera_count -= 1;
+        const eligibleZero = buildings.filter(b => b.camera_count > 0);
+        if (eligibleZero.length > 0) {
+          eligibleZero.sort((a, b) => b.camera_count - a.camera_count)[0].camera_count -= 1;
           diff++;
         } else {
           break;
@@ -1168,8 +1172,8 @@ export function generateTokenFreeSafetyPlan(project: {
 
 /**
  * Ensures a project has a complete, synchronized camera fleet and facility structure.
- * Strictly respects user-specified camera count or user-added cameras (e.g. 15, 16+),
- * defaulting to 15 cameras across the 4 industrial buildings if current fleet < 15.
+ * Strictly respects user-specified camera count or user-added cameras (e.g. 4, 6, 8, 12, 15, 16+),
+ * dynamically synchronizing building allocation and preserving user configuration without forcing permanent 15.
  */
 export function ensureMultiBuildingFleet(project: Partial<DetVisionProject>, targetCount?: number): {
   cameras: Camera[];
@@ -1182,35 +1186,39 @@ export function ensureMultiBuildingFleet(project: Partial<DetVisionProject>, tar
     project.camera_specifications || '',
   ].join(' ');
 
-  const userRequested = extractDesiredCameraCount(desc, targetCount);
+  const explicitTarget = (typeof targetCount === 'number' && targetCount > 0) ? targetCount : 0;
+  const userRequested = explicitTarget > 0 ? explicitTarget : extractDesiredCameraCount(desc);
   const existingCams = project.cameras || [];
   
-  // Effective count: strictly respect user request, or user's incremented cameras, min 15
-  const effectiveCount = userRequested > 0 
-    ? userRequested 
-    : existingCams.length >= 15 
+  // Effective count: strictly respect user request, or user's existing configured cameras
+  const effectiveCount = explicitTarget > 0 
+    ? explicitTarget 
+    : existingCams.length > userRequested 
       ? existingCams.length 
-      : 15;
+      : userRequested > 0 
+        ? userRequested 
+        : existingCams.length > 0 
+          ? existingCams.length 
+          : 12;
 
   const bldgs: FacilityBuilding[] = (project.buildings && project.buildings.length >= 2)
     ? project.buildings.map((b: FacilityBuilding) => ({ ...b, camera_ids: [...(b.camera_ids || [])] }))
     : parseFacilityBuildings(desc, effectiveCount);
 
   // Synchronize building camera allocation
-  const currentAllocated = bldgs.reduce((acc: number, b: FacilityBuilding) => acc + (b.camera_count || 0), 0);
-  if (currentAllocated !== effectiveCount) {
-    distributeCameras(bldgs, effectiveCount);
-  }
+  distributeCameras(bldgs, effectiveCount);
 
-  // If user already has >= 15 cameras, preserve them and guarantee all fields
-  if (existingCams.length >= 15) {
+  // Check if we should preserve existing user-configured cameras
+  if (existingCams.length > 0 && (userRequested === 0 || existingCams.length === effectiveCount)) {
     let camOffset = 0;
     bldgs.forEach((b: FacilityBuilding) => {
+      b.camera_ids = [];
       const count = b.camera_count;
       for (let i = 0; i < count && camOffset < existingCams.length; i++, camOffset++) {
         const cam = existingCams[camOffset];
-        if (!cam.building_name) cam.building_name = b.name;
-        if (!cam.building_id) cam.building_id = b.id;
+        b.camera_ids.push(cam.id);
+        cam.building_name = b.name;
+        cam.building_id = b.id;
         const lowerB = b.name.toLowerCase();
         const isLoading = /loading|dock|point|truck/i.test(lowerB);
         const isChemical = /filling|chemical|spill|plastic/i.test(lowerB);
@@ -1236,7 +1244,7 @@ export function ensureMultiBuildingFleet(project: Partial<DetVisionProject>, tar
     return { cameras: existingCams, buildings: bldgs, structure };
   }
 
-  // Otherwise synthesize the full 15-camera fleet matching the 4 buildings
+  // Otherwise synthesize cameras to match the user-specified effectiveCount
   const layout = generateStructuredLayout(desc, effectiveCount, project.use_cases || []);
   return {
     cameras: layout.cameras,

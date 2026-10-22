@@ -407,9 +407,9 @@ export function ScenarioForm({
                 <button
                   type="button"
                   onClick={() => {
-                    const currentCams = (result.project.cameras && result.project.cameras.length >= 15)
+                    const currentCams = (result.project.cameras && result.project.cameras.length > 0)
                       ? result.project.cameras
-                      : ensureMultiBuildingFleet(result.project, 15).cameras;
+                      : ensureMultiBuildingFleet(result.project).cameras;
                     const newId = crypto.randomUUID();
                     const newNum = currentCams.length + 1;
                     const rawUcs = (result.project.use_cases || []).map(u => ({ ...u, camera_ids: [...u.camera_ids] }));

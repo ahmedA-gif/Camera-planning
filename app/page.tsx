@@ -60,22 +60,14 @@ function DashboardContent() {
     setProjects(stored);
     const active = getActiveProject(effectiveUserId);
     if (active) {
-      if (active.cameras && active.cameras.length > 0 && active.cameras.length < 15) {
-        const fleet = ensureMultiBuildingFleet(active);
-        const upgraded = { ...active, cameras: fleet.cameras, buildings: fleet.buildings, structure: fleet.structure };
-        setProject(upgraded);
-      } else {
-        setProject(active);
-      }
+      const fleet = ensureMultiBuildingFleet(active);
+      const synced = { ...active, cameras: fleet.cameras, buildings: fleet.buildings, structure: fleet.structure };
+      setProject(synced);
     } else if (stored.length > 0) {
       const first = stored[0];
-      if (first.cameras && first.cameras.length > 0 && first.cameras.length < 15) {
-        const fleet = ensureMultiBuildingFleet(first);
-        const upgraded = { ...first, cameras: fleet.cameras, buildings: fleet.buildings, structure: fleet.structure };
-        setProject(upgraded);
-      } else {
-        setProject(first);
-      }
+      const fleet = ensureMultiBuildingFleet(first);
+      const synced = { ...first, cameras: fleet.cameras, buildings: fleet.buildings, structure: fleet.structure };
+      setProject(synced);
     } else {
       // Start with a real, empty workspace instead of silently loading sample data.
       const draft = createEmptyProject('Plan Vision Project', '', '', '');

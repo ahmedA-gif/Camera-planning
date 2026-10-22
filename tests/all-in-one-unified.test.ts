@@ -135,23 +135,36 @@ if (!perspectiveSvg.includes('<svg') || !perspectiveSvg.includes('3D PERSPECTIVE
 }
 console.log('✓ 3D Virtual Facility Perspective SVG generated!');
 
-// Test 6: Verify ensureMultiBuildingFleet resolves 4-camera project to 15 cameras
+// Test 6: Verify ensureMultiBuildingFleet strictly respects user-specified camera counts (e.g. 4 cameras preserved as 4, explicit 15 cameras gives 15)
 const fourCamProject: DetVisionProject = {
   ...sampleProject,
+  business_description: 'Industrial chemical facility with 4 buildings. Total cameras 4.',
+  camera_specifications: '4 IP cameras',
   cameras: sampleProject.cameras.slice(0, 4),
 };
-const resolved = ensureMultiBuildingFleet(fourCamProject);
-if (resolved.cameras.length !== 15) {
-  throw new Error(`Expected ensureMultiBuildingFleet to upgrade 4 cameras to 15, got ${resolved.cameras.length}`);
+const resolvedFour = ensureMultiBuildingFleet(fourCamProject);
+if (resolvedFour.cameras.length !== 4) {
+  throw new Error(`Expected ensureMultiBuildingFleet to preserve user's 4 cameras, got ${resolvedFour.cameras.length}`);
 }
-if (resolved.buildings.length !== 4) {
-  throw new Error(`Expected 4 buildings, got ${resolved.buildings.length}`);
+if (resolvedFour.buildings.length !== 4) {
+  throw new Error(`Expected 4 buildings, got ${resolvedFour.buildings.length}`);
 }
-const bldgCamSum = resolved.buildings.reduce((acc, b) => acc + (b.camera_count || 0), 0);
-if (bldgCamSum !== 15) {
-  throw new Error(`Expected building camera sum to equal 15, got ${bldgCamSum}`);
+const bldgCamSumFour = resolvedFour.buildings.reduce((acc, b) => acc + (b.camera_count || 0), 0);
+if (bldgCamSumFour !== 4) {
+  throw new Error(`Expected building camera sum to equal 4, got ${bldgCamSumFour}`);
 }
-console.log('✓ ensureMultiBuildingFleet successfully upgraded 4 cameras to full 15-camera 4-building fleet!');
+console.log('✓ ensureMultiBuildingFleet successfully preserved user\'s 4 cameras across 4 buildings!');
+
+// Test 6b: Verify explicit target count of 15 cameras yields 15 cameras
+const resolvedFifteen = ensureMultiBuildingFleet(fourCamProject, 15);
+if (resolvedFifteen.cameras.length !== 15) {
+  throw new Error(`Expected explicit target 15 cameras to yield 15, got ${resolvedFifteen.cameras.length}`);
+}
+const bldgCamSumFifteen = resolvedFifteen.buildings.reduce((acc, b) => acc + (b.camera_count || 0), 0);
+if (bldgCamSumFifteen !== 15) {
+  throw new Error(`Expected building camera sum to equal 15, got ${bldgCamSumFifteen}`);
+}
+console.log('✓ ensureMultiBuildingFleet successfully honored user-specified target count of 15 cameras!');
 
 // Test 7: Verify user incremented count (16 cameras) is strictly preserved
 const sixteenCamProject: DetVisionProject = {

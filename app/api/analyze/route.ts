@@ -136,7 +136,19 @@ function attachScenarioPhysicalLayout(
 
   const isMultiBuilding = Boolean(profile.buildings && profile.buildings.length >= 2);
   const userRequestedCount = extractDesiredCameraCount(text, inputs.reasoned_camera_count ?? reasonedCameraCount);
-  const targetCount = userRequestedCount > 0 ? userRequestedCount : (isMultiBuilding ? 15 : 15);
+  const reasoned = inputs.reasoned_camera_count ?? reasonedCameraCount ?? calculateReasonedCameraCount({
+    length_m: L,
+    width_m: W,
+    height_m: H,
+    layout_section_count: inputs.layout_section_count,
+    layout_sections: inputs.layout_sections,
+    use_cases_count: project.use_cases?.length || 1,
+    critical_components_count: inputs.critical_components?.length || 0,
+    detection_coverage_target: inputs.detection_coverage_target || 90,
+    facility_type: profile.facility_type,
+    buildings: profile.buildings,
+  });
+  const targetCount = userRequestedCount > 0 ? userRequestedCount : (reasoned > 0 ? reasoned : 12);
 
   if (isMultiBuilding) {
     const layout = generateStructuredLayout(inputs.business_description, targetCount, project.use_cases || []);
@@ -292,11 +304,11 @@ function attachScenarioPhysicalLayout(
 
   const hw = parseCameraHardware(inputs.camera_specifications, text);
   const explicitReasoned = reasonedCameraCount ?? inputs.reasoned_camera_count;
-  const minFleet = isMultiBuilding ? Math.max(15, (profile.buildings?.length || 4) * 3) : 15;
+  const singleUserRequested = extractDesiredCameraCount(text, explicitReasoned);
 
-  let effectiveTargetCount = userRequestedCount > 0
-    ? userRequestedCount
-    : (typeof explicitReasoned === 'number' && explicitReasoned >= 15)
+  let effectiveTargetCount = singleUserRequested > 0
+    ? singleUserRequested
+    : (typeof explicitReasoned === 'number' && explicitReasoned > 0)
       ? Math.min(80, explicitReasoned)
       : calculateReasonedCameraCount({
           length_m: L,
@@ -310,10 +322,6 @@ function attachScenarioPhysicalLayout(
           facility_type: profile.facility_type,
           buildings: profile.buildings,
         });
-
-  if (userRequestedCount === 0 && effectiveTargetCount < minFleet) {
-    effectiveTargetCount = minFleet;
-  }
 
   const sections = (inputs.layout_sections || []).filter(s => s && s.trim());
   const defaultResW = hw.sensorWidthPx;

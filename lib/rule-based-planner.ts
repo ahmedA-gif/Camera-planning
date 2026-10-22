@@ -1,4 +1,4 @@
-import type { Camera, LayoutElement, Point, FacilityBuilding } from './types';
+import type { Camera, LayoutElement, Point, FacilityBuilding, DetVisionProject } from './types';
 
 function randomUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -1163,5 +1163,84 @@ export function generateTokenFreeSafetyPlan(project: {
     },
     camera_count: camCount,
     complete: true,
+  };
+}
+
+/**
+ * Ensures a project has a complete, synchronized camera fleet and facility structure.
+ * Strictly respects user-specified camera count or user-added cameras (e.g. 15, 16+),
+ * defaulting to 15 cameras across the 4 industrial buildings if current fleet < 15.
+ */
+export function ensureMultiBuildingFleet(project: Partial<DetVisionProject>, targetCount?: number): {
+  cameras: Camera[];
+  buildings: FacilityBuilding[];
+  structure: LayoutElement[];
+} {
+  const desc = [
+    project.business_description || '',
+    ...(project.requirements || []),
+    project.camera_specifications || '',
+  ].join(' ');
+
+  const userRequested = extractDesiredCameraCount(desc, targetCount);
+  const existingCams = project.cameras || [];
+  
+  // Effective count: strictly respect user request, or user's incremented cameras, min 15
+  const effectiveCount = userRequested > 0 
+    ? userRequested 
+    : existingCams.length >= 15 
+      ? existingCams.length 
+      : 15;
+
+  const bldgs: FacilityBuilding[] = (project.buildings && project.buildings.length >= 2)
+    ? project.buildings.map((b: FacilityBuilding) => ({ ...b, camera_ids: [...(b.camera_ids || [])] }))
+    : parseFacilityBuildings(desc, effectiveCount);
+
+  // Synchronize building camera allocation
+  const currentAllocated = bldgs.reduce((acc: number, b: FacilityBuilding) => acc + (b.camera_count || 0), 0);
+  if (currentAllocated !== effectiveCount) {
+    distributeCameras(bldgs, effectiveCount);
+  }
+
+  // If user already has >= 15 cameras, preserve them and guarantee all fields
+  if (existingCams.length >= 15) {
+    let camOffset = 0;
+    bldgs.forEach((b: FacilityBuilding) => {
+      const count = b.camera_count;
+      for (let i = 0; i < count && camOffset < existingCams.length; i++, camOffset++) {
+        const cam = existingCams[camOffset];
+        if (!cam.building_name) cam.building_name = b.name;
+        if (!cam.building_id) cam.building_id = b.id;
+        const lowerB = b.name.toLowerCase();
+        const isLoading = /loading|dock|point|truck/i.test(lowerB);
+        const isChemical = /filling|chemical|spill|plastic/i.test(lowerB);
+        if (!cam.mount_type) cam.mount_type = i === 0 ? 'corner' : i === 1 ? 'roof-tilt' : i === 2 ? 'wall-h' : i === 3 ? 'roof-nadir' : 'cross';
+        if (!cam.tilt_degrees) cam.tilt_degrees = cam.mount_type === 'roof-nadir' ? 90 : cam.mount_type === 'roof-tilt' ? 25 : 20;
+        if (!cam.height_m) cam.height_m = Math.min(5.5, Math.max(3.0, +(b.height_m * 0.85).toFixed(1)));
+        if (!cam.target_area) cam.target_area = `${b.name} Critical Operational ROI`;
+        if (!cam.lighting_lux) cam.lighting_lux = isLoading ? '50–250 Lux (0.001 Lux Smart EXIR Night Vision to 40m)' : '150–400 Lux (0.005 Lux Starlight IR Auto-Switch)';
+        if (!cam.ingress_protection) cam.ingress_protection = isLoading ? 'IP67 / IK10 Vandal-Proof NEMA 4X' : isChemical ? 'IP66 / NEMA 4X Chemical & Washdown Resistant' : 'IP54 Industrial Sealed Housing';
+        if (!cam.shutter_speed) cam.shutter_speed = isChemical ? '1/500s – 1/1000s (Anti-Motion-Blur High-Speed Line)' : '1/250s (Anti-Motion-Blur Forklift & Personnel Transit)';
+        if (!cam.wdr_rating) cam.wdr_rating = '120 dB True WDR (Eliminates Backlight & Glare Washout)';
+        if (!cam.operating_temp) cam.operating_temp = isLoading ? '-35°C to +60°C (-31°F to 140°F) Heated Anti-Fog Glass' : '-20°C to +55°C (-4°F to 131°F) Industrial Operating Range';
+        if (!cam.lens_focal) cam.lens_focal = i % 3 === 0 ? '2.8mm (106° HFOV Ultra-Wide Angle)' : i % 3 === 1 ? '4.0mm (85° HFOV Standard Industrial)' : '6.0mm (54° HFOV Telephoto Aisle Corridor)';
+        if (!cam.dori_identify_m) cam.dori_identify_m = i % 3 === 0 ? 5.5 : i % 3 === 1 ? 8.0 : 12.0;
+        if (!cam.dori_recognize_m) cam.dori_recognize_m = i % 3 === 0 ? 11.0 : i % 3 === 1 ? 16.0 : 24.0;
+      }
+    });
+
+    const structure = (project.structure && project.structure.length >= 10)
+      ? project.structure
+      : generateStructuredLayout(desc, effectiveCount, project.use_cases || []).structure;
+
+    return { cameras: existingCams, buildings: bldgs, structure };
+  }
+
+  // Otherwise synthesize the full 15-camera fleet matching the 4 buildings
+  const layout = generateStructuredLayout(desc, effectiveCount, project.use_cases || []);
+  return {
+    cameras: layout.cameras,
+    buildings: bldgs,
+    structure: layout.structure,
   };
 }

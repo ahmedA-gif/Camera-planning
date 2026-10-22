@@ -210,7 +210,7 @@ export function generatePipelineArchitectureSvg(
 ): string {
   const width = options.width || 860;
   const height = options.height || 220;
-  const camCount = project.cameras?.length || 4;
+  const camCount = project.cameras?.length || 15;
 
   const colW = (width - 60) / 4;
   const colH = height - 50;
@@ -331,7 +331,7 @@ export function generateCoverageTelemetryMetricsSvg(
 ): string {
   const width = options.width || 860;
   const height = options.height || 260;
-  const camCount = project.cameras?.length || 4;
+  const camCount = project.cameras?.length || 15;
   const targetCoverage = project.detection_coverage_target || 95;
   const bitrateKbps = 4096;
   const storage30dTb = ((camCount * bitrateKbps * 86400 * 30) / (8 * 1000 * 1000 * 1000)).toFixed(1);
@@ -557,7 +557,7 @@ export function generateBirdCamera3DSvg(
   const cam3DElements: string[] = [];
   const rayLines: string[] = [];
 
-  cameras.slice(0, 15).forEach((cam, idx) => {
+  cameras.forEach((cam, idx) => {
     const cBase = project3D(cam.x, cam.y, 0);
     const cHead = project3D(cam.x, cam.y, 5.0);
     const color = ['#00e5ff', '#ff6b35', '#7fff6b', '#c084fc', '#ffd60a', '#f472b6', '#38bdf8', '#fb923c'][idx % 8];
@@ -605,7 +605,7 @@ export function generateBirdCamera3DSvg(
         MULTI-ANGLE SIMULATION · BIRD CAMERA 3D (RAYCASTING OCCLUSION ENGINE)
       </text>
       <text x="${width - 16}" y="19" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Yaw: -20° · Pitch: 68° · Zoom: 1.73x · 15 Cameras Active
+        Yaw: -20° · Pitch: 68° · Zoom: 1.73x · ${cameras.length} Cameras Active
       </text>
 
       <!-- 3D Ground Floor Mesh -->
@@ -935,7 +935,7 @@ export function generate3DPerspectiveSvg(
 
   // 3D Cameras
   const cam3DPyramids: string[] = [];
-  cameras.slice(0, 15).forEach((cam, idx) => {
+  cameras.forEach((cam, idx) => {
     const cFloor = { x: isoX(cam.x, cam.y), y: isoY(cam.x, cam.y, 0) };
     const cMount = { x: isoX(cam.x, cam.y), y: isoY(cam.x, cam.y, 4.5) };
     const color = ['#00e5ff', '#ff6b35', '#7fff6b', '#c084fc', '#ffd60a', '#f472b6', '#38bdf8', '#fb923c'][idx % 8];
@@ -977,7 +977,7 @@ export function generate3DPerspectiveSvg(
         MULTI-ANGLE SIMULATION · 3D PERSPECTIVE VISUALIZER (ISOMETRIC TWIN)
       </text>
       <text x="${width - 16}" y="19" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Isometric Projection · 15 Frustum Volumes · Zero Blind Spot Mesh
+        Isometric Projection · ${cameras.length} Frustum Volumes · Zero Blind Spot Mesh
       </text>
 
       <!-- Floor Mesh -->

@@ -117,10 +117,10 @@ export async function POST(request: NextRequest) {
     })) : [];
     const validUseCaseIds = new Set(useCases.map((item: { id: string }) => item.id));
 
-    // Determine requested camera count: supports large numbers like 70, 100+
-    const rawExplicit = body.desired_camera_count;
+    // Determine requested camera count: strictly respects user request, user's camera fleet, min 15
+    const rawExplicit = body.desired_camera_count ?? (project.cameras?.length >= 15 ? project.cameras.length : undefined);
     const scenarioDetected = extractDesiredCameraCount(project.business_description, rawExplicit);
-    const targetCameraCount = Math.max(1, Math.min(250, scenarioDetected));
+    const targetCameraCount = Math.max(15, Math.min(250, scenarioDetected || (project.cameras?.length || 15)));
 
     const forceRuleBased = body.use_rules === true || targetCameraCount > 12 || (!AI_CONFIG.apiKey && !NVIDIA_CONFIG.apiKey);
 

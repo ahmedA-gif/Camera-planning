@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Send, Loader2, AlertCircle, CheckCircle, Info, Brain, Camera, ImagePlus, X, Sparkles } from 'lucide-react';
 import type { AnalysisResponse } from '@/lib/types';
+import { ensureMultiBuildingFleet } from '@/lib/rule-based-planner';
 
 function asStringList(value: unknown, fallback: string[] = []): string[] {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string');
@@ -97,9 +98,20 @@ export function ScenarioForm({
       }
 
       const analysisData: AnalysisResponse = data;
+      const fleet = ensureMultiBuildingFleet(analysisData.project);
+      const guaranteedProject = {
+        ...analysisData.project,
+        cameras: fleet.cameras,
+        buildings: fleet.buildings,
+        structure: fleet.structure,
+      };
+      const analysisDataGuaranteed: AnalysisResponse = {
+        ...analysisData,
+        project: guaranteedProject,
+      };
 
-      setResult(analysisData);
-      onAnalysisComplete?.(analysisData);
+      setResult(analysisDataGuaranteed);
+      onAnalysisComplete?.(analysisDataGuaranteed);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -395,7 +407,9 @@ export function ScenarioForm({
                 <button
                   type="button"
                   onClick={() => {
-                    const currentCams = result.project.cameras || [];
+                    const currentCams = (result.project.cameras && result.project.cameras.length >= 15)
+                      ? result.project.cameras
+                      : ensureMultiBuildingFleet(result.project, 15).cameras;
                     const newId = crypto.randomUUID();
                     const newNum = currentCams.length + 1;
                     const rawUcs = (result.project.use_cases || []).map(u => ({ ...u, camera_ids: [...u.camera_ids] }));
@@ -426,7 +440,7 @@ export function ScenarioForm({
                     setResult(newResponse);
                     onAnalysisComplete?.(newResponse);
                   }}
-                  className="px-3 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow-xs"
+                  className="px-3 py-1 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow-xs cursor-pointer"
                 >
                   + Increase Cameras
                 </button>

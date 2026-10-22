@@ -15,10 +15,14 @@ import {
   Sparkles
 } from 'lucide-react';
 import type { DetVisionProject, FacilityBuilding } from '@/lib/types';
-import { parseFacilityBuildings } from '@/lib/rule-based-planner';
+import { ensureMultiBuildingFleet, parseFacilityBuildings } from '@/lib/rule-based-planner';
 import { 
   generateSiteTelemetryMapSvg, 
-  generate3DPerspectiveSvg 
+  generate3DPerspectiveSvg,
+  generateBirdCamera3DSvg,
+  generateFrustumDori3DSvg,
+  generateSideElevationSvg,
+  generateCoverageTelemetryMetricsSvg,
 } from '@/lib/report-diagrams';
 
 interface ReportPreviewProps {
@@ -49,68 +53,22 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
     });
   };
 
-  const title = project.name || 'Plan Vision Facility Plan';
-  const company = project.company_name || 'Enterprise Operations';
-  const industry = project.industry || 'Industrial & Logistics Automation';
-  const cameras = project.cameras || [];
-  const camCount = cameras.length || 15;
+  // Guarantee multi-building 15-camera fleet (or user-incremented count >= 15)
+  const fleet = ensureMultiBuildingFleet(project);
+  const resolvedProject: DetVisionProject = {
+    ...project,
+    cameras: fleet.cameras,
+    buildings: fleet.buildings,
+    structure: fleet.structure,
+  };
+
+  const title = resolvedProject.name || 'Plan Vision Facility Plan';
+  const company = resolvedProject.company_name || 'Enterprise Operations';
+  const industry = resolvedProject.industry || 'Industrial & Logistics Automation';
+  const cameras = resolvedProject.cameras;
+  const camCount = cameras.length;
+  const bldgs: FacilityBuilding[] = resolvedProject.buildings || [];
   const dateStr = formatDate(new Date().toISOString());
-
-  // 1. Multi-Building Resolution
-  const bldgs: FacilityBuilding[] = (project.buildings && project.buildings.length > 0)
-    ? project.buildings
-    : parseFacilityBuildings(project.business_description || '', camCount);
-
-  // Guarantee all cameras have their conditions and building assignments
-  let camOffset = 0;
-  bldgs.forEach(b => {
-    const count = b.camera_count;
-    for (let i = 0; i < count && camOffset < cameras.length; i++, camOffset++) {
-      const cam = cameras[camOffset];
-      if (!cam.building_name) cam.building_name = b.name;
-      if (!cam.building_id) cam.building_id = b.id;
-      const lowerB = b.name.toLowerCase();
-      const isLoading = /loading|dock|point|truck/i.test(lowerB);
-      const isChemical = /filling|chemical|spill|plastic/i.test(lowerB);
-
-      if (!cam.mount_type) {
-        cam.mount_type = i === 0 ? 'corner' : i === 1 ? 'roof-tilt' : i === 2 ? 'wall-h' : i === 3 ? 'roof-nadir' : 'cross';
-      }
-      if (!cam.tilt_degrees) {
-        cam.tilt_degrees = cam.mount_type === 'roof-nadir' ? 90 : cam.mount_type === 'roof-tilt' ? 25 : 20;
-      }
-      if (!cam.height_m) {
-        cam.height_m = Math.min(5.5, Math.max(3.0, +(b.height_m * 0.85).toFixed(1)));
-      }
-      if (!cam.target_area) {
-        cam.target_area = `${b.name} Critical Operational ROI`;
-      }
-      if (!cam.lighting_lux) {
-        cam.lighting_lux = isLoading ? '50–250 Lux (0.001 Lux Smart EXIR Night Vision to 40m)' : '150–400 Lux (0.005 Lux Starlight IR Auto-Switch)';
-      }
-      if (!cam.ingress_protection) {
-        cam.ingress_protection = isLoading ? 'IP67 / IK10 Vandal-Proof NEMA 4X' : isChemical ? 'IP66 / NEMA 4X Chemical & Washdown Resistant' : 'IP54 Industrial Sealed Housing';
-      }
-      if (!cam.shutter_speed) {
-        cam.shutter_speed = isChemical ? '1/500s – 1/1000s (Anti-Motion-Blur High-Speed Line)' : '1/250s (Anti-Motion-Blur Forklift & Personnel Transit)';
-      }
-      if (!cam.wdr_rating) {
-        cam.wdr_rating = '120 dB True WDR (Eliminates Backlight & Glare Washout)';
-      }
-      if (!cam.operating_temp) {
-        cam.operating_temp = isLoading ? '-35°C to +60°C (-31°F to 140°F) Heated Anti-Fog Glass' : '-20°C to +55°C (-4°F to 131°F) Industrial Operating Range';
-      }
-      if (!cam.lens_focal) {
-        cam.lens_focal = i % 3 === 0 ? '2.8mm (106° HFOV Ultra-Wide Angle)' : i % 3 === 1 ? '4.0mm (85° HFOV Standard Industrial)' : '6.0mm (54° HFOV Telephoto Aisle Corridor)';
-      }
-      if (!cam.dori_identify_m) {
-        cam.dori_identify_m = i % 3 === 0 ? 5.5 : i % 3 === 1 ? 8.0 : 12.0;
-      }
-      if (!cam.dori_recognize_m) {
-        cam.dori_recognize_m = i % 3 === 0 ? 11.0 : i % 3 === 1 ? 16.0 : 24.0;
-      }
-    }
-  });
 
   const totalAreaSqft = bldgs.reduce((acc, b) => acc + (b.area_sqft || 0), 0);
   const totalAreaSqm = bldgs.reduce((acc, b) => acc + (b.area_sqm || 0), 0);
@@ -118,23 +76,27 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
   const storage30dTb = ((camCount * bitrateKbps * 86400 * 30) / (8 * 1000 * 1000 * 1000)).toFixed(1);
   const estCabling = Math.round(camCount * 42);
 
-  // High-precision SVGs
-  const telemetryMapSvg = generateSiteTelemetryMapSvg(project, { width: 420, height: 215 });
-  const perspective3DSvg = generate3DPerspectiveSvg(project, { width: 420, height: 215 });
+  // All 6 Visual Engineering Diagrams
+  const diagram1Svg = generateSiteTelemetryMapSvg(resolvedProject, { width: 860, height: 420 });
+  const diagram2Svg = generate3DPerspectiveSvg(resolvedProject, { width: 860, height: 420 });
+  const diagram3Svg = generateBirdCamera3DSvg(resolvedProject, { width: 860, height: 420 });
+  const diagram4Svg = generateFrustumDori3DSvg(resolvedProject, { width: 860, height: 420 });
+  const diagram5Svg = generateSideElevationSvg(resolvedProject, { width: 860, height: 420 });
+  const diagram6Svg = generateCoverageTelemetryMetricsSvg(resolvedProject, { width: 860, height: 260 });
 
   const handleExportDocx = async () => {
     try {
       const resp = await fetch('/api/report/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project, format: 'docx' }),
+        body: JSON.stringify({ project: resolvedProject, format: 'docx' }),
       });
       if (!resp.ok) throw new Error('DOCX export failed');
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${(project.name || 'Plan_Vision').replace(/\s+/g, '_')}_Technical_Blueprint.doc`;
+      a.download = `${(resolvedProject.name || 'Plan_Vision').replace(/\s+/g, '_')}_Technical_Blueprint.doc`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -167,21 +129,21 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
         <div className="flex items-center gap-2">
           <button 
             onClick={onPrint} 
-            className="px-3.5 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-blue-700 transition-colors shadow-xs"
+            className="px-3.5 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-blue-700 transition-colors shadow-xs cursor-pointer"
           >
             <Printer className="w-4 h-4" />
             Print / Save as PDF (3 Pages)
           </button>
           <button 
             onClick={handleExportDocx} 
-            className="px-3.5 py-2 border border-indigo-200 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold hover:bg-indigo-100 flex items-center gap-1.5 transition-colors"
+            className="px-3.5 py-2 border border-indigo-200 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-semibold hover:bg-indigo-100 flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <FileText className="w-4 h-4 text-indigo-600" />
             Export DOCX (3 Pages)
           </button>
           <button 
             onClick={onExportJSON} 
-            className="px-3 py-2 border border-slate-200 bg-white text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-50 flex items-center gap-1.5"
+            className="px-3 py-2 border border-slate-200 bg-white text-slate-700 rounded-lg text-xs font-medium hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer"
           >
             <Download className="w-4 h-4 text-slate-500" />
             JSON
@@ -300,7 +262,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </table>
             </div>
 
-            {/* PART 2: SIDE-BY-SIDE CAD BLUEPRINT & 3D SPATIAL TWIN */}
+            {/* PART 2: SIDE-BY-SIDE CAD BLUEPRINT & 3D SPATIAL TWIN (DIAGRAMS 1 & 2) */}
             <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wide text-blue-950 flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-blue-600" />
@@ -310,51 +272,117 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 IEC EN 62676-4 Raycasting
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="border border-slate-200 rounded-lg p-2 bg-white text-center">
-                <div className="text-[10px] font-bold uppercase text-blue-950 mb-1">
-                  Top-View 2D CAD Blueprint (Building Zones, Walls &amp; FOV Cones)
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left shadow-2xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold uppercase text-blue-950">
+                    Diagram 1: Multi-Building 2D Floorplan
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                    2D CAD Layout
+                  </span>
                 </div>
                 <div 
-                  className="w-full flex justify-center"
-                  dangerouslySetInnerHTML={{ __html: telemetryMapSvg }} 
+                  className="w-full flex justify-center overflow-hidden rounded"
+                  dangerouslySetInnerHTML={{ __html: diagram1Svg }} 
                 />
+                <div className="mt-2 p-2 bg-emerald-50 border border-emerald-200 rounded text-left text-[10.5px] text-emerald-800 leading-snug">
+                  <strong>💡 Non-Technical Guide:</strong> Overhead blueprint of all 4 buildings showing exact camera locations (CAM-01 to CAM-{camCount}) and optical viewing cones covering every doorway and aisle.
+                </div>
               </div>
-              <div className="border border-slate-200 rounded-lg p-2 bg-white text-center">
-                <div className="text-[10px] font-bold uppercase text-blue-950 mb-1">
-                  3D Spatial Twin Simulation (Mount Elevations &amp; Optical Frustums)
+
+              <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left shadow-2xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold uppercase text-blue-950">
+                    Diagram 2: 3D Virtual Facility Perspective
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    Isometric 3D Twin
+                  </span>
                 </div>
                 <div 
-                  className="w-full flex justify-center"
-                  dangerouslySetInnerHTML={{ __html: perspective3DSvg }} 
+                  className="w-full flex justify-center overflow-hidden rounded"
+                  dangerouslySetInnerHTML={{ __html: diagram2Svg }} 
                 />
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-left text-[10.5px] text-blue-800 leading-snug">
+                  <strong>💡 Non-Technical Guide:</strong> 3D walkthrough showing equipment heights, dropper poles from ceiling, and how camera viewing pyramids reach the floor to prevent blind spots.
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="border-t border-slate-200 pt-2 mt-2 flex items-center justify-between text-[10px] text-slate-400">
+          <div className="border-t border-slate-200 pt-2 mt-3 flex items-center justify-between text-[10px] text-slate-400">
             <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
             <span className="font-bold">Page 1 of 3</span>
           </div>
         </div>
 
         {/* ========================================================================= */}
-        {/* PAGE 2: PER-BUILDING CAMERA PLACEMENT & BLIND SPOT MITIGATION             */}
+        {/* PAGE 2: 3D OPTICAL TWIN & PER-BUILDING CAMERA PLACEMENT MATRIX             */}
         {/* ========================================================================= */}
         <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-page flex flex-col justify-between">
           <div>
-            {/* PART 3: PER-BUILDING CAMERA PLACEMENT & ENVIRONMENTAL CONDITIONS */}
+            {/* PART 3: 3D SPATIAL TWIN & OPTICAL RAYCASTING SIMULATION (DIAGRAMS 3 & 4) */}
+            <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-blue-950 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                Part 3: 3D Spatial Twin &amp; Optical Raycasting Simulation
+              </h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                Line-of-Sight &amp; DORI Verified
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left shadow-2xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold uppercase text-blue-950">
+                    Diagram 3: Bird Camera 3D Occlusion Engine
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                    Raycasting Engine
+                  </span>
+                </div>
+                <div 
+                  className="w-full flex justify-center overflow-hidden rounded"
+                  dangerouslySetInnerHTML={{ __html: diagram3Svg }} 
+                />
+                <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-left text-[10.5px] text-amber-900 leading-snug">
+                  <strong>💡 Non-Technical Guide:</strong> High-angle simulation proving cameras see past machines, racks, and tanks. Target markers verify workers and forklifts remain visible without shadows.
+                </div>
+              </div>
+
+              <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left shadow-2xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold uppercase text-blue-950">
+                    Diagram 4: 3D Frustum &amp; DORI Range Inspector
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Optical Range Tiers
+                  </span>
+                </div>
+                <div 
+                  className="w-full flex justify-center overflow-hidden rounded"
+                  dangerouslySetInnerHTML={{ __html: diagram4Svg }} 
+                />
+                <div className="mt-2 p-2 bg-emerald-50 border border-emerald-200 rounded text-left text-[10.5px] text-emerald-800 leading-snug">
+                  <strong>💡 Non-Technical Guide:</strong> Color-coded vision ranges: Cyan = Face/Barcode identification (0-5.4m), Green = PPE helmet/vest recognition (5.4-10.8m), Yellow = Forklifts (10.8-21.6m), Orange = Motion detection (to 54m).
+                </div>
+              </div>
+            </div>
+
+            {/* PART 4: PER-BUILDING CAMERA PLACEMENT & ENVIRONMENTAL CONDITIONS */}
             <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wide text-blue-950 flex items-center gap-1.5">
                 <CameraIcon className="w-3.5 h-3.5 text-blue-600" />
-                Part 3: Per-Building Camera Placement Layout &amp; Environmental Conditions Matrix
+                Part 4: Per-Building Camera Placement Layout &amp; Environmental Conditions Matrix
               </h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
                 Hardware Conditions &amp; DORI Ratings
               </span>
             </div>
-            <div className="overflow-x-auto mb-4">
-              <table className="w-full border-collapse text-left text-[10.5px]">
+            <div className="overflow-x-auto mb-2">
+              <table className="w-full border-collapse text-left text-[10px]">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border border-slate-300">
                     <th className="p-1 border border-slate-300 w-[14%]">Tag &amp; Building</th>
@@ -372,35 +400,35 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                     <tr key={c.id} className="even:bg-slate-50/70">
                       <td className="p-1 border border-slate-200">
                         <strong className="text-blue-900">{c.name.split(' ')[0]}</strong>
-                        <div className="text-[9.5px] text-blue-600 font-semibold truncate max-w-[110px]">
+                        <div className="text-[9px] text-blue-600 font-semibold truncate max-w-[110px]">
                           {(c.building_name || 'B01').replace(/^Building\s*\d+\s*[-:]*\s*/i, '')}
                         </div>
                       </td>
                       <td className="p-1 border border-slate-200 text-slate-700">
                         <span className="font-semibold uppercase">{(c.mount_type || 'corner')}</span> @ {(c.height_m || 4.2).toFixed(1)}m
-                        <div className="text-[9.5px] text-slate-500 font-mono">Tilt: {c.tilt_degrees || 20}° / Pan: {c.orientation_degrees}°</div>
+                        <div className="text-[9px] text-slate-500 font-mono">Tilt: {c.tilt_degrees || 20}° / Pan: {c.orientation_degrees}°</div>
                       </td>
                       <td className="p-1 border border-slate-200 font-medium text-slate-900">
                         {c.target_area || 'Process Station ROI'}
                       </td>
                       <td className="p-1 border border-slate-200 text-slate-700 font-mono">
                         {c.lens_focal ? c.lens_focal.split(' ')[0] : '2.8mm'}
-                        <div className="text-[9.5px] text-slate-500">{c.horizontal_fov_degrees}° HFOV</div>
+                        <div className="text-[9px] text-slate-500">{c.horizontal_fov_degrees}° HFOV</div>
                       </td>
                       <td className="p-1 border border-slate-200 text-slate-700">
                         {c.lighting_lux ? c.lighting_lux.replace(/\(.*\)/, '').trim() : '150–400 Lux'}
-                        <div className="text-[9.5px] text-emerald-700 font-medium">0.005 Lux Starlight</div>
+                        <div className="text-[9px] text-emerald-700 font-medium">0.005 Lux Starlight</div>
                       </td>
                       <td className="p-1 border border-slate-200">
-                        <span className="inline-block px-1.5 py-0.5 text-[9.5px] font-bold rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        <span className="inline-block px-1.5 py-0.5 text-[9px] font-bold rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
                           {(c.ingress_protection || 'IP67 / IK10').replace(/\s*Vandal-Proof|\s*Chemical & Washdown Resistant|\s*Industrial Sealed Housing/gi, '').trim()}
                         </span>
                       </td>
                       <td className="p-1 border border-slate-200 text-slate-700">
                         {c.shutter_speed ? c.shutter_speed.split(' ')[0] : '1/250s'}
-                        <div className="text-[9.5px] text-blue-700 font-medium">{(c.wdr_rating || '120 dB True WDR').replace(/\(.*\)/, '').trim()}</div>
+                        <div className="text-[9px] text-blue-700 font-medium">{(c.wdr_rating || '120 dB True WDR').replace(/\(.*\)/, '').trim()}</div>
                       </td>
-                      <td className="p-1 border border-slate-200 text-[9.5px] text-slate-600">
+                      <td className="p-1 border border-slate-200 text-[9px] text-slate-600">
                         {c.operating_temp ? c.operating_temp.split(' ')[0] + ' ' + c.operating_temp.split(' ')[1] + ' ' + c.operating_temp.split(' ')[2] : '-20°C to +55°C'}
                       </td>
                     </tr>
@@ -408,19 +436,80 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </tbody>
               </table>
             </div>
+          </div>
 
-            {/* PART 4: OPTICAL COVERAGE & BLIND SPOT MITIGATION ANALYSIS */}
+          <div className="border-t border-slate-200 pt-2 mt-2 flex items-center justify-between text-[10px] text-slate-400">
+            <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
+            <span className="font-bold">Page 2 of 3</span>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* PAGE 3: FIELD RIGGING, OPTICAL TELEMETRY & HARDWARE BOM                   */}
+        {/* ========================================================================= */}
+        <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-avoid flex flex-col justify-between">
+          <div>
+            {/* PART 5: SIDE ELEVATION PROFILE & FIELD RIGGING (DIAGRAMS 5 & 6) */}
+            <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-blue-950 flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 text-blue-600" />
+                Part 5: Side Elevation Profile &amp; Optical Coverage Telemetry
+              </h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                Field Engineering &amp; Hardware Sizing
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+              <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left shadow-2xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold uppercase text-blue-950">
+                    Diagram 5: Side Elevation Profile &amp; Rigging
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                    Mounting Clearance
+                  </span>
+                </div>
+                <div 
+                  className="w-full flex justify-center overflow-hidden rounded"
+                  dangerouslySetInnerHTML={{ __html: diagram5Svg }} 
+                />
+                <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-left text-[10.5px] text-purple-900 leading-snug">
+                  <strong>💡 Non-Technical Guide:</strong> Side-view showing 5.0m ceiling beam, 1.2m steel dropper pole, 25° down-tilt, and unobstructed sightlines above standing workers (1.8m) and forklifts (2.3m).
+                </div>
+              </div>
+
+              <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left shadow-2xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-bold uppercase text-blue-950">
+                    Diagram 6: 3D Telemetry &amp; Hardware Sizing
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                    Executive Sizing
+                  </span>
+                </div>
+                <div 
+                  className="w-full flex justify-center overflow-hidden rounded"
+                  dangerouslySetInnerHTML={{ __html: diagram6Svg }} 
+                />
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-left text-[10.5px] text-blue-900 leading-snug">
+                  <strong>💡 Non-Technical Guide:</strong> Executive sizing metrics: {camCount} cameras, 30-day RAID-6 storage array, PoE power supply, network bandwidth, and ultra-fast ≤35ms AI safety reaction time.
+                </div>
+              </div>
+            </div>
+
+            {/* PART 6: OPTICAL COVERAGE & BLIND SPOT MITIGATION ANALYSIS */}
             <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wide text-blue-950 flex items-center gap-1.5">
                 <Shield className="w-3.5 h-3.5 text-emerald-600" />
-                Part 4: Optical Coverage &amp; Blind Spot Mitigation Analysis
+                Part 6: Optical Coverage &amp; Blind Spot Mitigation Analysis
               </h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                 Zero-Blind-Spot Guarantee
               </span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-[11px]">
+            <div className="overflow-x-auto mb-3">
+              <table className="w-full border-collapse text-left text-[10.5px]">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border border-slate-300">
                     <th className="p-1.5 border border-slate-300 w-[18%]">Potential Blind Spot Scenario</th>
@@ -524,164 +613,6 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div className="border-t border-slate-200 pt-2 mt-2 flex items-center justify-between text-[10px] text-slate-400">
-            <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
-            <span className="font-bold">Page 2 of 3</span>
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* PAGE 3: LOGIC APPLIED, FALSE POSITIVE RISKS & EDGE AI INFRASTRUCTURE       */}
-        {/* ========================================================================= */}
-        <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-avoid flex flex-col justify-between">
-          <div>
-            {/* PART 5: MATHEMATICAL & GEOMETRIC LOGIC APPLIED */}
-            <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-blue-950 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                Part 5: Mathematical &amp; Geometric Logic Applied
-              </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                IEC EN 62676-4 Certified
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2.5 mb-3">
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                <div className="font-bold text-[10.5px] text-blue-950 uppercase mb-1">
-                  1. DORI Resolution Density Formula
-                </div>
-                <div className="font-mono text-[10px] bg-slate-900 text-cyan-400 px-2 py-1 rounded mb-1.5">
-                  PPM = Horizontal Pixels / Width(m)
-                </div>
-                <p className="text-[10px] text-slate-600 leading-tight">
-                  <strong>Identify:</strong> ≥250 PPM (Face/Barcode)<br />
-                  <strong>Recognize:</strong> ≥125 PPM (PPE/Vest)<br />
-                  <strong>Observe:</strong> ≥62.5 PPM (Forklift Transit)<br />
-                  <strong>Detect:</strong> ≥25 PPM (Perimeter Motion)
-                </p>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                <div className="font-bold text-[10.5px] text-blue-950 uppercase mb-1">
-                  2. Dead-Zone Clearance Geometry
-                </div>
-                <div className="font-mono text-[10px] bg-slate-900 text-cyan-400 px-2 py-1 rounded mb-1.5">
-                  D_dead = H_mount × tan(90° - VFOV/2 - θ)
-                </div>
-                <p className="text-[10px] text-slate-600 leading-tight">
-                  Mount height H = 4.2m, tilt θ = 20°, VFOV = 56° yields D_dead = 1.12m. At floor plane, zero unmonitored blind corridors exist between adjacent cameras.
-                </p>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-                <div className="font-bold text-[10.5px] text-blue-950 uppercase mb-1">
-                  3. 2.5D Raycasting Slab Occlusion
-                </div>
-                <div className="font-mono text-[10px] bg-slate-900 text-cyan-400 px-2 py-1 rounded mb-1.5">
-                  t_min = max(t_1x, t_1y, t_1z)
-                </div>
-                <p className="text-[10px] text-slate-600 leading-tight">
-                  Dynamic ray-box intersection testing evaluates Line-of-Sight from each sensor to Head (1.65m AFF), Torso (1.10m AFF), and Ankle (0.15m AFF) markers.
-                </p>
-              </div>
-            </div>
-
-            {/* PART 6: FALSE ALARM FAILURE MODES & MITIGATIONS */}
-            <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-blue-950 flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                Part 6: False Alarm Failure Modes &amp; Algorithmic Mitigations Matrix
-              </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                Production Hardening Engine
-              </span>
-            </div>
-            <div className="overflow-x-auto mb-3">
-              <table className="w-full border-collapse text-left text-[11px]">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 font-bold border border-slate-300">
-                    <th className="p-1.5 border border-slate-300 w-[20%]">Failure Mode / Hazard Event</th>
-                    <th className="p-1.5 border border-slate-300 w-[22%]">Root Cause &amp; Physical Trigger</th>
-                    <th className="p-1.5 border border-slate-300 w-[18%]">Optical Sensor Impact</th>
-                    <th className="p-1.5 border border-slate-300 w-[40%]">Algorithmic &amp; Hardware Mitigation Countermeasure</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  <tr className="even:bg-slate-50/70">
-                    <td className="p-1.5 border border-slate-200 font-bold text-slate-900">
-                      Sunlight Glare &amp; Backlight Washout
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      Low-angle sunrise/sunset entering open loading bay doors (B04)
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      Pixel saturation, blooming, loss of facial &amp; PPE edge contrast
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-700 font-medium">
-                      Hardware True WDR (120dB) sensor fusion + CLAHE contrast enhancement + dynamic ROI exposure masking.
-                    </td>
-                  </tr>
-                  <tr className="even:bg-slate-50/70">
-                    <td className="p-1.5 border border-slate-200 font-bold text-slate-900">
-                      Steam, Vapor &amp; Chemical Particulates
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      Injection mold heating (B01) &amp; automated chemical filling purge (B02)
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      False motion vector triggers, infrared flare from airborne droplets
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-700 font-medium">
-                      Temporal multi-frame persistence filter (&gt;5 consecutive frames) + infrared flare gating + background subtraction.
-                    </td>
-                  </tr>
-                  <tr className="even:bg-slate-50/70">
-                    <td className="p-1.5 border border-slate-200 font-bold text-slate-900">
-                      Forklift Mast &amp; Crane Occlusion
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      High-mast pallet transport &amp; overhead crane traversing walkway
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      Target ID switching, fragmented bounding boxes, missed alarms
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-700 font-medium">
-                      ByteTrack tracklet Kalman extrapolation + multi-camera Re-ID handover to maintain worker identity across occlusions.
-                    </td>
-                  </tr>
-                  <tr className="even:bg-slate-50/70">
-                    <td className="p-1.5 border border-slate-200 font-bold text-slate-900">
-                      Wet Epoxy Floor Specular Reflection
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      Chemical washdown &amp; cleaning fluids creating mirror-like floor
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      Ghost double detections of workers &amp; false puddle spill triggers
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-700 font-medium">
-                      Polarized optical lens filters + HSV color-space floor-plane thresholding + semantic ground plane homography rejection.
-                    </td>
-                  </tr>
-                  <tr className="even:bg-slate-50/70">
-                    <td className="p-1.5 border border-slate-200 font-bold text-slate-900">
-                      Night Insects &amp; Precipitation Glare
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      Moths attracted to 850nm IR LEDs &amp; rain at loading apron (B04)
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-600">
-                      High-frequency pixel changes triggering false perimeter breach
-                    </td>
-                    <td className="p-1.5 border border-slate-200 text-slate-700 font-medium">
-                      Matrix IR LEDs physically offset from lens + spatial edge density motion filtering + deep learning classification gating.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
 
             {/* PART 7: EDGE AI PIPELINE & INFRASTRUCTURE SIZING */}
             <div className="border-b border-slate-200 pb-1 mb-2 flex items-center justify-between">
@@ -690,13 +621,13 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 Part 7: Edge AI Inference Pipeline Telemetry &amp; Infrastructure BOM
               </h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Sub-80ms Actionable SLA
+                Sub-35ms Actionable SLA
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
                 <div className="font-bold text-[10.5px] text-blue-950 mb-1.5 uppercase">
-                  Real-Time Edge Pipeline Telemetry (&lt;80ms SLA)
+                  Real-Time Edge Pipeline Telemetry (&lt;35ms Total Latency)
                 </div>
                 <table className="w-full text-[10px] border-collapse">
                   <tbody>
@@ -722,7 +653,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                     </tr>
                     <tr>
                       <td className="font-semibold text-slate-700 py-0.5">PLC / Siren Relay Dispatch:</td>
-                      <td className="text-emerald-700 font-bold text-right">&lt;15ms (Modbus/MQTT)</td>
+                      <td className="text-emerald-700 font-bold text-right">&lt;15ms (Modbus TCP / MQTT)</td>
                     </tr>
                   </tbody>
                 </table>
@@ -730,16 +661,16 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
 
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
                 <div className="font-bold text-[10.5px] text-blue-950 mb-1.5 uppercase">
-                  Hardware Sizing &amp; Infrastructure BOM
+                  Hardware Sizing &amp; NVR Infrastructure BOM
                 </div>
                 <table className="w-full text-[10px] border-collapse">
                   <tbody>
                     <tr className="border-b border-slate-200 py-0.5">
-                      <td className="font-semibold text-slate-700 py-0.5">Network Cameras:</td>
+                      <td className="font-semibold text-slate-700 py-0.5">Active Network Sensors:</td>
                       <td className="text-slate-800 font-bold text-right">{camCount}x AI IP Cams (IP67/IK10, 4MP)</td>
                     </tr>
                     <tr className="border-b border-slate-200 py-0.5">
-                      <td className="font-semibold text-slate-700 py-0.5">PoE+ Switching:</td>
+                      <td className="font-semibold text-slate-700 py-0.5">PoE+ Switching Hardware:</td>
                       <td className="text-slate-700 text-right">1x 24-Port Managed Layer-2 (370W)</td>
                     </tr>
                     <tr className="border-b border-slate-200 py-0.5">
@@ -764,7 +695,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
             </div>
           </div>
 
-          <div className="border-t border-slate-200 pt-2 mt-2 flex items-center justify-between text-[10px] text-slate-400">
+          <div className="border-t border-slate-200 pt-2 mt-3 flex items-center justify-between text-[10px] text-slate-400">
             <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
             <span className="font-bold">Page 3 of 3</span>
           </div>

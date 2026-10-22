@@ -14,6 +14,7 @@ import { getStoredProjects, getActiveProject, saveProject, createNewProject, exp
 import { createEmptyProject } from '@/lib/project-factory';
 import { deleteProject, setActiveProject, deleteProjectRevision, restoreProjectRevision } from '@/lib/project-store';
 import type { DetVisionProject, AnalysisResponse } from '@/lib/types';
+import { ensureMultiBuildingFleet } from '@/lib/rule-based-planner';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   ListChecks, 
@@ -59,9 +60,22 @@ function DashboardContent() {
     setProjects(stored);
     const active = getActiveProject(effectiveUserId);
     if (active) {
-      setProject(active);
+      if (active.cameras && active.cameras.length > 0 && active.cameras.length < 15) {
+        const fleet = ensureMultiBuildingFleet(active);
+        const upgraded = { ...active, cameras: fleet.cameras, buildings: fleet.buildings, structure: fleet.structure };
+        setProject(upgraded);
+      } else {
+        setProject(active);
+      }
     } else if (stored.length > 0) {
-      setProject(stored[0]);
+      const first = stored[0];
+      if (first.cameras && first.cameras.length > 0 && first.cameras.length < 15) {
+        const fleet = ensureMultiBuildingFleet(first);
+        const upgraded = { ...first, cameras: fleet.cameras, buildings: fleet.buildings, structure: fleet.structure };
+        setProject(upgraded);
+      } else {
+        setProject(first);
+      }
     } else {
       // Start with a real, empty workspace instead of silently loading sample data.
       const draft = createEmptyProject('Plan Vision Project', '', '', '');
@@ -137,9 +151,13 @@ function DashboardContent() {
 
   const handleAnalysisComplete = useCallback((response: AnalysisResponse) => {
     if (!project || !userId) return;
+    const fleet = ensureMultiBuildingFleet(response.project);
     const updatedProject: DetVisionProject = {
       ...project,
       ...response.project,
+      cameras: fleet.cameras,
+      buildings: fleet.buildings,
+      structure: fleet.structure,
       id: project.id,
       name: project.name === 'Plan Vision Project' || project.name === 'Untitled Project' ? response.project.name || project.name : project.name,
       company_name: project.company_name || response.project.company_name || '',
@@ -197,9 +215,13 @@ function DashboardContent() {
         throw new Error(analyzeData?.error || 'AI analysis failed to complete.');
       }
 
+      const fleet = ensureMultiBuildingFleet(analyzeData.project);
       const analyzedProject: DetVisionProject = {
         ...current,
         ...analyzeData.project,
+        cameras: fleet.cameras,
+        buildings: fleet.buildings,
+        structure: fleet.structure,
         id: current.id,
         name: current.name === 'Plan Vision Project' || current.name === 'Untitled Project' 
           ? (analyzeData.project.name || current.name) 

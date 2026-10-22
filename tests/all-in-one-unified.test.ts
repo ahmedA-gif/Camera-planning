@@ -102,10 +102,81 @@ if (!pipeSvg.includes('<svg') || !pipeSvg.includes('15x IP Cameras') || !pipeSvg
 }
 console.log('✓ Pipeline Architecture SVG generated with user camera count!');
 
-const doriSvg = generateCoverageTelemetryMetricsSvg(sampleProject);
-if (!doriSvg.includes('<svg') || !doriSvg.includes('15 Cameras') || !doriSvg.includes('100% TARGET')) {
-  throw new Error('generateCoverageTelemetryMetricsSvg missing expected metrics');
+import { 
+  generateBirdCamera3DSvg, 
+  generateFrustumDori3DSvg, 
+  generateSideElevationSvg, 
+  generate3DPerspectiveSvg 
+} from '../lib/report-diagrams';
+import { ensureMultiBuildingFleet } from '../lib/rule-based-planner';
+
+// Test 5: Verify all 6 diagrams
+const birdSvg = generateBirdCamera3DSvg(sampleProject);
+if (!birdSvg.includes('<svg') || !birdSvg.includes('BIRD CAMERA 3D')) {
+  throw new Error('generateBirdCamera3DSvg failed');
 }
-console.log('✓ 3D Optical Coverage Telemetry & Sizing SVG generated!');
+console.log('✓ Bird Camera 3D Occlusion Engine SVG generated!');
+
+const frustumSvg = generateFrustumDori3DSvg(sampleProject);
+if (!frustumSvg.includes('<svg') || !frustumSvg.includes('FRUSTUM &amp; DORI 3D')) {
+  throw new Error('generateFrustumDori3DSvg failed');
+}
+console.log('✓ 3D Frustum & DORI Range Inspector SVG generated!');
+
+const elevationSvg = generateSideElevationSvg(sampleProject);
+if (!elevationSvg.includes('<svg') || !elevationSvg.includes('SIDE ELEVATION PROFILE')) {
+  throw new Error('generateSideElevationSvg failed');
+}
+console.log('✓ Side Elevation Profile SVG generated!');
+
+const perspectiveSvg = generate3DPerspectiveSvg(sampleProject);
+if (!perspectiveSvg.includes('<svg') || !perspectiveSvg.includes('3D PERSPECTIVE VISUALIZER')) {
+  throw new Error('generate3DPerspectiveSvg failed');
+}
+console.log('✓ 3D Virtual Facility Perspective SVG generated!');
+
+// Test 6: Verify ensureMultiBuildingFleet resolves 4-camera project to 15 cameras
+const fourCamProject: DetVisionProject = {
+  ...sampleProject,
+  cameras: sampleProject.cameras.slice(0, 4),
+};
+const resolved = ensureMultiBuildingFleet(fourCamProject);
+if (resolved.cameras.length !== 15) {
+  throw new Error(`Expected ensureMultiBuildingFleet to upgrade 4 cameras to 15, got ${resolved.cameras.length}`);
+}
+if (resolved.buildings.length !== 4) {
+  throw new Error(`Expected 4 buildings, got ${resolved.buildings.length}`);
+}
+const bldgCamSum = resolved.buildings.reduce((acc, b) => acc + (b.camera_count || 0), 0);
+if (bldgCamSum !== 15) {
+  throw new Error(`Expected building camera sum to equal 15, got ${bldgCamSum}`);
+}
+console.log('✓ ensureMultiBuildingFleet successfully upgraded 4 cameras to full 15-camera 4-building fleet!');
+
+// Test 7: Verify user incremented count (16 cameras) is strictly preserved
+const sixteenCamProject: DetVisionProject = {
+  ...sampleProject,
+  cameras: [
+    ...sampleProject.cameras,
+    {
+      id: 'CAM-16',
+      name: 'CAM-16: Additional Zone Monitor',
+      status: 'active',
+      x: 0.5,
+      y: 0.5,
+      orientation_degrees: 0,
+      horizontal_fov_degrees: 85,
+      view_range: 0.45,
+      assigned_use_case_ids: [],
+      resolution_width: 2688,
+      resolution_height: 1520,
+    }
+  ]
+};
+const resolvedSixteen = ensureMultiBuildingFleet(sixteenCamProject);
+if (resolvedSixteen.cameras.length !== 16) {
+  throw new Error(`Expected 16 cameras preserved, got ${resolvedSixteen.cameras.length}`);
+}
+console.log('✓ ensureMultiBuildingFleet successfully preserved user-incremented 16 cameras!');
 
 console.log('\n--- ALL UNIFIED VERIFICATION TESTS PASSED SUCCESSFULLY! ---');

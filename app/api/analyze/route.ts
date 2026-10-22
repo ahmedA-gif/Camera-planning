@@ -3,7 +3,7 @@ import { validateAnalysisRequest, validateProject } from '@/lib/validation';
 import { createEmptyProject } from '@/lib/project-factory';
 import type { DetVisionProject, UseCase, TaskType, FeasibilityStatus, Camera, Zone, LayoutElement } from '@/lib/types';
 import { getNvidiaConfig, getNvidiaCompletionsURL } from '@/lib/ai-provider';
-import { detectFacilityProfile, extractDesiredCameraCount, parseCameraHardware, calculateReasonedCameraCount } from '@/lib/rule-based-planner';
+import { detectFacilityProfile, extractDesiredCameraCount, parseCameraHardware, calculateReasonedCameraCount, generateStructuredLayout } from '@/lib/rule-based-planner';
 
 // Allow AI providers room to answer on serverless platforms
 export const maxDuration = 60;
@@ -133,6 +133,18 @@ function attachScenarioPhysicalLayout(
   project.facility_width_m = W;
   project.facility_height_m = H;
   project.facility_type = profile.facility_type;
+
+  const isMultiBuilding = Boolean(profile.buildings && profile.buildings.length >= 2);
+  const userRequestedCount = extractDesiredCameraCount(text, inputs.reasoned_camera_count ?? reasonedCameraCount);
+  const targetCount = userRequestedCount > 0 ? userRequestedCount : (isMultiBuilding ? 15 : 15);
+
+  if (isMultiBuilding) {
+    const layout = generateStructuredLayout(inputs.business_description, targetCount, project.use_cases || []);
+    project.buildings = profile.buildings;
+    project.structure = layout.structure;
+    project.cameras = layout.cameras;
+    return;
+  }
 
   // 2. Synthesize 3D structures / obstacles matching the user scenario
   const structures: LayoutElement[] = [];
@@ -279,12 +291,10 @@ function attachScenarioPhysicalLayout(
   const zones: Zone[] = [];
 
   const hw = parseCameraHardware(inputs.camera_specifications, text);
-  const userRequestedCount = extractDesiredCameraCount(text, null);
   const explicitReasoned = reasonedCameraCount ?? inputs.reasoned_camera_count;
-  const isMultiBuilding = Boolean(profile.buildings && profile.buildings.length >= 2);
   const minFleet = isMultiBuilding ? Math.max(15, (profile.buildings?.length || 4) * 3) : 15;
 
-  let targetCount = userRequestedCount > 0
+  let effectiveTargetCount = userRequestedCount > 0
     ? userRequestedCount
     : (typeof explicitReasoned === 'number' && explicitReasoned >= 15)
       ? Math.min(80, explicitReasoned)
@@ -301,8 +311,8 @@ function attachScenarioPhysicalLayout(
           buildings: profile.buildings,
         });
 
-  if (userRequestedCount === 0 && targetCount < minFleet) {
-    targetCount = minFleet;
+  if (userRequestedCount === 0 && effectiveTargetCount < minFleet) {
+    effectiveTargetCount = minFleet;
   }
 
   const sections = (inputs.layout_sections || []).filter(s => s && s.trim());
@@ -311,8 +321,8 @@ function attachScenarioPhysicalLayout(
 
   const rawUseCases = project.use_cases || [];
 
-  // Generate cameras up to targetCount
-  for (let idx = 0; idx < targetCount; idx++) {
+  // Generate cameras up to effectiveTargetCount
+  for (let idx = 0; idx < effectiveTargetCount; idx++) {
     const uc = rawUseCases.length > 0 ? rawUseCases[idx % rawUseCases.length] : null;
     const ucLower = uc ? `${uc.name} ${uc.description} ${uc.task_type}`.toLowerCase() : '';
     const secIdx = sections.length > 0 ? idx % sections.length : -1;

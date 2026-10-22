@@ -9,7 +9,7 @@ import {
   generateSideElevationSvg,
   generate3DPerspectiveSvg
 } from '@/lib/report-diagrams';
-import { parseFacilityBuildings } from '@/lib/rule-based-planner';
+import { ensureMultiBuildingFleet, parseFacilityBuildings } from '@/lib/rule-based-planner';
 import type { FacilityBuilding } from '@/lib/types';
 
 // Report rendering happens in the document service; allow it room to finish on Vercel.
@@ -17,69 +17,21 @@ export const maxDuration = 60;
 
 const DOC_SERVICE_URL = process.env.DOC_SERVICE_URL || 'http://localhost:8001';
 
-function renderHtmlReport(project: any) {
+function renderHtmlReport(rawProject: any) {
+  const fleet = ensureMultiBuildingFleet(rawProject);
+  const project = {
+    ...rawProject,
+    cameras: fleet.cameras,
+    buildings: fleet.buildings,
+    structure: fleet.structure,
+  };
   const title = project.name || 'Plan Vision Facility Plan';
   const company = project.company_name || 'Enterprise Operations';
   const industry = project.industry || 'Industrial & Logistics Automation';
-  const cameras = project.cameras || [];
-  const camCount = cameras.length || 15;
+  const cameras = project.cameras;
+  const camCount = cameras.length;
+  const bldgs: FacilityBuilding[] = project.buildings;
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
-  // 1. Resolve Multi-Building Profiles
-  const bldgs: FacilityBuilding[] = (project.buildings && project.buildings.length > 0)
-    ? project.buildings
-    : parseFacilityBuildings(project.business_description || '', camCount);
-
-  // Ensure cameras are properly tagged and have complete operational conditions
-  let camOffset = 0;
-  bldgs.forEach(b => {
-    const count = b.camera_count;
-    for (let i = 0; i < count && camOffset < cameras.length; i++, camOffset++) {
-      const cam = cameras[camOffset];
-      if (!cam.building_name) cam.building_name = b.name;
-      if (!cam.building_id) cam.building_id = b.id;
-      const lowerB = b.name.toLowerCase();
-      const isLoading = /loading|dock|point|truck/i.test(lowerB);
-      const isChemical = /filling|chemical|spill|plastic/i.test(lowerB);
-
-      if (!cam.mount_type) {
-        cam.mount_type = i === 0 ? 'corner' : i === 1 ? 'roof-tilt' : i === 2 ? 'wall-h' : i === 3 ? 'roof-nadir' : 'cross';
-      }
-      if (!cam.tilt_degrees) {
-        cam.tilt_degrees = cam.mount_type === 'roof-nadir' ? 90 : cam.mount_type === 'roof-tilt' ? 25 : 20;
-      }
-      if (!cam.height_m) {
-        cam.height_m = Math.min(5.5, Math.max(3.0, +(b.height_m * 0.85).toFixed(1)));
-      }
-      if (!cam.target_area) {
-        cam.target_area = `${b.name} Critical Operational ROI`;
-      }
-      if (!cam.lighting_lux) {
-        cam.lighting_lux = isLoading ? '50–250 Lux (0.001 Lux Smart EXIR Night Vision to 40m)' : '150–400 Lux (0.005 Lux Starlight IR Auto-Switch)';
-      }
-      if (!cam.ingress_protection) {
-        cam.ingress_protection = isLoading ? 'IP67 / IK10 Vandal-Proof NEMA 4X' : isChemical ? 'IP66 / NEMA 4X Chemical & Washdown Resistant' : 'IP54 Industrial Sealed Housing';
-      }
-      if (!cam.shutter_speed) {
-        cam.shutter_speed = isChemical ? '1/500s – 1/1000s (Anti-Motion-Blur High-Speed Line)' : '1/250s (Anti-Motion-Blur Forklift & Personnel Transit)';
-      }
-      if (!cam.wdr_rating) {
-        cam.wdr_rating = '120 dB True WDR (Eliminates Backlight & Glare Washout)';
-      }
-      if (!cam.operating_temp) {
-        cam.operating_temp = isLoading ? '-35°C to +60°C (-31°F to 140°F) Heated Anti-Fog Glass' : '-20°C to +55°C (-4°F to 131°F) Industrial Operating Range';
-      }
-      if (!cam.lens_focal) {
-        cam.lens_focal = i % 3 === 0 ? '2.8mm (106° HFOV Ultra-Wide Angle)' : i % 3 === 1 ? '4.0mm (85° HFOV Standard Industrial)' : '6.0mm (54° HFOV Telephoto Aisle Corridor)';
-      }
-      if (!cam.dori_identify_m) {
-        cam.dori_identify_m = i % 3 === 0 ? 5.5 : i % 3 === 1 ? 8.0 : 12.0;
-      }
-      if (!cam.dori_recognize_m) {
-        cam.dori_recognize_m = i % 3 === 0 ? 11.0 : i % 3 === 1 ? 16.0 : 24.0;
-      }
-    }
-  });
 
   const totalAreaSqft = bldgs.reduce((acc, b) => acc + (b.area_sqft || 0), 0);
   const totalAreaSqm = bldgs.reduce((acc, b) => acc + (b.area_sqm || 0), 0);
@@ -87,9 +39,13 @@ function renderHtmlReport(project: any) {
   const storage30dTb = ((camCount * bitrateKbps * 86400 * 30) / (8 * 1000 * 1000 * 1000)).toFixed(1);
   const estCabling = Math.round(camCount * 42);
 
-  // Side-by-side compact visual floorplan CAD diagrams
-  const telemetryMapSvg = generateSiteTelemetryMapSvg(project, { width: 420, height: 215 });
-  const perspective3DSvg = generate3DPerspectiveSvg(project, { width: 420, height: 215 });
+  // All 6 Visual Engineering Diagrams
+  const diagram1Svg = generateSiteTelemetryMapSvg(project, { width: 860, height: 420 });
+  const diagram2Svg = generate3DPerspectiveSvg(project, { width: 860, height: 420 });
+  const diagram3Svg = generateBirdCamera3DSvg(project, { width: 860, height: 420 });
+  const diagram4Svg = generateFrustumDori3DSvg(project, { width: 860, height: 420 });
+  const diagram5Svg = generateSideElevationSvg(project, { width: 860, height: 420 });
+  const diagram6Svg = generateCoverageTelemetryMetricsSvg(project, { width: 860, height: 260 });
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -337,17 +293,29 @@ function renderHtmlReport(project: any) {
         <span class="badge badge-blue">IEC EN 62676-4 Raycasting</span>
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 3px;">
-        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; background: #ffffff; text-align: center;">
-          <div style="font-weight: 700; font-size: 8px; color: #1e3a8a; margin-bottom: 2px; text-transform: uppercase;">
-            Top-View 2D CAD Blueprint (Building Zones, Walls &amp; FOV Cones)
+        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; background: #ffffff; text-align: left;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <span style="font-weight: 800; font-size: 7.8px; color: #1e3a8a; text-transform: uppercase;">
+              Diagram 1: Multi-Building 2D Floorplan
+            </span>
+            <span class="badge badge-blue" style="font-size: 6.8px;">2D CAD Layout</span>
           </div>
-          ${telemetryMapSvg}
+          ${diagram1Svg}
+          <div style="margin-top: 3px; padding: 3px 5px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 3px; font-size: 6.8px; color: #166534; line-height: 1.25;">
+            <strong>💡 Non-Technical Guide:</strong> Overhead blueprint of all 4 buildings showing exact camera locations (CAM-01 to CAM-15) and optical viewing cones covering every doorway and aisle.
+          </div>
         </div>
-        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; background: #ffffff; text-align: center;">
-          <div style="font-weight: 700; font-size: 8px; color: #1e3a8a; margin-bottom: 2px; text-transform: uppercase;">
-            3D Spatial Twin Simulation (Mount Elevations &amp; Optical Frustums)
+        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; background: #ffffff; text-align: left;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <span style="font-weight: 800; font-size: 7.8px; color: #1e3a8a; text-transform: uppercase;">
+              Diagram 2: 3D Virtual Facility Perspective
+            </span>
+            <span class="badge badge-indigo" style="font-size: 6.8px;">Isometric 3D Twin</span>
           </div>
-          ${perspective3DSvg}
+          ${diagram2Svg}
+          <div style="margin-top: 3px; padding: 3px 5px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 3px; font-size: 6.8px; color: #1e40af; line-height: 1.25;">
+            <strong>💡 Non-Technical Guide:</strong> 3D walkthrough showing equipment heights, dropper poles from ceiling, and how camera viewing pyramids reach the floor to prevent blind spots.
+          </div>
         </div>
       </div>
     </div>
@@ -360,14 +328,47 @@ function renderHtmlReport(project: any) {
 
   <br clear="all" style="page-break-before:always; mso-break-type:section-break" />
 
-  <!-- ==================== PAGE 2: PER-BUILDING CAMERA PLACEMENT & BLIND SPOT MITIGATION ==================== -->
+  <!-- ==================== PAGE 2: 3D OPTICAL TWIN & CAMERA PLACEMENT MATRIX ==================== -->
   <div class="report-page" id="page-2">
     <div>
+      <!-- DIAGRAMS 3 & 4: 3D OPTICAL TWIN & RAYCASTING -->
       <div class="sec-header" style="margin-top: 0;">
-        <span>🎯 Part 3: Per-Building Camera Placement Layout &amp; Environmental Conditions Matrix</span>
+        <span>🔬 Part 3: 3D Spatial Twin &amp; Optical Raycasting Simulation</span>
+        <span class="badge badge-blue">Line-of-Sight &amp; DORI Verified</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 3px; margin-bottom: 6px;">
+        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; background: #ffffff; text-align: left;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <span style="font-weight: 800; font-size: 7.8px; color: #1e3a8a; text-transform: uppercase;">
+              Diagram 3: Bird Camera 3D Occlusion Engine
+            </span>
+            <span class="badge badge-amber" style="font-size: 6.8px;">Raycasting Engine</span>
+          </div>
+          ${diagram3Svg}
+          <div style="margin-top: 3px; padding: 3px 5px; background: #fefce8; border: 1px solid #fef08a; border-radius: 3px; font-size: 6.8px; color: #854d0e; line-height: 1.25;">
+            <strong>💡 Non-Technical Guide:</strong> High-angle simulation proving cameras see past machines, racks, and tanks. Target markers verify workers and forklifts remain visible without shadows.
+          </div>
+        </div>
+        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; background: #ffffff; text-align: left;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <span style="font-weight: 800; font-size: 7.8px; color: #1e3a8a; text-transform: uppercase;">
+              Diagram 4: 3D Frustum &amp; DORI Range Inspector
+            </span>
+            <span class="badge badge-green" style="font-size: 6.8px;">Optical Range Tiers</span>
+          </div>
+          ${diagram4Svg}
+          <div style="margin-top: 3px; padding: 3px 5px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 3px; font-size: 6.8px; color: #166534; line-height: 1.25;">
+            <strong>💡 Non-Technical Guide:</strong> Color-coded vision ranges: Cyan = Face/Barcode identification (0-5.4m), Green = PPE helmet/vest recognition (5.4-10.8m), Yellow = Forklifts (10.8-21.6m), Orange = Motion detection (to 54m).
+          </div>
+        </div>
+      </div>
+
+      <!-- PART 4: PER-BUILDING CAMERA PLACEMENT & ENVIRONMENTAL CONDITIONS -->
+      <div class="sec-header" style="margin-top: 4px;">
+        <span>🎯 Part 4: Per-Building Camera Placement Layout &amp; Environmental Conditions Matrix</span>
         <span class="badge badge-amber">Field Installation &amp; Hardware Conditions</span>
       </div>
-      <table class="data-table" style="font-size: 7.5px;">
+      <table class="data-table" style="font-size: 7.2px;">
         <thead>
           <tr>
             <th style="width: 14%;">Tag &amp; Building</th>
@@ -394,13 +395,57 @@ function renderHtmlReport(project: any) {
           </tr>`).join('')}
         </tbody>
       </table>
+    </div>
 
-      <!-- SECTION 4: CAMERA COVERAGE & BLIND SPOT MITIGATION ANALYSIS -->
-      <div class="sec-header" style="margin-top: 8px;">
-        <span>🛡️ Part 4: Optical Coverage &amp; Blind Spot Mitigation Analysis</span>
+    <div class="footer-line">
+      <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
+      <span>Page 2 of 3</span>
+    </div>
+  </div>
+
+  <br clear="all" style="page-break-before:always; mso-break-type:section-break" />
+
+  <!-- ==================== PAGE 3: FIELD RIGGING, OPTICAL TELEMETRY & HARDWARE BOM ==================== -->
+  <div class="report-page" id="page-3">
+    <div>
+      <!-- DIAGRAMS 5 & 6: SIDE ELEVATION & TELEMETRY SIZING -->
+      <div class="sec-header" style="margin-top: 0;">
+        <span>⚡ Part 5: Side Elevation Profile &amp; Optical Coverage Telemetry</span>
+        <span class="badge badge-indigo">Field Engineering &amp; Hardware Sizing</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 3px; margin-bottom: 6px;">
+        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; background: #ffffff; text-align: left;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <span style="font-weight: 800; font-size: 7.8px; color: #1e3a8a; text-transform: uppercase;">
+              Diagram 5: Side Elevation Profile &amp; Rigging
+            </span>
+            <span class="badge badge-purple" style="font-size: 6.8px;">Mounting Clearance</span>
+          </div>
+          ${diagram5Svg}
+          <div style="margin-top: 3px; padding: 3px 5px; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 3px; font-size: 6.8px; color: #6b21a8; line-height: 1.25;">
+            <strong>💡 Non-Technical Guide:</strong> Side-view showing 5.0m ceiling beam, 1.2m steel dropper pole, 25° down-tilt, and unobstructed sightlines above standing workers (1.8m) and forklifts (2.3m).
+          </div>
+        </div>
+        <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px; background: #ffffff; text-align: left;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+            <span style="font-weight: 800; font-size: 7.8px; color: #1e3a8a; text-transform: uppercase;">
+              Diagram 6: 3D Telemetry &amp; Hardware Sizing
+            </span>
+            <span class="badge badge-blue" style="font-size: 6.8px;">Executive Sizing</span>
+          </div>
+          ${diagram6Svg}
+          <div style="margin-top: 3px; padding: 3px 5px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 3px; font-size: 6.8px; color: #1e40af; line-height: 1.25;">
+            <strong>💡 Non-Technical Guide:</strong> Executive sizing metrics: ${camCount} cameras, 30-day RAID-6 storage array, PoE power supply, network bandwidth, and ultra-fast ≤35ms AI safety reaction time.
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 6: CAMERA COVERAGE & BLIND SPOT MITIGATION ANALYSIS -->
+      <div class="sec-header" style="margin-top: 4px;">
+        <span>🛡️ Part 6: Optical Coverage &amp; Blind Spot Mitigation Analysis</span>
         <span class="badge badge-green">Zero-Blind-Spot Guarantee</span>
       </div>
-      <table class="data-table">
+      <table class="data-table" style="font-size: 7.2px;">
         <thead>
           <tr>
             <th style="width: 18%;">Potential Blind Spot Scenario</th>
@@ -412,35 +457,35 @@ function renderHtmlReport(project: any) {
         </thead>
         <tbody>
           <tr>
-            <td><strong>Under-Mount Dead Cone</strong><br><span style="font-size: 7px; color: #64748b;">&lt;1.8m beneath ceiling bracket</span></td>
+            <td><strong>Under-Mount Dead Cone</strong><br><span style="font-size: 6.8px; color: #64748b;">&lt;1.8m beneath ceiling bracket</span></td>
             <td>All Buildings (Ceiling Mounts)</td>
             <td><span class="badge badge-amber">MEDIUM</span></td>
             <td>Mount geometry set to 20° cross-aisle down-tilt; paired opposing cameras cover the acute dead zone.</td>
             <td>Virtual tripwire latching: tracklet is persisted across adjacent camera bounding box handovers.</td>
           </tr>
           <tr>
-            <td><strong>Storage Rack &amp; Berm Shadowing</strong><br><span style="font-size: 7px; color: #64748b;">Occlusion behind 4.5m racks</span></td>
+            <td><strong>Storage Rack &amp; Berm Shadowing</strong><br><span style="font-size: 6.8px; color: #64748b;">Occlusion behind 4.5m racks</span></td>
             <td>B01 &amp; B02 Filling / Plastics</td>
             <td><span class="badge badge-amber">HIGH</span></td>
             <td>Bidirectional opposing camera pairs installed at opposite aisle ends with overlapping FOV cones.</td>
             <td>Multi-camera re-identification (Re-ID) stitches trajectories when worker re-emerges from aisle.</td>
           </tr>
           <tr>
-            <td><strong>Mobile Forklift High-Mast Occlusion</strong><br><span style="font-size: 7px; color: #64748b;">Transient blockage by elevated mast</span></td>
+            <td><strong>Mobile Forklift High-Mast Occlusion</strong><br><span style="font-size: 6.8px; color: #64748b;">Transient blockage by elevated mast</span></td>
             <td>Transit Aisles &amp; Loading Docks</td>
             <td><span class="badge badge-amber">CRITICAL</span></td>
             <td>High-bay gantry nadir down-firing cameras (90° tilt) view pedestrian clearance from above.</td>
             <td>ByteTrack Kalman filter extrapolates velocity vectors during brief (&lt;1.5s) transient occlusion.</td>
           </tr>
           <tr>
-            <td><strong>Machinery Cage &amp; Arc Flash Shadow</strong><br><span style="font-size: 7px; color: #64748b;">Lathe enclosures &amp; welding glare</span></td>
+            <td><strong>Machinery Cage &amp; Arc Flash Shadow</strong><br><span style="font-size: 6.8px; color: #64748b;">Lathe enclosures &amp; welding glare</span></td>
             <td>B03 Mechanical Workshop</td>
             <td><span class="badge badge-amber">HIGH</span></td>
             <td>45° corner triangulation provides line-of-sight past CNC cages and flash protection screens.</td>
             <td>Dynamic exposure zoning and local tone mapping suppress welding arc flash blooms.</td>
           </tr>
           <tr>
-            <td><strong>Loading Bay Exterior Shadow &amp; Sun Glare</strong><br><span style="font-size: 7px; color: #64748b;">Direct sun at door threshold</span></td>
+            <td><strong>Loading Bay Exterior Shadow &amp; Sun Glare</strong><br><span style="font-size: 6.8px; color: #64748b;">Direct sun at door threshold</span></td>
             <td>B04 Loading Point</td>
             <td><span class="badge badge-amber">CRITICAL</span></td>
             <td>Dual exterior wall-mount cameras angled at 45° to truck apron with 40m Smart EXIR illumination.</td>
@@ -448,124 +493,18 @@ function renderHtmlReport(project: any) {
           </tr>
         </tbody>
       </table>
-    </div>
-
-    <div class="footer-line">
-      <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
-      <span>Page 2 of 3</span>
-    </div>
-  </div>
-
-  <br clear="all" style="page-break-before:always; mso-break-type:section-break" />
-
-  <!-- ==================== PAGE 3: LOGIC APPLIED, FALSE POSITIVE RISKS & EDGE AI INFRASTRUCTURE ==================== -->
-  <div class="report-page" id="page-3">
-    <div>
-      <!-- SECTION 5: MATHEMATICAL & GEOMETRIC LOGIC APPLIED -->
-      <div class="sec-header" style="margin-top: 0;">
-        <span>📐 Part 5: Mathematical &amp; Geometric Logic Applied</span>
-        <span class="badge badge-blue">IEC EN 62676-4 Certified</span>
-      </div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 6px;">
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px;">
-          <div style="font-weight: 800; font-size: 8px; color: #1e3a8a; margin-bottom: 3px; text-transform: uppercase;">
-            1. DORI Resolution Density Formula
-          </div>
-          <div style="font-family: ui-monospace, monospace; font-size: 7.5px; background: #0f172a; color: #38bdf8; padding: 4px 6px; border-radius: 3px; margin-bottom: 3px;">
-            PPM = Horizontal Pixels / Width(m)
-          </div>
-          <p style="margin: 0; font-size: 7.2px; color: #475569; line-height: 1.25;">
-            <strong>Identify:</strong> ≥250 PPM (Face/Barcode)<br>
-            <strong>Recognize:</strong> ≥125 PPM (PPE/Vest)<br>
-            <strong>Observe:</strong> ≥62.5 PPM (Forklift Transit)<br>
-            <strong>Detect:</strong> ≥25 PPM (Perimeter Motion)
-          </p>
-        </div>
-
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px;">
-          <div style="font-weight: 800; font-size: 8px; color: #1e3a8a; margin-bottom: 3px; text-transform: uppercase;">
-            2. Dead-Zone Clearance Geometry
-          </div>
-          <div style="font-family: ui-monospace, monospace; font-size: 7.5px; background: #0f172a; color: #38bdf8; padding: 4px 6px; border-radius: 3px; margin-bottom: 3px;">
-            D_dead = H_mount × tan(90° - VFOV/2 - θ)
-          </div>
-          <p style="margin: 0; font-size: 7.2px; color: #475569; line-height: 1.25;">
-            Mount height H = 4.2m, tilt θ = 20°, VFOV = 56° yields D_dead = 1.12m. At floor plane, zero unmonitored blind corridors exist between adjacent cameras.
-          </p>
-        </div>
-
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px;">
-          <div style="font-weight: 800; font-size: 8px; color: #1e3a8a; margin-bottom: 3px; text-transform: uppercase;">
-            3. 2.5D Raycasting Slab Occlusion
-          </div>
-          <div style="font-family: ui-monospace, monospace; font-size: 7.5px; background: #0f172a; color: #38bdf8; padding: 4px 6px; border-radius: 3px; margin-bottom: 3px;">
-            t_min = max(t_1x, t_1y, t_1z)
-          </div>
-          <p style="margin: 0; font-size: 7.2px; color: #475569; line-height: 1.25;">
-            Dynamic ray-box intersection testing evaluates Line-of-Sight from each sensor to Head (1.65m AFF), Torso (1.10m AFF), and Ankle (0.15m AFF) markers.
-          </p>
-        </div>
-      </div>
-
-      <!-- SECTION 6: FALSE POSSIBLE RISKS & ALGORITHMIC MITIGATIONS MATRIX -->
-      <div class="sec-header">
-        <span>⚠️ Part 6: False Alarm Failure Modes &amp; Algorithmic Mitigations Matrix</span>
-        <span class="badge badge-amber">Production Hardening Engine</span>
-      </div>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th style="width: 20%;">Failure Mode / Hazard Event</th>
-            <th style="width: 22%;">Root Cause &amp; Physical Trigger</th>
-            <th style="width: 18%;">Optical Sensor Impact</th>
-            <th style="width: 40%;">Algorithmic &amp; Hardware Mitigation Countermeasure</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>Sunlight Glare &amp; Backlight Washout</strong></td>
-            <td>Low-angle sunrise/sunset entering open loading bay doors (B04)</td>
-            <td>Pixel saturation, blooming, loss of facial &amp; PPE edge contrast</td>
-            <td>Hardware True WDR (120dB) sensor fusion + CLAHE contrast enhancement + dynamic ROI exposure masking.</td>
-          </tr>
-          <tr>
-            <td><strong>Steam, Vapor &amp; Chemical Particulates</strong></td>
-            <td>Injection mold heating (B01) &amp; automated chemical filling purge (B02)</td>
-            <td>False motion vector triggers, infrared flare from airborne droplets</td>
-            <td>Temporal multi-frame persistence filter (&gt;5 consecutive frames) + infrared flare gating + background subtraction.</td>
-          </tr>
-          <tr>
-            <td><strong>Forklift Mast &amp; Crane Occlusion</strong></td>
-            <td>High-mast pallet transport &amp; overhead crane traversing walkway</td>
-            <td>Target ID switching, fragmented bounding boxes, missed alarms</td>
-            <td>ByteTrack tracklet Kalman extrapolation + multi-camera Re-ID handover to maintain worker identity across occlusions.</td>
-          </tr>
-          <tr>
-            <td><strong>Wet Epoxy Floor Specular Reflection</strong></td>
-            <td>Chemical washdown &amp; cleaning fluids creating mirror-like floor</td>
-            <td>Ghost double detections of workers &amp; false puddle spill triggers</td>
-            <td>Polarized optical lens filters + HSV color-space floor-plane thresholding + semantic ground plane homography rejection.</td>
-          </tr>
-          <tr>
-            <td><strong>Night Insects &amp; Precipitation Glare</strong></td>
-            <td>Moths attracted to 850nm IR LEDs &amp; rain at loading apron (B04)</td>
-            <td>High-frequency pixel changes triggering false perimeter breach</td>
-            <td>Matrix IR LEDs physically offset from lens + spatial edge density motion filtering + deep learning classification gating.</td>
-          </tr>
-        </tbody>
-      </table>
 
       <!-- SECTION 7: EDGE AI PIPELINE & INFRASTRUCTURE SIZING -->
-      <div class="sec-header" style="margin-top: 6px;">
+      <div class="sec-header" style="margin-top: 4px;">
         <span>⚡ Part 7: Edge AI Inference Pipeline Telemetry &amp; Infrastructure BOM</span>
-        <span class="badge badge-green">Sub-80ms Actionable SLA</span>
+        <span class="badge badge-green">Sub-35ms Actionable SLA</span>
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px;">
-          <div style="font-weight: 800; font-size: 8px; color: #1e3a8a; margin-bottom: 2px;">
-            REAL-TIME EDGE PIPELINE TELEMETRY (&lt;80ms TOTAL LATENCY)
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 5px;">
+          <div style="font-weight: 800; font-size: 7.8px; color: #1e3a8a; margin-bottom: 2px;">
+            REAL-TIME EDGE PIPELINE TELEMETRY (&lt;35ms TOTAL LATENCY)
           </div>
-          <table class="data-table" style="margin: 0; font-size: 7.5px;">
+          <table class="data-table" style="margin: 0; font-size: 7px;">
             <tr><td style="width: 50%;"><strong>RTSP Stream Ingestion</strong></td><td>H.265 / 4MP @ 25 FPS (4 Mbps per camera)</td></tr>
             <tr><td><strong>Hardware Video Decode</strong></td><td>NVIDIA DeepStream NVDEC: <strong>4.2ms / frame</strong></td></tr>
             <tr><td><strong>YOLOv8/v11 Object Detection</strong></td><td>TensorRT FP16 Acceleration: <strong>16.8ms / frame</strong></td></tr>
@@ -575,11 +514,11 @@ function renderHtmlReport(project: any) {
           </table>
         </div>
 
-        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px;">
-          <div style="font-weight: 800; font-size: 8px; color: #1e3a8a; margin-bottom: 2px;">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 5px;">
+          <div style="font-weight: 800; font-size: 7.8px; color: #1e3a8a; margin-bottom: 2px;">
             HARDWARE SIZING &amp; NVR INFRASTRUCTURE BOM
           </div>
-          <table class="data-table" style="margin: 0; font-size: 7.5px;">
+          <table class="data-table" style="margin: 0; font-size: 7px;">
             <tr><td style="width: 50%;"><strong>Active Network Sensors</strong></td><td><strong>${camCount}x Professional AI IP Cameras</strong> (4MP, 120dB WDR, IP67)</td></tr>
             <tr><td><strong>PoE+ Switching Hardware</strong></td><td><strong>1x 24-Port Managed Layer-2 PoE+ Switch</strong> (370W Power Budget)</td></tr>
             <tr><td><strong>Cabling Infrastructure</strong></td><td><strong>~${estCabling}m Solid Bare Copper Cat6 F/UTP</strong> (&lt;90m max link)</td></tr>
@@ -609,17 +548,21 @@ function renderHtmlReport(project: any) {
 </html>`;
 }
 
-function renderDocxReport(project: any) {
+function renderDocxReport(rawProject: any) {
+  const fleet = ensureMultiBuildingFleet(rawProject);
+  const project = {
+    ...rawProject,
+    cameras: fleet.cameras,
+    buildings: fleet.buildings,
+    structure: fleet.structure,
+  };
   const title = project.name || 'Plan Vision Facility Plan';
   const company = project.company_name || 'Enterprise Operations';
   const industry = project.industry || 'Industrial & Logistics Automation';
-  const cameras = project.cameras || [];
-  const camCount = cameras.length || 15;
+  const cameras = project.cameras;
+  const camCount = cameras.length;
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-
-  const bldgs: FacilityBuilding[] = (project.buildings && project.buildings.length > 0)
-    ? project.buildings
-    : parseFacilityBuildings(project.business_description || '', camCount);
+  const bldgs: FacilityBuilding[] = project.buildings;
 
   let camOffset = 0;
   bldgs.forEach(b => {

@@ -653,13 +653,13 @@ export function generateBirdCamera3DSvg(
           ● SIGHTLINE CHECK &amp; VISIBILITY
         </text>
         <text x="12" y="31" fill="#94a3b8" font-size="8" font-family="system-ui">
-          Nearest Camera: <strong style="color:#ffffff;">3.8m</strong> away
+          Nearest Camera: <tspan font-weight="bold" fill="#ffffff">3.8m</tspan> away
         </text>
         <text x="12" y="45" fill="#94a3b8" font-size="8" font-family="system-ui">
-          Obstacle Clearance: <strong style="color:#10b981;">100% Unobstructed</strong>
+          Obstacle Clearance: <tspan font-weight="bold" fill="#10b981">100% Unobstructed</tspan>
         </text>
         <text x="12" y="58" fill="#94a3b8" font-size="8" font-family="system-ui">
-          Clarity Standard: <strong style="color:#00e5ff;">Face &amp; Uniform Level</strong>
+          Clarity Standard: <tspan font-weight="bold" fill="#00e5ff">Face &amp; Uniform Level</tspan>
         </text>
         <rect x="12" y="64" width="206" height="13" rx="3" fill="#1e293b" />
         <rect x="12" y="64" width="204" height="13" rx="3" fill="#00e5ff" opacity="0.8" />
@@ -788,9 +788,9 @@ export function generateFrustumDori3DSvg(
         <g transform="translate(0, 230)">
           <rect x="0" y="0" width="395" height="66" rx="6" fill="#0f172a" stroke="#1e293b" />
           <text x="12" y="17" fill="#38bdf8" font-size="8.5" font-family="ui-monospace" font-weight="700">CAMERA SPECIFICATION IN SIMPLE TERMS</text>
-          <text x="12" y="32" fill="#94a3b8" font-size="8" font-family="system-ui">Lens Coverage: <strong style="color:#ffffff;">Wide-Angle Field of View</strong> covering entire work bays</text>
-          <text x="12" y="46" fill="#94a3b8" font-size="8" font-family="system-ui">Picture Quality: <strong style="color:#ffffff;">High-Definition Video</strong> saved for 30 full days</text>
-          <text x="12" y="59" fill="#10b981" font-size="8" font-family="system-ui">Evidence Quality: <strong>Meets International Security Standards</strong></text>
+          <text x="12" y="32" fill="#94a3b8" font-size="8" font-family="system-ui">Lens Coverage: <tspan font-weight="bold" fill="#ffffff">Wide-Angle Field of View</tspan> covering entire work bays</text>
+          <text x="12" y="46" fill="#94a3b8" font-size="8" font-family="system-ui">Picture Quality: <tspan font-weight="bold" fill="#ffffff">High-Definition Video</tspan> saved for 30 full days</text>
+          <text x="12" y="59" fill="#10b981" font-size="8" font-family="system-ui">Evidence Quality: <tspan font-weight="bold" fill="#10b981">Meets International Security Standards</tspan></text>
         </g>
       </g>
     </svg>

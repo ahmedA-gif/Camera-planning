@@ -502,7 +502,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </span>
               </div>
               <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white"
+                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
                 dangerouslySetInnerHTML={{ __html: diagram1Svg }} 
               />
               <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
@@ -522,7 +522,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </span>
               </div>
               <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white"
+                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
                 dangerouslySetInnerHTML={{ __html: diagram2Svg }} 
               />
               <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
@@ -559,7 +559,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </span>
               </div>
               <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white"
+                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
                 dangerouslySetInnerHTML={{ __html: diagram3Svg }} 
               />
               <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
@@ -579,7 +579,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </span>
               </div>
               <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white"
+                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
                 dangerouslySetInnerHTML={{ __html: diagram4Svg }} 
               />
               <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
@@ -616,7 +616,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </span>
               </div>
               <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white"
+                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
                 dangerouslySetInnerHTML={{ __html: diagram5Svg }} 
               />
               <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
@@ -636,7 +636,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 </span>
               </div>
               <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white"
+                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
                 dangerouslySetInnerHTML={{ __html: diagram6Svg }} 
               />
               <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">

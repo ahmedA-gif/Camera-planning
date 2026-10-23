@@ -147,13 +147,18 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
         body: JSON.stringify({ project: resolvedProject, format: 'pdf' }),
       });
       if (!resp.ok) throw new Error('PDF export failed');
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(resolvedProject.name || 'Plan_Vision').replace(/\s+/g, '_')}_Camera_Safety_Plan.html`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const html = await resp.text();
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(html);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+        }, 400);
+      } else {
+        onPrint();
+      }
     } catch (err) {
       console.error(err);
       onPrint();
@@ -204,7 +209,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
 
           <button 
             onClick={onPrint} 
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
             title="Open browser print dialog with pre-configured 5-page A4 layout"
           >
             <Printer className="w-4 h-4" />
@@ -218,17 +223,17 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
             title="Download editable Microsoft Word DOCX document with all 6 diagrams"
           >
             <FileText className="w-4 h-4 text-blue-600" />
-            {downloadingDocx ? 'Generating DOCX…' : 'Download DOCX'}
+            {downloadingDocx ? 'Generating Word DOCX…' : 'Download DOCX'}
           </button>
 
           <button 
             onClick={handleExportPdf} 
             disabled={downloadingPdf}
             className="px-3.5 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
-            title="Download standalone HTML/PDF document with embedded vector graphics"
+            title="Download standalone 5-page printable PDF"
           >
             <Download className="w-4 h-4 text-emerald-600" />
-            {downloadingPdf ? 'Exporting…' : 'Download PDF'}
+            {downloadingPdf ? 'Opening PDF…' : 'Download PDF'}
           </button>
 
           <button 
@@ -346,12 +351,21 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                   ? `100% Target Met — ${m.coveragePct}% of the facility floor is fully protected`
                   : `${m.gapPct}% Coverage Gap — ${m.coveragePct}% watched, safety target is ${m.target}%`}
               </div>
-              <p className="text-[11px] leading-relaxed">
-                {m.coveragePct !== null && m.coveragePct >= m.target
-                  ? `Your ${camCount} cameras provide complete, unbroken protection across all work zones. Only ${m.blindPct}% of minor perimeter space is unmonitored.`
-                  : `Adjust camera mount angles, or click Auto-Solve (≥95%) in the Camera Map screen and click Confirm Camera Mapping to update this report.` +
-                    (m.largestGapM ? ` The largest unwatched blind spot is approximately ${m.largestGapM} meters wide.` : '')}
-              </p>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-[11px] leading-relaxed flex-1 min-w-[280px]">
+                  {m.coveragePct !== null && m.coveragePct >= m.target
+                    ? `Your ${camCount} cameras provide complete, unbroken protection across all work zones. Only ${m.blindPct}% of minor perimeter space is unmonitored.`
+                    : `Adjust camera mount angles, or click Auto-Solve (≥95%) in the Camera Map screen and click Confirm Camera Mapping to update this report.` +
+                      (m.largestGapM ? ` The largest unwatched blind spot is approximately ${m.largestGapM} meters wide.` : '')}
+                </p>
+                <button
+                  onClick={handleModifyCameraMapping}
+                  className="no-print px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                >
+                  <CameraIcon className="w-3.5 h-3.5 text-blue-400" />
+                  Modify Camera Mapping →
+                </button>
+              </div>
             </div>
 
             {/* How This Site is Protected (In Plain Words) */}
@@ -634,11 +648,20 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 : 'bg-amber-50 border-amber-200 text-amber-900'
             }`}>
               <div className="font-bold mb-0.5">Camera Mapping Status &amp; Next Action:</div>
-              <p className="text-[11px] leading-relaxed">
-                {m.coveragePct !== null && m.coveragePct < m.target
-                  ? `Coverage is currently below your ${m.target}% target. In the Camera Map screen, adjust camera angles or click Auto-Solve (≥95%), then click Confirm Camera Mapping to update this report.`
-                  : 'Your camera layout satisfies all safety coverage targets. Re-verify after any facility equipment reconfiguration.'}
-              </p>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-[11px] leading-relaxed flex-1 min-w-[280px]">
+                  {m.coveragePct !== null && m.coveragePct < m.target
+                    ? `Coverage is currently below your ${m.target}% target. In the Camera Map screen, adjust camera angles or click Auto-Solve (≥95%), then click Confirm Camera Mapping to update this report.`
+                    : 'Your camera layout satisfies all safety coverage targets. Re-verify after any facility equipment reconfiguration.'}
+                </p>
+                <button
+                  onClick={handleModifyCameraMapping}
+                  className="no-print px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                >
+                  <CameraIcon className="w-3.5 h-3.5" />
+                  Modify Cameras in Map →
+                </button>
+              </div>
             </div>
           </div>
 

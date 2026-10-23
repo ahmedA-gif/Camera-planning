@@ -991,6 +991,9 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         status: 'planned',
         target_area: `Position ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m (Elev: ${p.z.toFixed(1)}m)`,
         assigned_use_case_ids: assignedUc ? [assignedUc.id] : [],
+        mount_type: p.mount,
+        height_m: p.z,
+        tilt_degrees: p.tiltDeg,
         rationale: `${cameraModel} (${resolutionPreset.toUpperCase()}) · Codec: ${videoCodec} @ ${framerateFps}fps · Span: ${st ? (st.coverEnd - st.coverStart).toFixed(1) : ''}m, Blind: ${st ? st.nearBlind.toFixed(1) : ''}m. ${MOUNT_INFO[p.mount].tip}`
       };
     });
@@ -1023,13 +1026,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     setTimeout(() => setSavedToast(false), 2500);
   };
 
-  // Export full technical engineering blueprint for Installation Team and Software Developers
-  const handleExportReport = (format: 'pdf' | 'docx' = 'pdf') => {
-    const m = result.metrics;
-    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const title = project?.name || 'Computer Vision Facility Plan';
-    const estTotalCablingM = poses.reduce((acc, p) => acc + (p.x * 1.1 + p.y * 1.3) + 15, 0);
-
+  // Export clean, non-technical 5-page blueprint with all 6 diagrams
+  const handleExportReport = async (format: 'pdf' | 'docx' = 'pdf') => {
     const rawExportUcs = (project?.use_cases || []).map(u => ({ ...u, camera_ids: [] as string[] }));
     const exportCameras = poses.map((p, idx) => {
       const camId = `CAM-${String(idx + 1).padStart(2, '0')}`;
@@ -1040,8 +1038,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       return {
         id: camId,
         name: `CAM-${String(idx + 1).padStart(2, '0')} (${p.mount.toUpperCase()})`,
-        x: p.x / bayLength,
-        y: p.y / bayWidth,
+        x: Math.max(0.02, Math.min(0.98, p.x / bayLength)),
+        y: Math.max(0.02, Math.min(0.98, p.y / bayWidth)),
         orientation_degrees: (p.panDeg + 360) % 360,
         horizontal_fov_degrees: lens.hfovDeg,
         view_range: 0.5,
@@ -1049,6 +1047,9 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         resolution_height: sensorHeightPx,
         status: 'active' as const,
         target_area: `Zone @ ${p.x.toFixed(1)}m, ${p.y.toFixed(1)}m`,
+        mount_type: p.mount,
+        height_m: p.z,
+        tilt_degrees: p.tiltDeg,
         assigned_use_case_ids: assignedUc ? [assignedUc.id] : [],
       };
     });
@@ -1056,20 +1057,13 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     const effectiveProject: any = {
       ...(project || {}),
       id: project?.id || 'export-project',
-      name: title,
+      name: project?.name || 'Plan Vision Facility Plan',
       facility_width_m: bayWidth,
       facility_length_m: bayLength,
       facility_height_m: mountHeight,
       detection_coverage_target: project?.detection_coverage_target || 95,
       cameras: exportCameras,
       use_cases: rawExportUcs,
-      zones: (project?.zones || []).map((z, zIdx) => {
-        const matchingCams = exportCameras.filter((_, cIdx) => cIdx % Math.max(1, (project?.zones || []).length) === zIdx).map(c => c.id);
-        return {
-          ...z,
-          camera_ids: matchingCams.length > 0 ? matchingCams : (exportCameras[0] ? [exportCameras[0].id] : [])
-        };
-      }),
       structure: obstacles.map(o => ({
         id: o.id,
         name: o.name,
@@ -1089,639 +1083,48 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
       })),
     };
 
-    const telemetryMapSvg = generateSiteTelemetryMapSvg(effectiveProject, { width: 850, height: 460 });
-    const pipelineSvg = generatePipelineArchitectureSvg(effectiveProject, { width: 850, height: 210 });
-    const doriTelemetrySvg = generateCoverageTelemetryMetricsSvg(effectiveProject, { width: 850, height: 260 });
-
-    const htmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>${title} - Dual Engineering Blueprint</title>
-  <style>
-    @page { size: A4 portrait; margin: 12mm; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; font-size: 11px; line-height: 1.45; }
-    h1, h2, h3, h4 { color: #0f172a; margin-top: 0; }
-    .header-box { border-bottom: 2px solid #2563eb; padding-bottom: 14px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
-    .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-    .badge-amber { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-    .badge-indigo { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
-    .badge-green { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-    .section-card { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 18px; page-break-inside: avoid; }
-    .section-title { font-size: 15px; font-weight: 800; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-    table { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 8px; margin-bottom: 12px; }
-    th { background: #f1f5f9; text-align: left; padding: 6px 8px; font-weight: 700; color: #334155; border: 1px solid #cbd5e1; }
-    td { padding: 6px 8px; border: 1px solid #e2e8f0; color: #1e293b; vertical-align: top; }
-    tr:nth-child(even) td { background: #f8fafc; }
-    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
-    .kpi-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; }
-    .kpi-val { font-size: 16px; font-weight: 800; color: #2563eb; font-family: ui-monospace, monospace; }
-    .kpi-lbl { font-size: 9px; font-weight: 600; text-transform: uppercase; color: #64748b; }
-    .code-box { background: #0f172a; color: #f8fafc; padding: 10px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 9.5px; line-height: 1.4; overflow-x: auto; }
-    @media print {
-      body { padding: 0; font-size: 10px; }
-      .no-print { display: none !important; }
-      .section-card { page-break-inside: avoid; border: 1px solid #94a3b8; }
+    if (format === 'docx') {
+      try {
+        const resp = await fetch('/api/report/generate?mode=docx', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: effectiveProject, format: 'docx' }),
+        });
+        if (!resp.ok) throw new Error('DOCX export failed');
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(effectiveProject.name || 'Plan_Vision').replace(/\s+/g, '_')}_Camera_Safety_Plan.doc`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('DOCX export failed:', err);
+        alert('Unable to generate Word DOCX report.');
+      }
+      return;
     }
-  </style>
-</head>
-<body>
-  <div class="header-box">
-    <div>
-      <h1 style="font-size: 20px; font-weight: 800; margin-bottom: 4px; color: #1e3a8a;">${title}</h1>
-      <div style="font-size: 12px; font-weight: 600; color: #2563eb;">TECHNICAL BLUEPRINT &amp; SYSTEM ARCHITECTURE</div>
-      <div style="color: #64748b; font-size: 10px; margin-top: 3px;">
-        Generated on ${dateStr} • Standard: IEC EN 62676-4 • Compliance Verified
-      </div>
-    </div>
-    <div style="text-align: right;">
-      <span class="badge badge-indigo">Dual-Target Release</span><br>
-      <span style="font-size: 10px; color: #64748b; margin-top: 4px; display: inline-block;">Field Crew &amp; Developer Ready</span>
-    </div>
-  </div>
 
-  <div class="grid-3">
-    <div class="kpi-box">
-      <div class="kpi-lbl">Facility Geometry</div>
-      <div class="kpi-val">${bayLength}m × ${bayWidth}m</div>
-      <div style="font-size: 9px; color: #64748b;">Ceiling Mount: ${mountHeight}m • Target Plane: ${targetHeight}m</div>
-    </div>
-    <div class="kpi-box">
-      <div class="kpi-lbl">Optical Mode &amp; Density</div>
-      <div class="kpi-val">${mode.toUpperCase()}</div>
-      <div style="font-size: 9px; color: #64748b;">Standard Requirement: ≥ ${DORI_PPM[mode]} px/m</div>
-    </div>
-    <div class="kpi-box">
-      <div class="kpi-lbl">Total Area Coverage</div>
-      <div class="kpi-val">${m.coveragePct.toFixed(1)}%</div>
-      <div style="font-size: 9px; color: #64748b;">${m.cameras} Active Cameras • ${m.overlapPct.toFixed(1)}% Redundant Overlap</div>
-    </div>
-  </div>
-
-  <!-- PART 0: DETAILED AI SCENARIO & FACILITY PROFILE -->
-  <div class="section-card">
-    <div class="section-title">
-      <span>📋 PART 0: AI Facility Scenario &amp; Computer Vision Objectives</span>
-      <span class="badge badge-indigo">AI Scenario Analysis</span>
-    </div>
-    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 10px;">
-      <div>
-        <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">Operational Scenario &amp; Brief:</div>
-        <p style="margin: 0; font-size: 10.5px; color: #334155; line-height: 1.5; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-          ${project?.business_description || `Comprehensive computer vision sensor coverage engineered for ${activeFacilityPreset !== 'custom' ? activeFacilityPreset.replace(/_/g, ' ') : 'custom facility layout'}, ensuring optimal optical density, blind spot elimination, and AI model telemetry.`}
-        </p>
-      </div>
-      <div>
-        <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">Facility Metadata:</div>
-        <table style="margin: 0; font-size: 9.5px;">
-          <tr><td style="font-weight: 600; color: #64748b; width: 40%;">Company</td><td><strong>${project?.company_name || 'Enterprise Facility Operations'}</strong></td></tr>
-          <tr><td style="font-weight: 600; color: #64748b;">Industry</td><td>${project?.industry || 'Commercial & Industrial Facility Automation'}</td></tr>
-          <tr><td style="font-weight: 600; color: #64748b;">Archetype</td><td><span class="badge badge-indigo">${(activeFacilityPreset !== 'custom' ? activeFacilityPreset : (initialFacility.facilityType || 'CUSTOM BLUEPRINT')).replace(/_/g, ' ').toUpperCase()}</span></td></tr>
-          <tr><td style="font-weight: 600; color: #64748b;">Volume</td><td>${(bayLength * bayWidth * mountHeight).toLocaleString()} m³ (${(bayLength * bayWidth).toLocaleString()} m²)</td></tr>
-        </table>
-      </div>
-    </div>
-
-    ${project?.requirements && project.requirements.length > 0 ? `
-    <div style="margin-top: 8px;">
-      <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px;">Specific Computer Vision Requirements:</div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 9.5px; color: #334155;">
-        ${project.requirements.map(r => `<div style="background: #f1f5f9; padding: 6px 8px; border-radius: 4px; border-left: 3px solid #2563eb;">• ${r}</div>`).join('')}
-      </div>
-    </div>` : ''}
-  </div>
-
-  <!-- VISUAL 2D/3D SITE TELEMETRY MAP -->
-  <div class="section-card" style="page-break-inside: avoid;">
-    <div class="section-title">
-      <span>🗺️ VISUAL 2D/3D SITE TELEMETRY &amp; CAMERA COVERAGE BLUEPRINT</span>
-      <span class="badge badge-indigo">Raycasting Telemetry Twin</span>
-    </div>
-    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
-      Vector architectural map rendering all physical 3D structures, multi-building zones, camera positions, pan angles, and directional optical FOV coverage cones.
-    </p>
-    <div style="margin: 6px 0; text-align: center;">
-      ${telemetryMapSvg}
-    </div>
-  </div>
-
-  <!-- SYSTEM PIPELINE ARCHITECTURE -->
-  <div class="section-card" style="page-break-inside: avoid;">
-    <div class="section-title">
-      <span>⚡ END-TO-END VISION AI PIPELINE ARCHITECTURE</span>
-      <span class="badge badge-green">Real-Time Edge Loop (≤35ms)</span>
-    </div>
-    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
-      4-Stage high-throughput computer vision pipeline engineered for NVIDIA DeepStream / TensorRT with deterministic latency budget (≤35ms).
-    </p>
-    <div style="margin: 6px 0; text-align: center;">
-      ${pipelineSvg}
-    </div>
-  </div>
-
-  <!-- 3D OPTICAL COVERAGE TELEMETRY & HARDWARE SIZING -->
-  <div class="section-card" style="page-break-inside: avoid;">
-    <div class="section-title">
-      <span>📊 3D OPTICAL COVERAGE TELEMETRY &amp; HARDWARE SIZING</span>
-      <span class="badge badge-indigo">IEC 62676-4 DORI</span>
-    </div>
-    <p style="font-size: 9.5px; color: #64748b; margin-top: 0; margin-bottom: 8px;">
-      Optical resolution pyramid, coverage guarantees, 30-day NVR storage calculation, PoE power budgeting, and deterministic inference latency telemetry.
-    </p>
-    <div style="margin: 6px 0; text-align: center;">
-      ${doriTelemetrySvg}
-    </div>
-  </div>
-
-  <!-- PART 0B: OPTICAL DORI STANDARDS, THERMAL JOHNSON'S CRITERIA & 3D MAPPING TECHNIQUES -->
-  <div class="section-card">
-    <div class="section-title">
-      <span>📐 PART 0B: Multi-Standard Optical &amp; Thermal Camera Mapping Frameworks</span>
-      <span class="badge badge-green">IEC 62676-4:2025 · US Military · DHS/NIJ · French Code</span>
-    </div>
-    
-    <!-- Visual DORI Distribution Graph -->
-    <div style="margin-bottom: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-        <span style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase;">Visual DORI Coverage Breakdown &amp; Blind Spot Graph:</span>
-        <span style="font-size: 10px; font-weight: 700; color: #166534;">Covered: ${m.coveragePct.toFixed(1)}% | Blind Spot: ${m.blindPct.toFixed(1)}%</span>
-      </div>
-      
-      <!-- Multi-color Stacked Progress Bar -->
-      <div style="display: flex; width: 100%; height: 16px; border-radius: 4px; overflow: hidden; background: #e2e8f0; margin-bottom: 8px; border: 1px solid #cbd5e1;">
-        <div style="width: ${m.doriPct[4].toFixed(1)}%; background: #06b6d4;" title="Identify (${m.doriPct[4].toFixed(1)}%)"></div>
-        <div style="width: ${m.doriPct[3].toFixed(1)}%; background: #10b981;" title="Recognize (${m.doriPct[3].toFixed(1)}%)"></div>
-        <div style="width: ${m.doriPct[2].toFixed(1)}%; background: #f59e0b;" title="Observe (${m.doriPct[2].toFixed(1)}%)"></div>
-        <div style="width: ${m.doriPct[1].toFixed(1)}%; background: #f97316;" title="Detect (${m.doriPct[1].toFixed(1)}%)"></div>
-        <div style="width: ${m.blindPct.toFixed(1)}%; background: #f43f5e;" title="Blind Spot (${m.blindPct.toFixed(1)}%)"></div>
-      </div>
-
-      <!-- Legend Pills -->
-      <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 9px;">
-        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #06b6d4;"></span> <strong>Identify (≥250 PPM):</strong> ${m.doriPct[4].toFixed(1)}%</span>
-        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #10b981;"></span> <strong>Recognize (≥125 PPM):</strong> ${m.doriPct[3].toFixed(1)}%</span>
-        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #f59e0b;"></span> <strong>Observe (≥62.5 PPM):</strong> ${m.doriPct[2].toFixed(1)}%</span>
-        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #f97316;"></span> <strong>Detect (≥25 PPM):</strong> ${m.doriPct[1].toFixed(1)}%</span>
-        <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #f43f5e;"></span> <strong>Blind Spot:</strong> ${m.blindPct.toFixed(1)}%</span>
-      </div>
-    </div>
-
-    <!-- Comparative Table of Global CCTV Standards -->
-    <div style="margin-bottom: 12px;">
-      <div style="font-size: 10px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; margin-bottom: 6px;">Global CCTV Standards Matrix &amp; Resolution Criteria:</div>
-      <table style="font-size: 9px; margin: 0;">
-        <thead>
-          <tr style="background: #1e293b; color: #f8fafc;">
-            <th style="padding: 6px;">Standard / Framework</th>
-            <th style="padding: 6px;">Authority &amp; Domain</th>
-            <th style="padding: 6px;">Metric Unit</th>
-            <th style="padding: 6px;">Key Resolution Tiers &amp; Thresholds</th>
-            <th style="padding: 6px;">Application &amp; AI Objectives</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>DORI</strong></td>
-            <td>IEC EN 62676-4:2015 (Visible Light)</td>
-            <td>Pixels / Metre (PPM)</td>
-            <td>Detect (25), Observe (62.5), Recognize (125), Identify (250 px/m)</td>
-            <td>Baseline European CCTV design for security installations &amp; general perimeter monitoring.</td>
-          </tr>
-          <tr style="background: #f8fafc;">
-            <td><strong>OODPCVS (2025)</strong></td>
-            <td>IEC 62676-4:2025 (Ultra-HD / AI)</td>
-            <td>Pixels / Metre (PPM)</td>
-            <td>Overview (20), Outline (40), Discern (80), Perceive (125), Characterize (250), Validate (500), <strong>Scrutinize (1500 px/m)</strong></td>
-            <td>Designed for 4K/8K AI systems. Scrutinize tier guarantees passport-grade 3D biometric facial recognition.</td>
-          </tr>
-          <tr>
-            <td><strong>Johnson's Criteria</strong></td>
-            <td>US Military / NVESD (Thermal IR)</td>
-            <td>Line Pairs (lp) across Target</td>
-            <td><strong>Detection (1.0–1.5 lp)</strong>, <strong>Recognition (3.0–4.0 lp)</strong>, <strong>Identification (6.0–8.0 lp)</strong></td>
-            <td>Military thermal imaging. Evaluates LWIR/MWIR heat signatures across target dimensions (human 1.8m, vehicle 2.3m).</td>
-          </tr>
-          <tr style="background: #f8fafc;">
-            <td><strong>US DHS / NIJ</strong></td>
-            <td>Dept of Homeland Security (Forensic Video)</td>
-            <td>% Vertical Screen Height (% VSH)</td>
-            <td>General (5%), Classification (10%), <strong>Forensic Evidence ID (≥15% VSH)</strong>, High-Security ID (≥25% VSH)</td>
-            <td>Courtroom forensic evidence standard. A suspect's face must occupy ≥15% of vertical frame height for federal prosecution.</td>
-          </tr>
-          <tr>
-            <td><strong>French Standards</strong></td>
-            <td>Ministère de l'Intérieur / CNIL (France)</td>
-            <td>Pixels / Metre (PPM)</td>
-            <td>Surveillance (30), Reconnaissance (150), <strong>Identification Stricte (300)</strong>, Contrôle d'Accès (800 px/m)</td>
-            <td>Strict French municipal public surveillance code and JVSG professional CCTV tool design standard.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Mathematical Formulations Grid -->
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
-      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
-        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">1. Optical Pixel Density (PPM) Formula:</div>
-        <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
-          PPM(D) = Resolution_W / [ 2 · D · tan(HFOV / 2) ]
-        </div>
-        <p style="margin: 0; color: #475569; line-height: 1.4;">
-          Calculates optical density at distance <em>D</em> on ground target plane (height ${targetHeight}m). Guarantees sufficient pixels across facial features (Identify ≥250 px/m) and safety apparel (Recognize ≥125 px/m).
-        </p>
-      </div>
-
-      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
-        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">2. Thermal Johnson's Criteria Line-Pair Formula:</div>
-        <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
-          N_lp = [ PPM(D) · H_target ] / 2 = [ Res_W · H_target ] / [ 4 · D · tan(HFOV/2) ]
-        </div>
-        <p style="margin: 0; color: #475569; line-height: 1.4;">
-          Thermal cameras measure line pairs resolved across a target object dimension (human 1.8m, vehicle 2.3m). Identification requires 6–8 line pairs; Recognition requires 3–4 line pairs; Detection requires 1–1.5 line pairs.
-        </p>
-      </div>
-
-      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
-        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">3. US DHS / NIJ % Vertical Screen Height:</div>
-        <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
-          VSH_% = [ H_target / (2 · D · tan(VFOV / 2)) ] × 100%
-        </div>
-        <p style="margin: 0; color: #475569; line-height: 1.4;">
-          Maps camera distance based on vertical frame percentage. For court-admissible forensic evidence under NIJ standards, the target face must occupy at least 15% of the total vertical screen height.
-        </p>
-      </div>
-
-      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-size: 9.5px;">
-        <div style="font-weight: 700; color: #1e3a8a; margin-bottom: 4px;">4. 3D Bird Camera View &amp; Ray-Box Occlusion:</div>
-        <div style="font-family: ui-monospace, monospace; background: #ffffff; padding: 6px; border-radius: 4px; border: 1px solid #e2e8f0; margin-bottom: 6px; color: #0369a1;">
-          D_blind = (Mount_Z - Target_Z) / tan(θ_tilt + VFOV / 2)
-        </div>
-        <p style="margin: 0; color: #475569; line-height: 1.4;">
-          Top-down 3D bird's-eye projection with 3D ray-box slab intersection testing against ${obstacles.length} physical obstacles. Eliminates blind zone occlusions behind storage racks and structural columns via longitudinal aisle aiming.
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <!-- PART 1: FIELD RIGGING GUIDE -->
-  <div class="section-card">
-    <div class="section-title">
-      <span>🛠️ PART 1: Camera Installation &amp; Field Engineering Package</span>
-      <span class="badge badge-amber">For Field Rigging Crew &amp; Electricians</span>
-    </div>
-    <p style="margin: 0 0 8px 0; color: #475569; font-size: 10px;">
-      Field rigging personnel must mount each camera according to physical coordinates, adjust azimuth and depression angles precisely, and verify under-mount clearance.
-    </p>
-
-    <div class="grid-3" style="margin-bottom: 8px;">
-      <div class="kpi-box">
-        <div class="kpi-lbl">Cabling Infrastructure</div>
-        <div style="font-weight: 700; color: #0f172a;">~${Math.round(estTotalCablingM)} m Total Cat6 UTP/STP</div>
-        <div style="font-size: 9px; color: #64748b;">Direct home-runs to network rack</div>
-      </div>
-      <div class="kpi-box">
-        <div class="kpi-lbl">PoE Switch Power Budget</div>
-        <div style="font-weight: 700; color: #0f172a;">${(m.cameras * 15.4).toFixed(1)} W (Nominal) / ${(m.cameras * 30).toFixed(1)} W (Peak)</div>
-        <div style="font-size: 9px; color: #64748b;">IEEE 802.3af/at PoE+ Switch Required</div>
-      </div>
-      <div class="kpi-box">
-        <div class="kpi-lbl">Mounting Enclosures</div>
-        <div style="font-weight: 700; color: #0f172a;">${m.cameras} Units IP67 / IK10</div>
-        <div style="font-size: 9px; color: #64748b;">Vandal-resistant outdoor/high-bay rating</div>
-      </div>
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th>Camera Tag</th>
-          <th>Mount Type</th>
-          <th>Floor Coordinates (X, Y, Z)</th>
-          <th>Aiming Angles</th>
-          <th>Rigging Hardware &amp; Pole</th>
-          <th>Aiming Point / Target Corridor</th>
-          <th>PoE Run &amp; Port</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${poses.map((p, idx) => {
-          const st = result.cameras[idx];
-          const sym = MOUNT_SYMBOLS[p.mount] || '●';
-          const estDist = Math.round(p.x * 1.1 + p.y * 1.3 + 15);
-          const dropperDesc = p.mount.includes('roof') ? '1.2m threaded steel pendant dropper with safety tether' : 'Heavy-duty wall cantilever bracket';
-          return `<tr>
-            <td style="font-weight: 700; color: #1e3a8a;">Camera ${p.id}</td>
-            <td><span class="badge" style="background: #e2e8f0; color: #1e293b;">${sym} ${p.mount.toUpperCase()}</span></td>
-            <td>X: <strong>${p.x.toFixed(2)}m</strong><br>Y: <strong>${p.y.toFixed(2)}m</strong><br>Z: <strong>${p.z.toFixed(2)}m</strong></td>
-            <td>Pan: <strong>${p.panDeg}°</strong> Azimuth<br>Tilt: <strong>${p.tiltDeg}°</strong> Depression</td>
-            <td>${dropperDesc}<br><span style="color: #b45309; font-size: 9px;">Dead-zone: ${st && st.nearBlind > 0 ? st.nearBlind.toFixed(1) + 'm' : 'Directly beneath mount'}</span></td>
-            <td>Span: ${st ? st.coverStart.toFixed(1) + 'm → ' + st.coverEnd.toFixed(1) + 'm' : '0m'}<br><span style="color: #64748b; font-size: 9px;">Target h: ${targetHeight}m</span></td>
-            <td>Port #${idx + 1}<br><span style="color: #64748b; font-size: 9px;">~${estDist}m Cat6</span></td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-
-    <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; margin-top: 6px;">
-      <strong style="color: #92400e; font-size: 10px;">Field Rigging Sign-Off Checklist (Required for Handover):</strong>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; font-size: 9.5px; color: #78350f;">
-        <div>☑ Physical mount torqued to structural I-beam / concrete slab</div>
-        <div>☑ IP67 weather gland sealed with conduit drip loop</div>
-        <div>☑ Cat6 TIA-568B terminated & certified with active PoE link</div>
-        <div>☑ Azimuth pan & depression tilt aligned to target corridor marker</div>
-        <div>☑ Varifocal optical focus set screw locked & anti-tamper seal applied</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- PART 2: SOFTWARE DEVELOPER GUIDE -->
-  <div class="section-card">
-    <div class="section-title">
-      <span>💻 PART 2: Computer Vision Pipeline &amp; Ingestion Package</span>
-      <span class="badge badge-indigo">For Software Developers &amp; CV Engineers</span>
-    </div>
-    <p style="margin: 0 0 8px 0; color: #475569; font-size: 10px;">
-      Camera stream endpoints, RTSP video codecs, DeepStream pipeline graph, target inspection resolution guarantees, and GPU VRAM resource sizing.
-    </p>
-
-    <table>
-      <thead>
-        <tr>
-          <th>Camera Tag</th>
-          <th>RTSP Ingestion URI Schema</th>
-          <th>Native Profile &amp; Codec</th>
-          <th>Assigned Vision Model</th>
-          <th>DORI PPM Guarantee</th>
-          <th>Normalized Spatial ROI</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${poses.map((p, idx) => {
-          let assignedModel = 'YOLOv8x (General Detection)';
-          let ppmReq = '≥ 125 px/m (Recognize)';
-          if (mode === 'identify') {
-            assignedModel = 'ArcFace + YOLOv8-Face (LPR / Biometrics)';
-            ppmReq = '≥ 250 px/m (Identify)';
-          } else if (mode === 'recognize') {
-            assignedModel = 'YOLOv8x-pose (PPE & Personnel Safety)';
-            ppmReq = '≥ 125 px/m (Recognize)';
-          } else if (mode === 'observe') {
-            assignedModel = 'ByteTrack + RT-DETR (Forklift / Asset)';
-            ppmReq = '≥ 62.5 px/m (Observe)';
-          }
-          const roiStr = `[(${(p.x / bayLength - 0.05).toFixed(2)}, ${(p.y / bayWidth - 0.05).toFixed(2)}) … (${Math.min(1, p.x / bayLength + 0.2).toFixed(2)}, ${Math.min(1, p.y / bayWidth + 0.2).toFixed(2)})]`;
-          return `<tr>
-            <td style="font-weight: 700; color: #1e3a8a;">Camera ${p.id}</td>
-            <td style="font-family: ui-monospace, monospace; color: #4338ca;">rtsp://192.168.1.${101 + idx}:554/live/ch1/main</td>
-            <td>1920×1080 @ 20 FPS<br><span style="color: #64748b; font-size: 9px;">H.264 Main / 4096 kbps CBR</span></td>
-            <td><span class="badge badge-indigo">${assignedModel}</span></td>
-            <td><strong style="color: #166534;">${ppmReq}</strong></td>
-            <td style="font-family: ui-monospace, monospace; font-size: 9px; color: #475569;">${roiStr}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px;">
-      <div class="code-box">
-        <div style="color: #38bdf8; font-weight: 700; margin-bottom: 4px;">NVIDIA DeepStream Pipeline Architecture</div>
-[RTSP Sources: ${m.cameras} Streams]
-       │
-       ▼
-nvurisrcbin (Hardware Accelerated Dec: NVDEC)
-       │
-       ▼
-nvstreammux (Batch Size: ${Math.min(m.cameras, 16)}, 1080p, 25 FPS)
-       │
-       ▼
-nvinfer: Primary GIE (YOLOv8 TensorRT FP16 Engine)
-       │
-       ▼
-nvtracker: NvDCF / ByteTrack (Trajectory Association)
-       │
-       ▼
-nvdsanalytics: Virtual ROI Triplines & Directional Cross
-       │
-       ▼
-msgconv + msgbroker: MQTT / Kafka Event Publishing
-      </div>
-      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; font-size: 10px;">
-        <div style="font-weight: 800; color: #1e293b; margin-bottom: 6px;">Edge Hardware &amp; VRAM Sizing Calculation</div>
-        <div style="margin-bottom: 4px;">• <strong>Simultaneous Streams:</strong> ${m.cameras} IP RTSP camera streams.</div>
-        <div style="margin-bottom: 4px;">• <strong>VRAM Footprint:</strong> ~120 MB per 1080p stream at FP16 batch inference $\to$ ~<strong>${(m.cameras * 0.12).toFixed(1)} GB VRAM</strong>.</div>
-        <div style="margin-bottom: 4px;">• <strong>Recommended Hardware:</strong> ${m.cameras <= 8 ? 'NVIDIA Jetson Orin Nano (8GB)' : (m.cameras <= 20 ? 'NVIDIA Jetson AGX Orin (32GB)' : 'NVIDIA L4 / A2 Enterprise Edge Server')}.</div>
-        <div>• <strong>Network Bandwidth:</strong> ~<strong>${(m.cameras * 4.2).toFixed(1)} Mbps</strong> aggregate ingestion throughput.</div>
-      </div>
-    </div>
-  </div>
-
-  ${obstacles.length > 0 ? `
-  <!-- PART 3: 3D OCCLUSION SCHEDULE -->
-  <div class="section-card">
-    <div class="section-title">
-      <span>🏗️ PART 3: Facility 3D Physical Obstacles &amp; Occlusion Schedule</span>
-      <span class="badge badge-green">${obstacles.length} Physical Structures</span>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Structure Name</th>
-          <th>Type</th>
-          <th>Floor Coordinates (X, Y)</th>
-          <th>Dimensions (W × D × H)</th>
-          <th>Footprint Area</th>
-          <th>3D Ray Occlusion Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${obstacles.map(o => `<tr>
-          <td style="font-weight: 700;">${o.name}</td>
-          <td><span class="badge" style="background: #f1f5f9; color: #334155;">${(o.type || 'obstacle').toUpperCase()}</span></td>
-          <td>X: ${o.x.toFixed(1)}m, Y: ${o.y.toFixed(1)}m</td>
-          <td>${o.w.toFixed(1)}m × ${o.d.toFixed(1)}m × ${o.h.toFixed(1)}m</td>
-          <td>${(o.w * o.d).toFixed(1)} m²</td>
-          <td style="color: #166534; font-weight: 600;">Active 3D Ray-Box Slab Intersect (Shadows cast onto target plane ${targetHeight}m)</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>` : ''}
-
-  <!-- PART 4: AI MODEL FEASIBILITY MATRIX & BIOMETRIC ADMISSIBILITY -->
-  <div class="section-card">
-    <div class="section-title">
-      <span>🧠 PART 4: Computer Vision AI Feasibility Matrix &amp; Biometric Admissibility</span>
-      <span class="badge badge-indigo">Model Verification: YOLOv8 · ArcFace · ByteTrack · Johnson's Criteria</span>
-    </div>
-    <p style="margin: 0 0 8px 0; color: #475569; font-size: 10px;">
-      Empirical verification of deployed neural network models against physical optical density, 3-anchor laser raycasting (Head 1.65m, Torso 1.10m, Ankle 0.15m), and international standards.
-    </p>
-    <table>
-      <thead>
-        <tr>
-          <th>Computer Vision Task</th>
-          <th>Deployed Architecture</th>
-          <th>Minimum Metric Guarantee</th>
-          <th>Feasibility Status</th>
-          <th>Occlusion Impact &amp; 3D Mitigation</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong>Biometric Facial ID &amp; Access</strong></td>
-          <td>ArcFace + YOLOv8-Face</td>
-          <td>≥ 250 px/m (DORI) / ≥15% VSH (DHS/NIJ)</td>
-          <td><span class="badge badge-green">FEASIBLE</span></td>
-          <td>Head anchor (1.65m AFF) verified with direct line-of-sight across primary choke points and portals.</td>
-        </tr>
-        <tr>
-          <td><strong>Personnel PPE Safety Compliance</strong></td>
-          <td>YOLOv8x-pose (Keypoint)</td>
-          <td>≥ 125 px/m (Recognize Tier)</td>
-          <td><span class="badge badge-green">FEASIBLE</span></td>
-          <td>Torso anchor (1.10m AFF) clear; hardhat &amp; hi-vis vest feature extraction passes confidence &gt; 92%.</td>
-        </tr>
-        <tr>
-          <td><strong>Intralogistics &amp; Asset Tracking</strong></td>
-          <td>ByteTrack + RT-DETR</td>
-          <td>≥ 62.5 px/m (Observe Tier)</td>
-          <td><span class="badge badge-green">FEASIBLE</span></td>
-          <td>Multi-camera overlapping fields (${m.overlapPct.toFixed(1)}% overlap) maintain tracklet persistence across aisles.</td>
-        </tr>
-        <tr>
-          <td><strong>Slip, Trip &amp; Fall Incident Detection</strong></td>
-          <td>Temporal 3D Pose + GCN</td>
-          <td>≥ 62.5 px/m (Floor Plane Plane)</td>
-          <td><span class="badge badge-amber">CONDITIONAL</span></td>
-          <td>Requires ankle anchor (0.15m AFF) visibility; occluded beneath tall machinery. Supplementary wide camera recommended.</td>
-        </tr>
-        <tr>
-          <td><strong>Thermal Perimeter Intrusion (PID)</strong></td>
-          <td>LWIR Core + Thermal YOLOv8</td>
-          <td>Detection: ≥1.2 lp / Recognition: ≥3.2 lp</td>
-          <td><span class="badge badge-green">FEASIBLE</span></td>
-          <td>US Military Johnson's criteria satisfied across perimeter boundary fences up to 85m range.</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- PART 5: BILL OF MATERIALS & NVR STORAGE SIZING -->
-  <div class="section-card">
-    <div class="section-title">
-      <span>📦 PART 5: Infrastructure Bill of Materials (BOM) &amp; NVR Storage Budget</span>
-      <span class="badge badge-green">Hardware Sizing Engine</span>
-    </div>
-    <div class="grid-3" style="margin-bottom: 8px;">
-      <div class="kpi-box">
-        <div class="kpi-lbl">Total Cameras Required</div>
-        <div class="kpi-val">${m.cameras} Units</div>
-        <div style="font-size: 9px; color: #64748b;">${sensorWidthPx}×${sensorHeightPx} (${resolutionPreset.toUpperCase()}) • ${lens.hfovDeg}° HFOV</div>
-      </div>
-      <div class="kpi-box">
-        <div class="kpi-lbl">30-Day NVR Storage Budget</div>
-        <div class="kpi-val">${((m.cameras * bitrateKbps * 86400 * 30) / (8 * 1000 * 1000 * 1000)).toFixed(1)} TB</div>
-        <div style="font-size: 9px; color: #64748b;">H.265 @ ${bitrateKbps} kbps continuous recording (RAID-6 recommended)</div>
-      </div>
-      <div class="kpi-box">
-        <div class="kpi-lbl">Network Throughput</div>
-        <div class="kpi-val">${(m.cameras * (bitrateKbps / 1000)).toFixed(1)} Mbps</div>
-        <div style="font-size: 9px; color: #64748b;">Gigabit uplink to core switch required</div>
-      </div>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Component Item</th>
-          <th>Engineering Specification</th>
-          <th>Quantity</th>
-          <th>Deployment Standard</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong>Network Camera Sensors</strong></td>
-          <td>${cameraModel} (${resolutionPreset.toUpperCase()}, ${sensorFormat}, ${lens.focalMm}mm lens, 0.005 lux, ${irRangeM}m IR)</td>
-          <td><strong>${m.cameras} units</strong></td>
-          <td>IP67 weatherproof / IK10 impact resistant</td>
-        </tr>
-        <tr>
-          <td><strong>PoE+ Switching Hardware</strong></td>
-          <td>Managed Layer-2/3 Industrial PoE+ Switch (IEEE 802.3af/at)</td>
-          <td><strong>${Math.ceil(m.cameras / 24)} switch (${Math.ceil(m.cameras / 24) * 24} ports)</strong></td>
-          <td>Total PoE Power: ${(m.cameras * 15.4).toFixed(0)}W nominal / ${(m.cameras * 30).toFixed(0)}W peak</td>
-        </tr>
-        <tr>
-          <td><strong>Cabling Infrastructure</strong></td>
-          <td>Solid Bare Copper Cat6 F/UTP Shielded Horizontal Cable (TIA-568-C.2)</td>
-          <td><strong>~${Math.round(estTotalCablingM)} meters</strong></td>
-          <td>Maximum permanent link &lt; 90m per camera run</td>
-        </tr>
-        <tr>
-          <td><strong>Enterprise NVR Appliance</strong></td>
-          <td>Multi-bay Rackmount NVR (Dual 10GbE SFP+, Redundant Hot-Swap PSU)</td>
-          <td><strong>1 unit (${Math.ceil(((m.cameras * bitrateKbps * 86400 * 30) / (8 * 1000 * 1000 * 1000)) * 1.3)} TB Raw)</strong></td>
-          <td>RAID-6 array with 1 hot spare disk</td>
-        </tr>
-        <tr>
-          <td><strong>Edge AI Inference Server</strong></td>
-          <td>${m.cameras <= 8 ? 'NVIDIA Jetson Orin Nano (8GB)' : (m.cameras <= 20 ? 'NVIDIA Jetson AGX Orin (32GB)' : 'NVIDIA L4 / A2 Enterprise Edge Server')}</td>
-          <td><strong>${Math.ceil(m.cameras / 16)} unit(s)</strong></td>
-          <td>DeepStream FP16 TensorRT pipeline with ${(m.cameras * 0.12).toFixed(1)} GB VRAM footprint</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div style="text-align: center; color: #94a3b8; font-size: 9px; margin-top: 15px;">
-    Plan Vision • Automated Computer Vision Facility Engineering System • Document Hash: ${Math.random().toString(36).substring(2, 10).toUpperCase()}
-  </div>
-</body>
-</html>`;
-
-    if (format === 'pdf') {
+    // PDF: Open printable 5-page report with all 6 diagrams and trigger print dialog
+    try {
+      const resp = await fetch('/api/report/generate?mode=pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: effectiveProject, format: 'pdf' }),
+      });
+      if (!resp.ok) throw new Error('PDF export failed');
+      const html = await resp.text();
       const printWindow = window.open('', '_blank');
       if (printWindow) {
-        printWindow.document.write(htmlContent);
+        printWindow.document.write(html);
         printWindow.document.close();
         printWindow.focus();
         setTimeout(() => {
           printWindow.print();
-        }, 500);
+        }, 400);
       }
-    } else {
-      // DOCX export (Word compatible HTML container with Office XML declarations)
-      const docxHeader = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head><meta charset='utf-8'><title>${title}</title>
-<!--[if gte mso 9]>
-<xml>
-<w:WordDocument>
-<w:View>Print</w:View>
-<w:Zoom>100</w:Zoom>
-<w:DoNotOptimizeForBrowser/>
-</w:WordDocument>
-</xml>
-<![endif]-->
-<style>
-body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; color: #1e293b; }
-table { width: 100%; border-collapse: collapse; margin-bottom: 15pt; }
-th { background-color: #f1f5f9; border: 1pt solid #cbd5e1; padding: 6pt; font-weight: bold; }
-td { border: 1pt solid #e2e8f0; padding: 6pt; vertical-align: top; }
-h1 { color: #1e3a8a; font-size: 18pt; margin-bottom: 4pt; }
-h2 { color: #2563eb; font-size: 14pt; margin-top: 15pt; border-bottom: 1pt solid #cbd5e1; padding-bottom: 4pt; }
-.badge { font-weight: bold; font-size: 9pt; }
-</style>
-</head>
-<body>
-${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\S]*?<\/html>/, '')}
-</body></html>`;
-
-      const blob = new Blob(['\ufeff', docxHeader], { type: 'application/msword;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${title.replace(/\s+/g, '_')}_Field_and_Developer_Blueprint.doc`;
-      a.click();
-      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('PDF export failed:', err);
     }
   };
 
@@ -4155,54 +3558,32 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                     onClick={async () => {
                       setIsExportingModalPdf(true);
                       try {
-                        const resp = await fetch('/api/report/generate?mode=pdf', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ project, format: 'pdf' }),
-                        });
-                        const blob = await resp.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${(project?.name || 'Plan_Vision').replace(/\s+/g, '_')}_Camera_Safety_Plan.html`;
-                        a.click();
-                        URL.revokeObjectURL(url);
+                        await handleExportReport('pdf');
                       } finally {
                         setIsExportingModalPdf(false);
                       }
                     }}
                     disabled={isExportingModalPdf}
-                    className="py-2 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="py-2.5 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-emerald-600" />
-                    {isExportingModalPdf ? 'Exporting PDF…' : 'Download PDF'}
+                    {isExportingModalPdf ? 'Opening PDF…' : 'Print / Save PDF'}
                   </button>
 
                   <button
                     onClick={async () => {
                       setIsExportingModalDocx(true);
                       try {
-                        const resp = await fetch('/api/report/generate?mode=docx', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ project, format: 'docx' }),
-                        });
-                        const blob = await resp.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${(project?.name || 'Plan_Vision').replace(/\s+/g, '_')}_Camera_Safety_Plan.doc`;
-                        a.click();
-                        URL.revokeObjectURL(url);
+                        await handleExportReport('docx');
                       } finally {
                         setIsExportingModalDocx(false);
                       }
                     }}
                     disabled={isExportingModalDocx}
-                    className="py-2 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="py-2.5 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-blue-600" />
-                    {isExportingModalDocx ? 'Exporting DOCX…' : 'Download DOCX'}
+                    {isExportingModalDocx ? 'Generating DOCX…' : 'Download DOCX'}
                   </button>
                 </div>
               </div>

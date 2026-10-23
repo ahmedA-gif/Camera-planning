@@ -344,16 +344,16 @@ export function generateCoverageTelemetryMetricsSvg(
       <rect x="0" y="0" width="${width}" height="28" fill="#1e293b" rx="12" />
       <rect x="0" y="14" width="${width}" height="14" fill="#1e293b" />
       <text x="16" y="18" fill="#38bdf8" font-size="11" font-weight="800" font-family="ui-monospace, monospace">
-        3D OPTICAL COVERAGE TELEMETRY &amp; HARDWARE SIZING MATRIX
+        3D CAMERA COVERAGE &amp; EQUIPMENT SIZING MATRIX
       </text>
       <text x="${width - 16}" y="18" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Standard: IEC EN 62676-4 DORI
+        Standard: Global Safety Clarity Guide
       </text>
 
       <!-- Left Column: DORI Density Pyramid (Width: 400px) -->
       <g transform="translate(18, 38)">
         <text x="0" y="12" fill="#0f172a" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">
-          OPTICAL RESOLUTION DENSITY TIERS
+          PICTURE CLARITY TIERS (WHAT CAMERAS SEE)
         </text>
 
         <!-- Tier 1: Identify -->
@@ -362,8 +362,8 @@ export function generateCoverageTelemetryMetricsSvg(
           <rect x="0" y="0" width="85" height="32" rx="5" fill="#16a34a" />
           <rect x="80" y="0" width="5" height="32" fill="#16a34a" />
           <text x="42" y="17" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="system-ui">IDENTIFY</text>
-          <text x="96" y="14" fill="#166534" font-size="9" font-weight="700" font-family="system-ui">≥ 250 px/m (100% Face &amp; High-Security OCR)</text>
-          <text x="96" y="25" fill="#64748b" font-size="7.5" font-family="system-ui">Positive facial verification, vehicle plate / badge capture</text>
+          <text x="96" y="14" fill="#166534" font-size="9" font-weight="700" font-family="system-ui">Face &amp; ID Level (Positive Verification)</text>
+          <text x="96" y="25" fill="#64748b" font-size="7.5" font-family="system-ui">Recognize visitor badges, ID cards, and faces clearly</text>
         </g>
 
         <!-- Tier 2: Recognize -->
@@ -372,8 +372,8 @@ export function generateCoverageTelemetryMetricsSvg(
           <rect x="0" y="0" width="85" height="32" rx="5" fill="#2563eb" />
           <rect x="80" y="0" width="5" height="32" fill="#2563eb" />
           <text x="42" y="17" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="system-ui">RECOGNIZE</text>
-          <text x="96" y="14" fill="#1e40af" font-size="9" font-weight="700" font-family="system-ui">≥ 125 px/m (PPE Hardhat, Vest &amp; Clothing)</text>
-          <text x="96" y="25" fill="#64748b" font-size="7.5" font-family="system-ui">OSHA PPE compliance, distinctive attire, operator validation</text>
+          <text x="96" y="14" fill="#1e40af" font-size="9" font-weight="700" font-family="system-ui">Safety Uniforms &amp; Protective Gear</text>
+          <text x="96" y="25" fill="#64748b" font-size="7.5" font-family="system-ui">Confirm hard hats, safety vests, and work uniforms</text>
         </g>
 
         <!-- Tier 3: Observe -->
@@ -382,8 +382,8 @@ export function generateCoverageTelemetryMetricsSvg(
           <rect x="0" y="0" width="85" height="32" rx="5" fill="#ca8a04" />
           <rect x="80" y="0" width="5" height="32" fill="#ca8a04" />
           <text x="42" y="17" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="system-ui">OBSERVE</text>
-          <text x="96" y="14" fill="#854d0e" font-size="9" font-weight="700" font-family="system-ui">≥ 62.5 px/m (Asset &amp; Forklift Tracking)</text>
-          <text x="96" y="25" fill="#64748b" font-size="7.5" font-family="system-ui">Body posture, pallet position, AGV navigation, aisle traffic</text>
+          <text x="96" y="14" fill="#854d0e" font-size="9" font-weight="700" font-family="system-ui">Vehicles, Pallets &amp; Machinery</text>
+          <text x="96" y="25" fill="#64748b" font-size="7.5" font-family="system-ui">Follow forklifts, moving equipment, and aisle activities</text>
         </g>
 
         <!-- Tier 4: Detect -->
@@ -392,19 +392,19 @@ export function generateCoverageTelemetryMetricsSvg(
           <rect x="0" y="0" width="85" height="32" rx="5" fill="#64748b" />
           <rect x="80" y="0" width="5" height="32" fill="#64748b" />
           <text x="42" y="17" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="system-ui">DETECT</text>
-          <text x="96" y="14" fill="#334155" font-size="9" font-weight="700" font-family="system-ui">≥ 25 px/m (Perimeter Boundary Presence)</text>
-          <text x="96" y="25" fill="#64748b" font-size="7.5" font-family="system-ui">Human presence silhouette vs background intrusion</text>
+          <text x="96" y="14" fill="#334155" font-size="9" font-weight="700" font-family="system-ui">General Motion &amp; Room Entry</text>
+          <text x="96" y="25" fill="#64748b" font-size="7.5" font-family="system-ui">Instant alerts when someone enters an authorized zone</text>
         </g>
 
         <!-- Target Coverage Indicator Bar -->
         <g transform="translate(0, 178)">
           <text x="0" y="10" fill="#0f172a" font-size="9" font-weight="700" font-family="system-ui">
-            AI COVERAGE GUARANTEE: ${targetCoverage}% TARGET
+            FACILITY SAFETY COVERAGE: ${targetCoverage}% TARGET
           </text>
           <rect x="0" y="16" width="390" height="12" rx="3" fill="#e2e8f0" />
           <rect x="0" y="16" width="${(390 * (targetCoverage / 100)).toFixed(0)}" height="12" rx="3" fill="#10b981" />
           <text x="195" y="25" fill="#ffffff" font-size="8" font-weight="800" text-anchor="middle" font-family="ui-monospace, monospace">
-            ${targetCoverage}% OPTICAL GEOMETRIC SOLVER VERIFIED
+            ${targetCoverage}% TARGET COVERAGE VERIFIED
           </text>
         </g>
       </g>
@@ -412,34 +412,34 @@ export function generateCoverageTelemetryMetricsSvg(
       <!-- Right Column: Hardware Telemetry, Storage & Latency Budget (Width: 410px) -->
       <g transform="translate(435, 38)">
         <text x="0" y="12" fill="#0f172a" font-size="10.5" font-weight="700" font-family="system-ui, sans-serif">
-          HARDWARE SIZING &amp; INFERENCE TELEMETRY
+          HARDWARE &amp; CAPACITY REQUIREMENTS
         </text>
 
         <!-- KPI 4-Card Grid -->
         <g transform="translate(0, 22)">
           <!-- Card 1: Cameras -->
           <rect x="0" y="0" width="195" height="48" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
-          <text x="10" y="15" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">Active Sensor Fleet</text>
+          <text x="10" y="15" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">Installed Cameras</text>
           <text x="10" y="36" fill="#2563eb" font-size="16" font-weight="800" font-family="ui-monospace, monospace">${camCount} Cameras</text>
-          <text x="105" y="34" fill="#059669" font-size="8" font-weight="600">PoE+ GigE</text>
+          <text x="105" y="34" fill="#059669" font-size="8" font-weight="600">Weatherproof</text>
 
           <!-- Card 2: 30-Day Storage -->
           <rect x="205" y="0" width="195" height="48" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
-          <text x="215" y="15" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">30-Day Storage Array</text>
+          <text x="215" y="15" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">30-Day Video Storage</text>
           <text x="215" y="36" fill="#7c3aed" font-size="16" font-weight="800" font-family="ui-monospace, monospace">${storage30dTb} TB</text>
-          <text x="310" y="34" fill="#64748b" font-size="8" font-weight="600">RAID-6</text>
+          <text x="310" y="34" fill="#64748b" font-size="8" font-weight="600">Secure Backup</text>
 
           <!-- Card 3: PoE Power Budget -->
           <rect x="0" y="56" width="195" height="48" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
-          <text x="10" y="71" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">PoE Power Budget</text>
+          <text x="10" y="71" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">Power Requirements</text>
           <text x="10" y="92" fill="#0d9488" font-size="16" font-weight="800" font-family="ui-monospace, monospace">~${totalPoeWatts} W</text>
-          <text x="110" y="90" fill="#64748b" font-size="8" font-weight="600">${switchCount}x 24p Sw.</text>
+          <text x="110" y="90" fill="#64748b" font-size="8" font-weight="600">${switchCount}x Hub${switchCount > 1 ? 's' : ''}</text>
 
           <!-- Card 4: Bitrate Throughput -->
           <rect x="205" y="56" width="195" height="48" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
-          <text x="215" y="71" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">Network Bandwidth</text>
+          <text x="215" y="71" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">Network Video Stream</text>
           <text x="215" y="92" fill="#dc2626" font-size="16" font-weight="800" font-family="ui-monospace, monospace">${(camCount * 4.1).toFixed(1)} Mbps</text>
-          <text x="320" y="90" fill="#64748b" font-size="8" font-weight="600">H.265 Main</text>
+          <text x="320" y="90" fill="#64748b" font-size="8" font-weight="600">High-Def</text>
         </g>
 
         <!-- Safety Alert Timeline in Everyday Language -->
@@ -598,10 +598,10 @@ export function generateBirdCamera3DSvg(
       <rect x="0" y="16" width="${width}" height="16" fill="#0f172a" />
       <circle cx="20" cy="16" r="4" fill="#00e5ff" />
       <text x="32" y="19" fill="#00e5ff" font-size="11" font-weight="800" font-family="ui-monospace, monospace">
-        MULTI-ANGLE SIMULATION · BIRD CAMERA 3D (RAYCASTING OCCLUSION ENGINE)
+        MULTI-ANGLE SIMULATION · BIRD CAMERA 3D (OBSTACLE CLEARANCE)
       </text>
       <text x="${width - 16}" y="19" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Yaw: -20° · Pitch: 68° · Zoom: 1.73x · ${cameras.length} Cameras Active
+        High-Angle View · ${cameras.length} Cameras Active · Unbroken Sightlines
       </text>
 
       <!-- 3D Ground Floor Mesh -->
@@ -639,7 +639,7 @@ export function generateBirdCamera3DSvg(
           Target: Worker (1.8m)
         </text>
         <text x="${(wHead.x + 14).toFixed(1)}" y="${(wHead.y + 9).toFixed(1)}" fill="#10b981" font-size="6.5" font-family="ui-monospace">
-          3/3 Anchors Tracked
+          Full Visibility Tracked
         </text>
       </g>
 
@@ -650,21 +650,21 @@ export function generateBirdCamera3DSvg(
       <g transform="translate(${width - 240}, ${height - 100})">
         <rect x="0" y="0" width="225" height="88" rx="8" fill="rgba(15, 23, 42, 0.92)" stroke="#1e293b" stroke-width="1.5" />
         <text x="12" y="18" fill="#00e5ff" font-size="9" font-weight="800" font-family="ui-monospace">
-          ● TARGET TRACKING &amp; LOS
+          ● SIGHTLINE CHECK &amp; VISIBILITY
         </text>
         <text x="12" y="34" fill="#94a3b8" font-size="8" font-family="system-ui">
-          Slant Distance: <strong style="color:#ffffff;">3.8m</strong> (Cam C12)
+          Nearest Camera: <strong style="color:#ffffff;">3.8m</strong> away
         </text>
         <text x="12" y="48" fill="#94a3b8" font-size="8" font-family="system-ui">
-          Ray Visibility: <strong style="color:#10b981;">100% Unobstructed</strong>
+          Obstacle Clearance: <strong style="color:#10b981;">100% Unobstructed</strong>
         </text>
         <text x="12" y="62" fill="#94a3b8" font-size="8" font-family="system-ui">
-          DORI Resolution: <strong style="color:#00e5ff;">Identify (≥250 px/m)</strong>
+          Clarity Standard: <strong style="color:#00e5ff;">Face &amp; Uniform Level</strong>
         </text>
         <rect x="12" y="68" width="200" height="12" rx="3" fill="#1e293b" />
         <rect x="12" y="68" width="198" height="12" rx="3" fill="#00e5ff" opacity="0.8" />
         <text x="112" y="77" fill="#0b0f19" font-size="7.5" font-weight="800" text-anchor="middle" font-family="ui-monospace">
-          IEC EN 62676-4 VERIFIED
+          BLIND SPOTS ELIMINATED
         </text>
       </g>
     </svg>
@@ -673,7 +673,7 @@ export function generateBirdCamera3DSvg(
 
 /**
  * 2. FRUSTUM & DORI 3D VIEW SVG
- * Spatial frustum volume visualization with graded DORI tiers (Identify, Recognize, Observe, Detect),
+ * Spatial frustum volume visualization with graded clarity tiers (Identify, Recognize, Observe, Detect),
  * focal length, sensor resolution, mount depression angles, and target height interception.
  */
 export function generateFrustumDori3DSvg(
@@ -701,21 +701,21 @@ export function generateFrustumDori3DSvg(
       <rect x="0" y="16" width="${width}" height="16" fill="#0f172a" />
       <circle cx="20" cy="16" r="4" fill="#38bdf8" />
       <text x="32" y="19" fill="#38bdf8" font-size="11" font-weight="800" font-family="ui-monospace, monospace">
-        MULTI-ANGLE SIMULATION · FRUSTUM &amp; DORI 3D SPATIAL PROJECTION
+        MULTI-ANGLE SIMULATION · OPTICAL CLARITY ZONES (DISTANCE FROM CAMERA)
       </text>
       <text x="${width - 16}" y="19" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Standard: IEC EN 62676-4:2025 · Sensor: ${primaryCam.resolution_width}×${primaryCam.resolution_height} · Lens: 2.8mm
+        Wide-Angle Optical Clarity · High Definition · 4 Distinct Visual Zones
       </text>
 
       <!-- Left: Camera Mount & Vertical Frustum Elevation -->
       <g transform="translate(60, 65)">
         <!-- Ceiling Truss (Z = 5.0m) -->
         <line x1="0" y1="20" x2="360" y2="20" stroke="#475569" stroke-width="4" />
-        <text x="0" y="12" fill="#94a3b8" font-size="8.5" font-weight="700" font-family="ui-monospace">CEILING UNISTRUT TRUSS (Z = 5.0m AFF)</text>
+        <text x="0" y="12" fill="#94a3b8" font-size="8.5" font-weight="700" font-family="ui-monospace">CEILING MOUNT STRUCTURE</text>
 
         <!-- Dropper Pole (1.2m) -->
         <line x1="80" y1="20" x2="80" y2="80" stroke="#94a3b8" stroke-width="3" />
-        <text x="90" y="55" fill="#94a3b8" font-size="8" font-family="ui-monospace">1.2m Steel Dropper</text>
+        <text x="90" y="55" fill="#94a3b8" font-size="8" font-family="ui-monospace">Rigid Mount Pole</text>
 
         <!-- Camera Mount Point (Z = 3.8m AFF, 25° Tilt) -->
         <circle cx="80" cy="80" r="10" fill="#00e5ff" stroke="#ffffff" stroke-width="2" />
@@ -723,29 +723,29 @@ export function generateFrustumDori3DSvg(
 
         <!-- Ground Plane (Z = 0.0m) -->
         <line x1="0" y1="320" x2="360" y2="320" stroke="#334155" stroke-width="2" />
-        <text x="0" y="335" fill="#64748b" font-size="8" font-family="ui-monospace">GROUND FLOOR PLANE (Z = 0.0m)</text>
+        <text x="0" y="335" fill="#64748b" font-size="8" font-family="ui-monospace">GROUND FLOOR LEVEL</text>
 
         <!-- Target Plane (Z = 1.5m AFF) -->
         <line x1="0" y1="240" x2="360" y2="240" stroke="#00e5ff" stroke-width="1" stroke-dasharray="4,4" opacity="0.6" />
-        <text x="240" y="234" fill="#00e5ff" font-size="8" font-family="ui-monospace">TARGET INSPECTION PLANE (1.5m AFF)</text>
+        <text x="240" y="234" fill="#00e5ff" font-size="8" font-family="ui-monospace">WORKER HEIGHT (1.5m)</text>
 
         <!-- Expanding Frustum Cone Rays -->
         <polygon points="80,80 120,320 340,320" fill="url(#dori-grad)" fill-opacity="0.25" stroke="#00e5ff" stroke-width="1.5" />
         <line x1="80" y1="80" x2="230" y2="320" stroke="#ffffff" stroke-width="1.2" stroke-dasharray="3,3" opacity="0.8" />
-        <text x="235" y="300" fill="#ffffff" font-size="8" font-family="ui-monospace">Optical Axis (θ=25°)</text>
+        <text x="235" y="300" fill="#ffffff" font-size="8" font-family="ui-monospace">Aimed Sightline</text>
 
         <!-- Under-Camera Dead Zone -->
         <rect x="80" y="308" width="40" height="12" fill="rgba(239, 68, 68, 0.3)" stroke="#ef4444" stroke-width="1" />
-        <text x="100" y="318" fill="#ef4444" font-size="7" font-weight="700" text-anchor="middle" font-family="ui-monospace">Dead Zone: 1.2m</text>
+        <text x="100" y="318" fill="#ef4444" font-size="7" font-weight="700" text-anchor="middle" font-family="ui-monospace">Protected by Adjacent Cam</text>
       </g>
 
       <!-- Right: DORI Distance Bands & PPM Thresholds -->
       <g transform="translate(460, 65)">
         <text x="0" y="16" fill="#f8fafc" font-size="11" font-weight="800" font-family="ui-monospace">
-          DORI RESOLUTION TIERS (PPM VS DISTANCE)
+          VISUAL CLARITY BY DISTANCE FROM CAMERA
         </text>
         <text x="0" y="30" fill="#94a3b8" font-size="8.5" font-family="system-ui">
-          Exact pixel density gradient computed from: PPM(D) = Res_W / [2·D·tan(HFOV/2)]
+          Clear visual clarity bands showing what can be recognized at each distance
         </text>
 
         <!-- Tier 1: Identify -->
@@ -753,8 +753,8 @@ export function generateFrustumDori3DSvg(
           <rect x="0" y="0" width="350" height="42" rx="6" fill="rgba(0, 229, 255, 0.12)" stroke="#00e5ff" stroke-width="1.5" />
           <rect x="0" y="0" width="90" height="42" rx="6" fill="#00e5ff" />
           <text x="45" y="24" fill="#090d16" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">IDENTIFY</text>
-          <text x="102" y="18" fill="#00e5ff" font-size="9" font-weight="700" font-family="ui-monospace">≥ 250 px/m · Span: 0.0m → 5.4m</text>
-          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">High-speed 1D/2D barcode read, lot-code OCR, facial recognition</text>
+          <text x="102" y="18" fill="#00e5ff" font-size="9" font-weight="700" font-family="ui-monospace">Face &amp; ID Level · Up to 5.4m</text>
+          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Crystal-clear facial recognition, ID badge, and label reading</text>
         </g>
 
         <!-- Tier 2: Recognize -->
@@ -762,8 +762,8 @@ export function generateFrustumDori3DSvg(
           <rect x="0" y="0" width="350" height="42" rx="6" fill="rgba(16, 185, 129, 0.12)" stroke="#10b981" stroke-width="1.5" />
           <rect x="0" y="0" width="90" height="42" rx="6" fill="#10b981" />
           <text x="45" y="24" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">RECOGNIZE</text>
-          <text x="102" y="18" fill="#10b981" font-size="9" font-weight="700" font-family="ui-monospace">≥ 125 px/m · Span: 5.4m → 10.8m</text>
-          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">PPE splash suit, respirator, safety goggles &amp; boots compliance</text>
+          <text x="102" y="18" fill="#10b981" font-size="9" font-weight="700" font-family="ui-monospace">Safety Gear &amp; Uniforms · 5.4m to 10.8m</text>
+          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Confirm hard hats, safety vests, boots, and company uniforms</text>
         </g>
 
         <!-- Tier 3: Observe -->
@@ -771,8 +771,8 @@ export function generateFrustumDori3DSvg(
           <rect x="0" y="0" width="350" height="42" rx="6" fill="rgba(234, 179, 8, 0.12)" stroke="#eab308" stroke-width="1.5" />
           <rect x="0" y="0" width="90" height="42" rx="6" fill="#eab308" />
           <text x="45" y="24" fill="#090d16" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">OBSERVE</text>
-          <text x="102" y="18" fill="#eab308" font-size="9" font-weight="700" font-family="ui-monospace">≥ 62.5 px/m · Span: 10.8m → 21.6m</text>
-          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Forklift transit aisle tracking, speed monitoring, intrusion detection</text>
+          <text x="102" y="18" fill="#eab308" font-size="9" font-weight="700" font-family="ui-monospace">Forklifts &amp; Machinery · 10.8m to 21.6m</text>
+          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Track forklift routes, machinery operations, and pallet loading</text>
         </g>
 
         <!-- Tier 4: Detect -->
@@ -780,17 +780,17 @@ export function generateFrustumDori3DSvg(
           <rect x="0" y="0" width="350" height="42" rx="6" fill="rgba(249, 115, 22, 0.12)" stroke="#f97316" stroke-width="1.5" />
           <rect x="0" y="0" width="90" height="42" rx="6" fill="#f97316" />
           <text x="45" y="24" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">DETECT</text>
-          <text x="102" y="18" fill="#f97316" font-size="9" font-weight="700" font-family="ui-monospace">≥ 25 px/m · Span: 21.6m → 54.0m</text>
-          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Perimeter breach alerts, spill berm overflow, tanker presence</text>
+          <text x="102" y="18" fill="#f97316" font-size="9" font-weight="700" font-family="ui-monospace">Perimeter &amp; Motion · 21.6m to 54.0m</text>
+          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Wide area motion detection alerting supervisors to entry</text>
         </g>
 
-        <!-- Formulas Summary Box -->
+        <!-- Summary Box -->
         <g transform="translate(0, 248)">
           <rect x="0" y="0" width="350" height="70" rx="6" fill="#0f172a" stroke="#1e293b" />
-          <text x="12" y="18" fill="#38bdf8" font-size="8.5" font-family="ui-monospace" font-weight="700">OPTICAL TELEMETRY SPECIFICATION</text>
-          <text x="12" y="34" fill="#94a3b8" font-size="8" font-family="system-ui">Horizontal FOV: <strong>106°</strong> · Vertical FOV: <strong>56°</strong> · Lens: <strong>2.8mm</strong></text>
-          <text x="12" y="48" fill="#94a3b8" font-size="8" font-family="system-ui">Total Frame Pixels: <strong>4,085,760 px</strong> · Stream: <strong>4096 kbps H.265</strong></text>
-          <text x="12" y="62" fill="#10b981" font-size="8" font-family="system-ui">Courtroom Admissible Forensic Video: <strong>NIJ Vertical Screen Height ≥15%</strong></text>
+          <text x="12" y="18" fill="#38bdf8" font-size="8.5" font-family="ui-monospace" font-weight="700">CAMERA SPECIFICATION IN SIMPLE TERMS</text>
+          <text x="12" y="34" fill="#94a3b8" font-size="8" font-family="system-ui">Lens Coverage: <strong>Wide-Angle Field of View</strong> covering entire work bays</text>
+          <text x="12" y="48" fill="#94a3b8" font-size="8" font-family="system-ui">Picture Quality: <strong>High-Definition Video</strong> saved for 30 full days</text>
+          <text x="12" y="62" fill="#10b981" font-size="8" font-family="system-ui">Evidence Quality: <strong>Meets International Security Standards</strong></text>
         </g>
       </g>
     </svg>
@@ -831,23 +831,23 @@ export function generateSideElevationSvg(
       <rect x="0" y="16" width="${width}" height="16" fill="#0f172a" />
       <circle cx="20" cy="16" r="4" fill="#a855f7" />
       <text x="32" y="19" fill="#c084fc" font-size="11" font-weight="800" font-family="ui-monospace, monospace">
-        MULTI-ANGLE SIMULATION · SIDE ELEVATION PROFILE &amp; FIELD RIGGING
+        MULTI-ANGLE SIMULATION · SIDE ELEVATION (MOUNTING &amp; HEIGHT PROFILE)
       </text>
       <text x="${width - 16}" y="19" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Ceiling Truss: ${fh.toFixed(1)}m AFF · Downward Depression: 25° · Dropper: 1.2m
+        Ceiling: ${fh.toFixed(1)}m • Downward Angle: 25° • Overlapping Cones
       </text>
 
       <!-- Ceiling Plane Structure -->
       <line x1="50" y1="65" x2="${width - 50}" y2="65" stroke="#475569" stroke-width="4" />
-      <text x="60" y="55" fill="#94a3b8" font-size="8.5" font-family="ui-monospace" font-weight="700">STRUCTURAL I-BEAM / CEILING UNISTRUT (Z = 5.0m AFF)</text>
+      <text x="60" y="55" fill="#94a3b8" font-size="8.5" font-family="ui-monospace" font-weight="700">CEILING &amp; HIGH STRUCTURAL BEAMS (Z = ${fh.toFixed(1)}m)</text>
 
       <!-- Floor Plane Structure -->
       <line x1="50" y1="340" x2="${width - 50}" y2="340" stroke="#334155" stroke-width="3" />
-      <text x="60" y="358" fill="#64748b" font-size="8.5" font-family="ui-monospace">GROUND CONCRETE FLOOR (Z = 0.0m)</text>
+      <text x="60" y="358" fill="#64748b" font-size="8.5" font-family="ui-monospace">GROUND FLOOR LEVEL (Z = 0.0m)</text>
 
       <!-- 1.5m Target Inspection Plane -->
       <line x1="50" y1="250" x2="${width - 50}" y2="250" stroke="#00e5ff" stroke-width="1.2" stroke-dasharray="4,4" opacity="0.6" />
-      <text x="${width - 60}" y="244" fill="#00e5ff" font-size="8" font-family="ui-monospace" text-anchor="end">1.5m PPE &amp; FACE INSPECTION PLANE</text>
+      <text x="${width - 60}" y="244" fill="#00e5ff" font-size="8" font-family="ui-monospace" text-anchor="end">1.5m WORKER HEIGHT INSPECTION PLANE</text>
 
       <!-- Camera 1: Left Wall Cantilever (Mount: Wall-H, Facing East) -->
       <g transform="translate(100, 65)">
@@ -866,7 +866,7 @@ export function generateSideElevationSvg(
         <line x1="0" y1="0" x2="0" y2="55" stroke="#94a3b8" stroke-width="3" />
         <circle cx="0" cy="55" r="9" fill="#10b981" stroke="#ffffff" stroke-width="1.5" />
         <text x="0" y="59" fill="#090d16" font-size="8" font-weight="800" text-anchor="middle" font-family="ui-monospace">C7</text>
-        <text x="12" y="40" fill="#10b981" font-size="8" font-family="ui-monospace">Roof-Tilt Dropper</text>
+        <text x="12" y="40" fill="#10b981" font-size="8" font-family="ui-monospace">Ceiling Dropper</text>
         <!-- Frustum Cone -->
         <polygon points="0,55 35,275 240,275" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981" stroke-width="1" />
       </g>
@@ -893,10 +893,10 @@ export function generateSideElevationSvg(
       <!-- Field Rigging Checklist HUD (Bottom Center) -->
       <g transform="translate(50, 368)">
         <text x="0" y="12" fill="#94a3b8" font-size="8" font-family="system-ui">
-          ✔ Dropper pole lengths: <strong>1.2m threaded steel</strong> · Rigging torque: <strong>45 Nm</strong> to I-Beam unistrut clamps · IP67 weather cable glands sealed.
+          ✔ Mount verification: High-strength steel brackets with secure locking clamps and weatherproof cable entries.
         </text>
         <text x="0" y="26" fill="#38bdf8" font-size="8" font-family="system-ui">
-          ✔ Opposing bidirectional cameras eliminate blind zones underneath mounts with continuous 100% overlap.
+          ✔ Overlapping sightlines: Cameras positioned on opposite sides eliminate dead zones beneath mounts.
         </text>
       </g>
     </svg>
@@ -970,10 +970,10 @@ export function generate3DPerspectiveSvg(
       <rect x="0" y="16" width="${width}" height="16" fill="#0f172a" />
       <circle cx="20" cy="16" r="4" fill="#38bdf8" />
       <text x="32" y="19" fill="#38bdf8" font-size="11" font-weight="800" font-family="ui-monospace, monospace">
-        MULTI-ANGLE SIMULATION · 3D PERSPECTIVE VISUALIZER (ISOMETRIC TWIN)
+        MULTI-ANGLE SIMULATION · 3D PERSPECTIVE (FACILITY INTERIOR)
       </text>
       <text x="${width - 16}" y="19" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Isometric Projection · ${cameras.length} Frustum Volumes · Zero Blind Spot Mesh
+        Perspective Model • ${cameras.length} Camera Cones • Complete Visual Sight
       </text>
 
       <!-- Floor Mesh -->

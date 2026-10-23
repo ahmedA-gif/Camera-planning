@@ -442,33 +442,29 @@ export function generateCoverageTelemetryMetricsSvg(
           <text x="320" y="90" fill="#64748b" font-size="8" font-weight="600">H.265 Main</text>
         </g>
 
-        <!-- Deterministic Latency Budget Timeline -->
+        <!-- Safety Alert Timeline in Everyday Language -->
         <g transform="translate(0, 136)">
-          <text x="0" y="10" fill="#0f172a" font-size="9" font-weight="700" font-family="system-ui">
-            END-TO-END DETERMINISTIC LATENCY BUDGET (≤35ms TARGET)
+          <text x="0" y="10" fill="#0f172a" font-size="9" font-weight="700" font-family="system-ui, sans-serif">
+            SAFETY ALERT RESPONSE &amp; VERIFICATION (UNDER 0.1 SECOND)
           </text>
           
           <!-- Segmented Timeline Bar -->
           <g transform="translate(0, 18)">
-            <!-- Segment 1: Ingestion (4ms) -->
-            <rect x="0" y="0" width="55" height="20" rx="3" fill="#3b82f6" />
-            <text x="27" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="ui-monospace">4ms</text>
+            <!-- Segment 1: Live Capture -->
+            <rect x="0" y="0" width="90" height="20" rx="3" fill="#3b82f6" />
+            <text x="45" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">Live Video</text>
             
-            <!-- Segment 2: GPU Preprocess (6ms) -->
-            <rect x="58" y="0" width="75" height="20" rx="3" fill="#6366f1" />
-            <text x="95" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="ui-monospace">6ms</text>
+            <!-- Segment 2: Hazard Check -->
+            <rect x="94" y="0" width="140" height="20" rx="3" fill="#0d9488" />
+            <text x="164" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">Smart Safety Check</text>
             
-            <!-- Segment 3: Neural Inference (15ms) -->
-            <rect x="136" y="0" width="170" height="20" rx="3" fill="#0d9488" />
-            <text x="221" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="ui-monospace">15ms Inference</text>
-            
-            <!-- Segment 4: SCADA Relay (8ms) -->
-            <rect x="309" y="0" width="91" height="20" rx="3" fill="#dc2626" />
-            <text x="354" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="ui-monospace">8ms E-Stop</text>
+            <!-- Segment 3: Instant Protection -->
+            <rect x="238" y="0" width="162" height="20" rx="3" fill="#16a34a" />
+            <text x="319" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">Instant Alert / Safe</text>
           </g>
 
-          <text x="0" y="52" fill="#64748b" font-size="8" font-family="system-ui">
-            Total Cycle: <strong>33ms</strong> • Ingestion (PoE) → FP16 TensorRT (YOLOv11) → SCADA Modbus TCP
+          <text x="0" y="52" fill="#475569" font-size="8" font-family="system-ui, sans-serif">
+            Continuous Facility Protection: Cameras continuously watch designated areas and alert managers to safety risks.
           </text>
         </g>
       </g>

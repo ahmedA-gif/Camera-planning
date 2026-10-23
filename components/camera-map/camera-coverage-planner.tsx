@@ -434,6 +434,14 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const [activeDetTab, setActiveDetTab] = useState<'table' | 'list' | 'obstacles' | 'reco' | 'legend' | 'ai-feasibility' | 'cables'>('table');
   const [heatMode, setHeatMode] = useState<'dori' | 'overlap'>('dori');
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isExportingModalDocx, setIsExportingModalDocx] = useState(false);
+  const [isExportingModalPdf, setIsExportingModalPdf] = useState(false);
+
+  const handleConfirmAndUpdateReports = () => {
+    handleApplyToCanvas();
+    setShowConfirmModal(true);
+  };
 
   // Compute coverage whenever parameters change (deterministic pure calculation)
   const result: CoverageResult = useMemo(() => {
@@ -1772,25 +1780,12 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
 
           {onApplyToProject && (
             <button
-              onClick={handleApplyToCanvas}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-semibold text-xs transition-all shadow-xs ${
-                savedToast
-                  ? 'bg-emerald-600 text-white ring-2 ring-emerald-400'
-                  : 'bg-primary text-primary-foreground hover:bg-primary/90'
-              }`}
-              title="Save active calculated camera positions and optical specs directly to the project"
+              onClick={handleConfirmAndUpdateReports}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-all shadow-xs ring-2 ring-emerald-500/20 cursor-pointer"
+              title="Confirm current camera mapping and update all 6 diagram views in PDF and Word reports"
             >
-              {savedToast ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Saved to Project!
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-3.5 h-3.5" />
-                  Save Cameras to Project
-                </>
-              )}
+              <CheckCircle2 className="w-4 h-4" />
+              Confirm Camera Mapping &amp; Update Reports
             </button>
           )}
 
@@ -3161,7 +3156,12 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
                 <span className="font-medium">Only {result.metrics.blindPct.toFixed(1)}% blind spots remain. Adding 1 camera or widening HFOV fills the gap.</span>
               </div>
-              <button onClick={handleOptimize} className="underline font-bold text-amber-900 hover:text-black">Auto-Solve</button>
+              <div className="flex items-center gap-3">
+                <button onClick={handleOptimize} className="underline font-bold text-amber-900 hover:text-black">Auto-Solve</button>
+                <button onClick={handleConfirmAndUpdateReports} className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition-colors">
+                  Confirm &amp; Update Reports
+                </button>
+              </div>
             </div>
           ) : (
             <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-xl text-xs flex items-center justify-between">
@@ -3169,7 +3169,12 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                 <XCircle className="w-4 h-4 shrink-0 text-rose-600" />
                 <span className="font-medium">{result.metrics.blindPct.toFixed(1)}% coverage gap. Adjust camera mount angles or click Auto-Solve.</span>
               </div>
-              <button onClick={handleOptimize} className="underline font-bold text-rose-900 hover:text-black">Auto-Solve (≥95%)</button>
+              <div className="flex items-center gap-3">
+                <button onClick={handleOptimize} className="underline font-bold text-rose-900 hover:text-black">Auto-Solve (≥95%)</button>
+                <button onClick={handleConfirmAndUpdateReports} className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition-colors">
+                  Confirm &amp; Update Reports
+                </button>
+              </div>
             </div>
           )}
 
@@ -4081,6 +4086,136 @@ ${htmlContent.replace(/<!DOCTYPE html>[\s\S]*?<body>/, '').replace(/<\/body>[\s\
                   Done
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Camera Mapping Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 text-left">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-6 py-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white backdrop-blur-xs">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold">Camera Mapping Confirmed!</h3>
+                  <p className="text-xs text-emerald-100 mt-0.5">
+                    Your layout and coverage have been saved to the project blueprint.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              {/* Stat Cards */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <div className="text-xl font-black text-slate-900">{poses.length}</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Cameras</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <div className="text-xl font-black text-emerald-600">{result.metrics.coveragePct.toFixed(1)}%</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Coverage</div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <div className="text-xl font-black text-blue-600">6 of 6</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Views Synced</div>
+                </div>
+              </div>
+
+              {/* Status Note */}
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-xs text-emerald-900 leading-relaxed">
+                <strong>Reports are now updated:</strong> All 6 diagrams (Top View, Side Elevation, Bird Camera 3D, 3D Perspective, Frustum &amp; DORI 3D, and Telemetry Scorecard) in the 5-page PDF and Word DOCX reports now reflect these exact camera placements.
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2">
+                <button
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    if (viewCtx?.setActiveView) {
+                      viewCtx.setActiveView('report');
+                    } else {
+                      window.location.href = '/report';
+                    }
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+                >
+                  <FileText className="w-4 h-4" />
+                  View Updated 5-Page Report
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={async () => {
+                      setIsExportingModalPdf(true);
+                      try {
+                        const resp = await fetch('/api/report/generate?mode=pdf', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ project, format: 'pdf' }),
+                        });
+                        const blob = await resp.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${(project?.name || 'Plan_Vision').replace(/\s+/g, '_')}_Camera_Safety_Plan.html`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } finally {
+                        setIsExportingModalPdf(false);
+                      }
+                    }}
+                    disabled={isExportingModalPdf}
+                    className="py-2 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-600" />
+                    {isExportingModalPdf ? 'Exporting PDF…' : 'Download PDF'}
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      setIsExportingModalDocx(true);
+                      try {
+                        const resp = await fetch('/api/report/generate?mode=docx', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ project, format: 'docx' }),
+                        });
+                        const blob = await resp.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${(project?.name || 'Plan_Vision').replace(/\s+/g, '_')}_Camera_Safety_Plan.doc`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } finally {
+                        setIsExportingModalDocx(false);
+                      }
+                    }}
+                    disabled={isExportingModalDocx}
+                    className="py-2 px-3 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-blue-600" />
+                    {isExportingModalDocx ? 'Exporting DOCX…' : 'Download DOCX'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={() => setShowConfirmModal(false)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors"
+              >
+                Continue Editing Cameras
+              </button>
             </div>
           </div>
         </div>

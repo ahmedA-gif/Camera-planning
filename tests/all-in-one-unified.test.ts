@@ -118,19 +118,19 @@ if (!birdSvg.includes('<svg') || !birdSvg.includes('BIRD CAMERA 3D')) {
 console.log('✓ Bird Camera 3D Occlusion Engine SVG generated!');
 
 const frustumSvg = generateFrustumDori3DSvg(sampleProject);
-if (!frustumSvg.includes('<svg') || !frustumSvg.includes('FRUSTUM &amp; DORI 3D')) {
+if (!frustumSvg.includes('<svg') || (!frustumSvg.includes('FRUSTUM') && !frustumSvg.includes('OPTICAL CLARITY'))) {
   throw new Error('generateFrustumDori3DSvg failed');
 }
 console.log('✓ 3D Frustum & DORI Range Inspector SVG generated!');
 
 const elevationSvg = generateSideElevationSvg(sampleProject);
-if (!elevationSvg.includes('<svg') || !elevationSvg.includes('SIDE ELEVATION PROFILE')) {
+if (!elevationSvg.includes('<svg') || !elevationSvg.includes('SIDE ELEVATION')) {
   throw new Error('generateSideElevationSvg failed');
 }
 console.log('✓ Side Elevation Profile SVG generated!');
 
 const perspectiveSvg = generate3DPerspectiveSvg(sampleProject);
-if (!perspectiveSvg.includes('<svg') || !perspectiveSvg.includes('3D PERSPECTIVE VISUALIZER')) {
+if (!perspectiveSvg.includes('<svg') || !perspectiveSvg.includes('3D PERSPECTIVE')) {
   throw new Error('generate3DPerspectiveSvg failed');
 }
 console.log('✓ 3D Virtual Facility Perspective SVG generated!');

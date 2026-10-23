@@ -20,9 +20,9 @@ export function generateSiteTelemetryMapSvg(
   const structures: LayoutElement[] = project.structure || [];
   const zones: Zone[] = project.zones || [];
 
-  const padding = 50;
+  const padding = 40;
   const mapW = width - padding * 2;
-  const mapH = height - padding * 2;
+  const mapH = height - padding * 2 - 22;
 
   // Coordinate mapping from normalized [0, 1] to canvas pixels
   const toX = (normX: number) => padding + Math.max(0, Math.min(1, normX)) * mapW;
@@ -65,11 +65,11 @@ export function generateSiteTelemetryMapSvg(
         const centerY = st.points.reduce((sum, p) => sum + toY(p.y), 0) / st.points.length;
         obstacleElements.push(`
           <g id="struct-${idx}">
-            <polygon points="${ptsStr}" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-dasharray="${type === 'wall' ? 'none' : 'none'}" />
-            <text x="${centerX.toFixed(1)}" y="${centerY.toFixed(1)}" fill="${stroke}" font-size="9" font-family="system-ui, sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="middle">
-              ${st.name.length > 24 ? st.name.slice(0, 22) + '…' : st.name}
+            <polygon points="${ptsStr}" fill="${fill}" stroke="${stroke}" stroke-width="2" />
+            <text x="${centerX.toFixed(1)}" y="${centerY.toFixed(1)}" stroke="none" fill="${stroke}" font-size="8.5" font-family="system-ui, sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="middle">
+              ${st.name.length > 20 ? st.name.slice(0, 18) + '…' : st.name}
             </text>
-            <text x="${centerX.toFixed(1)}" y="${(centerY + 10).toFixed(1)}" fill="${stroke}" font-size="7.5" font-family="system-ui, sans-serif" font-weight="600" opacity="0.8" text-anchor="middle" dominant-baseline="middle">
+            <text x="${centerX.toFixed(1)}" y="${(centerY + 9).toFixed(1)}" stroke="none" fill="${stroke}" font-size="7" font-family="system-ui, sans-serif" font-weight="600" opacity="0.8" text-anchor="middle" dominant-baseline="middle">
               [${typeLabel}]
             </text>
           </g>
@@ -131,7 +131,7 @@ export function generateSiteTelemetryMapSvg(
 
         <!-- Camera Tag Label -->
         <rect x="${(cx - 22).toFixed(1)}" y="${(cy - 20).toFixed(1)}" width="44" height="13" rx="3" fill="#0f172a" fill-opacity="0.85" />
-        <text x="${cx.toFixed(1)}" y="${(cy - 11).toFixed(1)}" fill="#ffffff" font-size="8" font-family="ui-monospace, monospace" font-weight="700" text-anchor="middle">
+        <text x="${cx.toFixed(1)}" y="${(cy - 11).toFixed(1)}" stroke="none" fill="#ffffff" font-size="8" font-family="ui-monospace, monospace" font-weight="700" text-anchor="middle">
           CAM-${String(idx + 1).padStart(2, '0')}
         </text>
       </g>
@@ -155,24 +155,24 @@ export function generateSiteTelemetryMapSvg(
       <rect x="${padding}" y="${padding}" width="${mapW}" height="${mapH}" fill="url(#facility-grid)" stroke="#94a3b8" stroke-width="2" rx="4" />
 
       <!-- North Compass Indicator -->
-      <g transform="translate(${width - 45}, 35)">
-        <circle cx="0" cy="0" r="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" />
-        <polygon points="0,-12 4,2 0,0 -4,2" fill="#ef4444" />
-        <polygon points="0,12 4,0 0,2 -4,0" fill="#94a3b8" />
-        <text x="0" y="-14" fill="#ef4444" font-size="8" font-weight="800" text-anchor="middle" font-family="system-ui">N</text>
+      <g transform="translate(${width - 40}, 30)">
+        <circle cx="0" cy="0" r="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" />
+        <polygon points="0,-10 3,2 0,0 -3,2" fill="#ef4444" />
+        <polygon points="0,10 3,0 0,2 -3,0" fill="#94a3b8" />
+        <text x="0" y="-12" stroke="none" fill="#ef4444" font-size="7.5" font-weight="800" text-anchor="middle" font-family="system-ui">N</text>
       </g>
 
       <!-- Dimension Rulers -->
-      <g stroke="#64748b" stroke-width="1" opacity="0.8">
+      <g stroke="#64748b" stroke-width="1" opacity="0.85">
         <!-- Top Width Dimension -->
-        <line x1="${padding}" y1="${padding - 14}" x2="${width - padding}" y2="${padding - 14}" marker-start="url(#arrow-dim)" marker-end="url(#arrow-dim)" />
-        <text x="${width / 2}" y="${padding - 18}" fill="#475569" font-size="9" font-weight="700" text-anchor="middle" font-family="ui-monospace, monospace">
+        <line x1="${padding}" y1="${padding - 12}" x2="${width - padding}" y2="${padding - 12}" marker-start="url(#arrow-dim)" marker-end="url(#arrow-dim)" />
+        <text stroke="none" x="${width / 2}" y="${padding - 16}" fill="#475569" font-size="9" font-weight="700" text-anchor="middle" font-family="ui-monospace, monospace">
           FACILITY LENGTH: ${fl.toFixed(1)}m
         </text>
 
         <!-- Left Height Dimension -->
-        <line x1="${padding - 14}" y1="${padding}" x2="${padding - 14}" y2="${height - padding}" marker-start="url(#arrow-dim)" marker-end="url(#arrow-dim)" />
-        <text x="${padding - 20}" y="${height / 2}" fill="#475569" font-size="9" font-weight="700" text-anchor="middle" transform="rotate(-90 ${padding - 20} ${height / 2})" font-family="ui-monospace, monospace">
+        <line x1="${padding - 12}" y1="${padding}" x2="${padding - 12}" y2="${padding + mapH}" marker-start="url(#arrow-dim)" marker-end="url(#arrow-dim)" />
+        <text stroke="none" x="${padding - 18}" y="${padding + mapH / 2}" fill="#475569" font-size="9" font-weight="700" text-anchor="middle" transform="rotate(-90 ${padding - 18} ${padding + mapH / 2})" font-family="ui-monospace, monospace">
           FACILITY WIDTH: ${fw.toFixed(1)}m
         </text>
       </g>
@@ -189,10 +189,10 @@ export function generateSiteTelemetryMapSvg(
       <!-- Bottom Status & Telemetry Bar -->
       <g transform="translate(${padding}, ${height - 24})">
         <rect x="0" y="0" width="${mapW}" height="18" fill="#f8fafc" stroke="#e2e8f0" rx="3" />
-        <text x="8" y="12" fill="#334155" font-size="8.5" font-family="system-ui, sans-serif" font-weight="600">
+        <text x="8" y="12" stroke="none" fill="#334155" font-size="8.5" font-family="system-ui, sans-serif" font-weight="600">
           ● FLEET: ${cameras.length} Active Cameras | STRUCTURES: ${structures.length} Physical Occlusions | CEILING: ${fh.toFixed(1)}m AFF
         </text>
-        <text x="${mapW - 8}" y="12" fill="#0284c7" font-size="8.5" font-family="ui-monospace, monospace" font-weight="700" text-anchor="end">
+        <text x="${mapW - 8}" y="12" stroke="none" fill="#0284c7" font-size="8.5" font-family="ui-monospace, monospace" font-weight="700" text-anchor="end">
           STANDARD: IEC 62676-4 DORI COMPLIANT
         </text>
       </g>
@@ -330,7 +330,7 @@ export function generateCoverageTelemetryMetricsSvg(
   options: { width?: number; height?: number } = {}
 ): string {
   const width = options.width || 860;
-  const height = options.height || 260;
+  const height = options.height || 280;
   const camCount = project.cameras?.length || 0;
   const targetCoverage = project.detection_coverage_target || 95;
   const bitrateKbps = 4096;
@@ -401,9 +401,9 @@ export function generateCoverageTelemetryMetricsSvg(
           <text x="0" y="10" fill="#0f172a" font-size="9" font-weight="700" font-family="system-ui">
             FACILITY SAFETY COVERAGE: ${targetCoverage}% TARGET
           </text>
-          <rect x="0" y="16" width="390" height="12" rx="3" fill="#e2e8f0" />
-          <rect x="0" y="16" width="${(390 * (targetCoverage / 100)).toFixed(0)}" height="12" rx="3" fill="#10b981" />
-          <text x="195" y="25" fill="#ffffff" font-size="8" font-weight="800" text-anchor="middle" font-family="ui-monospace, monospace">
+          <rect x="0" y="16" width="390" height="14" rx="3" fill="#e2e8f0" />
+          <rect x="0" y="16" width="${(390 * (targetCoverage / 100)).toFixed(0)}" height="14" rx="3" fill="#10b981" />
+          <text x="195" y="27" fill="#ffffff" font-size="8.5" font-weight="800" text-anchor="middle" font-family="ui-monospace, monospace">
             ${targetCoverage}% TARGET COVERAGE VERIFIED
           </text>
         </g>
@@ -420,26 +420,26 @@ export function generateCoverageTelemetryMetricsSvg(
           <!-- Card 1: Cameras -->
           <rect x="0" y="0" width="195" height="48" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
           <text x="10" y="15" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">Installed Cameras</text>
-          <text x="10" y="36" fill="#2563eb" font-size="16" font-weight="800" font-family="ui-monospace, monospace">${camCount} Cameras</text>
-          <text x="105" y="34" fill="#059669" font-size="8" font-weight="600">Weatherproof</text>
+          <text x="10" y="36" fill="#2563eb" font-size="15" font-weight="800" font-family="ui-monospace, monospace">${camCount} Cameras</text>
+          <text x="122" y="34" fill="#059669" font-size="8" font-weight="600">Weatherproof</text>
 
           <!-- Card 2: 30-Day Storage -->
           <rect x="205" y="0" width="195" height="48" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
-          <text x="215" y="15" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">30-Day Video Storage</text>
-          <text x="215" y="36" fill="#7c3aed" font-size="16" font-weight="800" font-family="ui-monospace, monospace">${storage30dTb} TB</text>
-          <text x="310" y="34" fill="#64748b" font-size="8" font-weight="600">Secure Backup</text>
+          <text x="215" y="15" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">30-Day Storage</text>
+          <text x="215" y="36" fill="#7c3aed" font-size="15" font-weight="800" font-family="ui-monospace, monospace">${storage30dTb} TB</text>
+          <text x="318" y="34" fill="#64748b" font-size="8" font-weight="600">Auto-Save</text>
 
           <!-- Card 3: PoE Power Budget -->
           <rect x="0" y="56" width="195" height="48" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
           <text x="10" y="71" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">Power Requirements</text>
-          <text x="10" y="92" fill="#0d9488" font-size="16" font-weight="800" font-family="ui-monospace, monospace">~${totalPoeWatts} W</text>
-          <text x="110" y="90" fill="#64748b" font-size="8" font-weight="600">${switchCount}x Hub${switchCount > 1 ? 's' : ''}</text>
+          <text x="10" y="92" fill="#0d9488" font-size="15" font-weight="800" font-family="ui-monospace, monospace">~${totalPoeWatts} W</text>
+          <text x="115" y="90" fill="#64748b" font-size="8" font-weight="600">${switchCount}x PoE Hub</text>
 
           <!-- Card 4: Bitrate Throughput -->
           <rect x="205" y="56" width="195" height="48" rx="6" fill="#f8fafc" stroke="#e2e8f0" />
           <text x="215" y="71" fill="#64748b" font-size="8" font-weight="700" text-transform="uppercase">Network Video Stream</text>
-          <text x="215" y="92" fill="#dc2626" font-size="16" font-weight="800" font-family="ui-monospace, monospace">${(camCount * 4.1).toFixed(1)} Mbps</text>
-          <text x="320" y="90" fill="#64748b" font-size="8" font-weight="600">High-Def</text>
+          <text x="215" y="92" fill="#dc2626" font-size="15" font-weight="800" font-family="ui-monospace, monospace">${(camCount * 4.1).toFixed(1)} Mbps</text>
+          <text x="325" y="90" fill="#64748b" font-size="8" font-weight="600">Gigabit</text>
         </g>
 
         <!-- Safety Alert Timeline in Everyday Language -->
@@ -455,16 +455,16 @@ export function generateCoverageTelemetryMetricsSvg(
             <text x="45" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">Live Video</text>
             
             <!-- Segment 2: Hazard Check -->
-            <rect x="94" y="0" width="140" height="20" rx="3" fill="#0d9488" />
-            <text x="164" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">Smart Safety Check</text>
+            <rect x="94" y="0" width="136" height="20" rx="3" fill="#0d9488" />
+            <text x="162" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">Smart Safety AI</text>
             
             <!-- Segment 3: Instant Protection -->
-            <rect x="238" y="0" width="162" height="20" rx="3" fill="#16a34a" />
-            <text x="319" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">Instant Alert / Safe</text>
+            <rect x="234" y="0" width="166" height="20" rx="3" fill="#16a34a" />
+            <text x="317" y="13" fill="#ffffff" font-size="8" font-weight="700" text-anchor="middle" font-family="system-ui, sans-serif">Instant Alert / Safe</text>
           </g>
 
           <text x="0" y="52" fill="#475569" font-size="8" font-family="system-ui, sans-serif">
-            Continuous Facility Protection: Cameras continuously watch designated areas and alert managers to safety risks.
+            Continuous Protection: Cameras watch designated zones and instantly alert on safety hazards.
           </text>
         </g>
       </g>
@@ -647,23 +647,23 @@ export function generateBirdCamera3DSvg(
       ${cam3DElements.join('\n')}
 
       <!-- Telemetry Status Inspector HUD (Bottom Right) -->
-      <g transform="translate(${width - 240}, ${height - 100})">
-        <rect x="0" y="0" width="225" height="88" rx="8" fill="rgba(15, 23, 42, 0.92)" stroke="#1e293b" stroke-width="1.5" />
-        <text x="12" y="18" fill="#00e5ff" font-size="9" font-weight="800" font-family="ui-monospace">
+      <g transform="translate(${width - 245}, ${height - 96})">
+        <rect x="0" y="0" width="230" height="84" rx="8" fill="rgba(15, 23, 42, 0.92)" stroke="#1e293b" stroke-width="1.5" />
+        <text x="12" y="17" fill="#00e5ff" font-size="9" font-weight="800" font-family="ui-monospace">
           ● SIGHTLINE CHECK &amp; VISIBILITY
         </text>
-        <text x="12" y="34" fill="#94a3b8" font-size="8" font-family="system-ui">
+        <text x="12" y="31" fill="#94a3b8" font-size="8" font-family="system-ui">
           Nearest Camera: <strong style="color:#ffffff;">3.8m</strong> away
         </text>
-        <text x="12" y="48" fill="#94a3b8" font-size="8" font-family="system-ui">
+        <text x="12" y="45" fill="#94a3b8" font-size="8" font-family="system-ui">
           Obstacle Clearance: <strong style="color:#10b981;">100% Unobstructed</strong>
         </text>
-        <text x="12" y="62" fill="#94a3b8" font-size="8" font-family="system-ui">
+        <text x="12" y="58" fill="#94a3b8" font-size="8" font-family="system-ui">
           Clarity Standard: <strong style="color:#00e5ff;">Face &amp; Uniform Level</strong>
         </text>
-        <rect x="12" y="68" width="200" height="12" rx="3" fill="#1e293b" />
-        <rect x="12" y="68" width="198" height="12" rx="3" fill="#00e5ff" opacity="0.8" />
-        <text x="112" y="77" fill="#0b0f19" font-size="7.5" font-weight="800" text-anchor="middle" font-family="ui-monospace">
+        <rect x="12" y="64" width="206" height="13" rx="3" fill="#1e293b" />
+        <rect x="12" y="64" width="204" height="13" rx="3" fill="#00e5ff" opacity="0.8" />
+        <text x="115" y="74" fill="#0b0f19" font-size="7.5" font-weight="800" text-anchor="middle" font-family="ui-monospace">
           BLIND SPOTS ELIMINATED
         </text>
       </g>
@@ -681,7 +681,7 @@ export function generateFrustumDori3DSvg(
   options: { width?: number; height?: number } = {}
 ): string {
   const width = options.width || 860;
-  const height = options.height || 480;
+  const height = options.height || 420;
   const cameras: Camera[] = project.cameras || [];
   const primaryCam = cameras[0] || { name: 'CAM-01', horizontal_fov_degrees: 106, resolution_width: 2688, resolution_height: 1520 };
 
@@ -701,16 +701,16 @@ export function generateFrustumDori3DSvg(
       <rect x="0" y="16" width="${width}" height="16" fill="#0f172a" />
       <circle cx="20" cy="16" r="4" fill="#38bdf8" />
       <text x="32" y="19" fill="#38bdf8" font-size="11" font-weight="800" font-family="ui-monospace, monospace">
-        MULTI-ANGLE SIMULATION · OPTICAL CLARITY ZONES (DISTANCE FROM CAMERA)
+        MULTI-ANGLE SIMULATION · OPTICAL CLARITY ZONES
       </text>
       <text x="${width - 16}" y="19" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Wide-Angle Optical Clarity · High Definition · 4 Distinct Visual Zones
+        High Definition · 4 Visual Clarity Tiers
       </text>
 
       <!-- Left: Camera Mount & Vertical Frustum Elevation -->
-      <g transform="translate(60, 65)">
+      <g transform="translate(50, 50)">
         <!-- Ceiling Truss (Z = 5.0m) -->
-        <line x1="0" y1="20" x2="360" y2="20" stroke="#475569" stroke-width="4" />
+        <line x1="0" y1="20" x2="350" y2="20" stroke="#475569" stroke-width="4" />
         <text x="0" y="12" fill="#94a3b8" font-size="8.5" font-weight="700" font-family="ui-monospace">CEILING MOUNT STRUCTURE</text>
 
         <!-- Dropper Pole (1.2m) -->
@@ -722,75 +722,75 @@ export function generateFrustumDori3DSvg(
         <text x="80" y="84" fill="#0b0f19" font-size="9" font-weight="800" text-anchor="middle" font-family="ui-monospace">CAM</text>
 
         <!-- Ground Plane (Z = 0.0m) -->
-        <line x1="0" y1="320" x2="360" y2="320" stroke="#334155" stroke-width="2" />
-        <text x="0" y="335" fill="#64748b" font-size="8" font-family="ui-monospace">GROUND FLOOR LEVEL</text>
+        <line x1="0" y1="300" x2="350" y2="300" stroke="#334155" stroke-width="2" />
+        <text x="0" y="315" fill="#64748b" font-size="8" font-family="ui-monospace">GROUND FLOOR LEVEL</text>
 
         <!-- Target Plane (Z = 1.5m AFF) -->
-        <line x1="0" y1="240" x2="360" y2="240" stroke="#00e5ff" stroke-width="1" stroke-dasharray="4,4" opacity="0.6" />
-        <text x="240" y="234" fill="#00e5ff" font-size="8" font-family="ui-monospace">WORKER HEIGHT (1.5m)</text>
+        <line x1="0" y1="220" x2="350" y2="220" stroke="#00e5ff" stroke-width="1" stroke-dasharray="4,4" opacity="0.6" />
+        <text x="230" y="214" fill="#00e5ff" font-size="8" font-family="ui-monospace">WORKER HEIGHT (1.5m)</text>
 
         <!-- Expanding Frustum Cone Rays -->
-        <polygon points="80,80 120,320 340,320" fill="url(#dori-grad)" fill-opacity="0.25" stroke="#00e5ff" stroke-width="1.5" />
-        <line x1="80" y1="80" x2="230" y2="320" stroke="#ffffff" stroke-width="1.2" stroke-dasharray="3,3" opacity="0.8" />
-        <text x="235" y="300" fill="#ffffff" font-size="8" font-family="ui-monospace">Aimed Sightline</text>
+        <polygon points="80,80 120,300 340,300" fill="url(#dori-grad)" fill-opacity="0.25" stroke="#00e5ff" stroke-width="1.5" />
+        <line x1="80" y1="80" x2="230" y2="300" stroke="#ffffff" stroke-width="1.2" stroke-dasharray="3,3" opacity="0.8" />
+        <text x="235" y="280" fill="#ffffff" font-size="8" font-family="ui-monospace">Aimed Sightline</text>
 
         <!-- Under-Camera Dead Zone -->
-        <rect x="80" y="308" width="40" height="12" fill="rgba(239, 68, 68, 0.3)" stroke="#ef4444" stroke-width="1" />
-        <text x="100" y="318" fill="#ef4444" font-size="7" font-weight="700" text-anchor="middle" font-family="ui-monospace">Protected by Adjacent Cam</text>
+        <rect x="80" y="288" width="40" height="12" fill="rgba(239, 68, 68, 0.3)" stroke="#ef4444" stroke-width="1" />
+        <text x="100" y="298" fill="#ef4444" font-size="7" font-weight="700" text-anchor="middle" font-family="ui-monospace">Protected by Adjacent Cam</text>
       </g>
 
       <!-- Right: DORI Distance Bands & PPM Thresholds -->
-      <g transform="translate(460, 65)">
-        <text x="0" y="16" fill="#f8fafc" font-size="11" font-weight="800" font-family="ui-monospace">
+      <g transform="translate(430, 48)">
+        <text x="0" y="14" fill="#f8fafc" font-size="10.5" font-weight="800" font-family="ui-monospace">
           VISUAL CLARITY BY DISTANCE FROM CAMERA
         </text>
-        <text x="0" y="30" fill="#94a3b8" font-size="8.5" font-family="system-ui">
+        <text x="0" y="26" fill="#94a3b8" font-size="8" font-family="system-ui">
           Clear visual clarity bands showing what can be recognized at each distance
         </text>
 
         <!-- Tier 1: Identify -->
-        <g transform="translate(0, 48)">
-          <rect x="0" y="0" width="350" height="42" rx="6" fill="rgba(0, 229, 255, 0.12)" stroke="#00e5ff" stroke-width="1.5" />
-          <rect x="0" y="0" width="90" height="42" rx="6" fill="#00e5ff" />
-          <text x="45" y="24" fill="#090d16" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">IDENTIFY</text>
-          <text x="102" y="18" fill="#00e5ff" font-size="9" font-weight="700" font-family="ui-monospace">Face &amp; ID Level · Up to 5.4m</text>
-          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Crystal-clear facial recognition, ID badge, and label reading</text>
+        <g transform="translate(0, 36)">
+          <rect x="0" y="0" width="395" height="40" rx="6" fill="rgba(0, 229, 255, 0.12)" stroke="#00e5ff" stroke-width="1.5" />
+          <rect x="0" y="0" width="85" height="40" rx="6" fill="#00e5ff" />
+          <text x="42" y="22" fill="#090d16" font-size="8.5" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">IDENTIFY</text>
+          <text x="96" y="16" fill="#00e5ff" font-size="9" font-weight="700" font-family="ui-monospace">Face &amp; ID Level (≤5.4m)</text>
+          <text x="96" y="29" fill="#94a3b8" font-size="7.5" font-family="system-ui">Crystal-clear facial recognition &amp; ID badge verification</text>
         </g>
 
         <!-- Tier 2: Recognize -->
-        <g transform="translate(0, 98)">
-          <rect x="0" y="0" width="350" height="42" rx="6" fill="rgba(16, 185, 129, 0.12)" stroke="#10b981" stroke-width="1.5" />
-          <rect x="0" y="0" width="90" height="42" rx="6" fill="#10b981" />
-          <text x="45" y="24" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">RECOGNIZE</text>
-          <text x="102" y="18" fill="#10b981" font-size="9" font-weight="700" font-family="ui-monospace">Safety Gear &amp; Uniforms · 5.4m to 10.8m</text>
-          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Confirm hard hats, safety vests, boots, and company uniforms</text>
+        <g transform="translate(0, 84)">
+          <rect x="0" y="0" width="395" height="40" rx="6" fill="rgba(16, 185, 129, 0.12)" stroke="#10b981" stroke-width="1.5" />
+          <rect x="0" y="0" width="85" height="40" rx="6" fill="#10b981" />
+          <text x="42" y="22" fill="#ffffff" font-size="8.5" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">RECOGNIZE</text>
+          <text x="96" y="16" fill="#10b981" font-size="9" font-weight="700" font-family="ui-monospace">Safety Gear &amp; Uniforms (≤10.8m)</text>
+          <text x="96" y="29" fill="#94a3b8" font-size="7.5" font-family="system-ui">Confirm hard hats, safety vests, boots &amp; PPE compliance</text>
         </g>
 
         <!-- Tier 3: Observe -->
-        <g transform="translate(0, 148)">
-          <rect x="0" y="0" width="350" height="42" rx="6" fill="rgba(234, 179, 8, 0.12)" stroke="#eab308" stroke-width="1.5" />
-          <rect x="0" y="0" width="90" height="42" rx="6" fill="#eab308" />
-          <text x="45" y="24" fill="#090d16" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">OBSERVE</text>
-          <text x="102" y="18" fill="#eab308" font-size="9" font-weight="700" font-family="ui-monospace">Forklifts &amp; Machinery · 10.8m to 21.6m</text>
-          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Track forklift routes, machinery operations, and pallet loading</text>
+        <g transform="translate(0, 132)">
+          <rect x="0" y="0" width="395" height="40" rx="6" fill="rgba(234, 179, 8, 0.12)" stroke="#eab308" stroke-width="1.5" />
+          <rect x="0" y="0" width="85" height="40" rx="6" fill="#eab308" />
+          <text x="42" y="22" fill="#090d16" font-size="8.5" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">OBSERVE</text>
+          <text x="96" y="16" fill="#eab308" font-size="9" font-weight="700" font-family="ui-monospace">Vehicles &amp; Machinery (≤21.6m)</text>
+          <text x="96" y="29" fill="#94a3b8" font-size="7.5" font-family="system-ui">Track forklift routes, machinery &amp; pallet transit lanes</text>
         </g>
 
         <!-- Tier 4: Detect -->
-        <g transform="translate(0, 198)">
-          <rect x="0" y="0" width="350" height="42" rx="6" fill="rgba(249, 115, 22, 0.12)" stroke="#f97316" stroke-width="1.5" />
-          <rect x="0" y="0" width="90" height="42" rx="6" fill="#f97316" />
-          <text x="45" y="24" fill="#ffffff" font-size="9" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">DETECT</text>
-          <text x="102" y="18" fill="#f97316" font-size="9" font-weight="700" font-family="ui-monospace">Perimeter &amp; Motion · 21.6m to 54.0m</text>
-          <text x="102" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">Wide area motion detection alerting supervisors to entry</text>
+        <g transform="translate(0, 180)">
+          <rect x="0" y="0" width="395" height="40" rx="6" fill="rgba(249, 115, 22, 0.12)" stroke="#f97316" stroke-width="1.5" />
+          <rect x="0" y="0" width="85" height="40" rx="6" fill="#f97316" />
+          <text x="42" y="22" fill="#ffffff" font-size="8.5" font-weight="800" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">DETECT</text>
+          <text x="96" y="16" fill="#f97316" font-size="9" font-weight="700" font-family="ui-monospace">Perimeter &amp; Motion (≤54m)</text>
+          <text x="96" y="29" fill="#94a3b8" font-size="7.5" font-family="system-ui">Wide area motion detection alerting on zone intrusion</text>
         </g>
 
         <!-- Summary Box -->
-        <g transform="translate(0, 248)">
-          <rect x="0" y="0" width="350" height="70" rx="6" fill="#0f172a" stroke="#1e293b" />
-          <text x="12" y="18" fill="#38bdf8" font-size="8.5" font-family="ui-monospace" font-weight="700">CAMERA SPECIFICATION IN SIMPLE TERMS</text>
-          <text x="12" y="34" fill="#94a3b8" font-size="8" font-family="system-ui">Lens Coverage: <strong>Wide-Angle Field of View</strong> covering entire work bays</text>
-          <text x="12" y="48" fill="#94a3b8" font-size="8" font-family="system-ui">Picture Quality: <strong>High-Definition Video</strong> saved for 30 full days</text>
-          <text x="12" y="62" fill="#10b981" font-size="8" font-family="system-ui">Evidence Quality: <strong>Meets International Security Standards</strong></text>
+        <g transform="translate(0, 230)">
+          <rect x="0" y="0" width="395" height="66" rx="6" fill="#0f172a" stroke="#1e293b" />
+          <text x="12" y="17" fill="#38bdf8" font-size="8.5" font-family="ui-monospace" font-weight="700">CAMERA SPECIFICATION IN SIMPLE TERMS</text>
+          <text x="12" y="32" fill="#94a3b8" font-size="8" font-family="system-ui">Lens Coverage: <strong style="color:#ffffff;">Wide-Angle Field of View</strong> covering entire work bays</text>
+          <text x="12" y="46" fill="#94a3b8" font-size="8" font-family="system-ui">Picture Quality: <strong style="color:#ffffff;">High-Definition Video</strong> saved for 30 full days</text>
+          <text x="12" y="59" fill="#10b981" font-size="8" font-family="system-ui">Evidence Quality: <strong>Meets International Security Standards</strong></text>
         </g>
       </g>
     </svg>
@@ -995,13 +995,13 @@ export function generate3DPerspectiveSvg(
       ${cam3DPyramids.join('\n')}
 
       <!-- Isometric Compass (Bottom Left) -->
-      <g transform="translate(60, ${height - 60})">
+      <g transform="translate(95, ${height - 50})">
         <line x1="0" y1="0" x2="35" y2="-15" stroke="#ef4444" stroke-width="2" />
         <text x="42" y="-14" fill="#ef4444" font-size="8.5" font-weight="800" font-family="ui-monospace">X (Length)</text>
-        <line x1="0" y1="0" x2="-35" y2="-15" stroke="#3b82f6" stroke-width="2" />
-        <text x="-40" y="-14" fill="#3b82f6" font-size="8.5" font-weight="800" font-family="ui-monospace" text-anchor="end">Y (Width)</text>
-        <line x1="0" y1="0" x2="0" y2="-40" stroke="#10b981" stroke-width="2" />
-        <text x="6" y="-38" fill="#10b981" font-size="8.5" font-weight="800" font-family="ui-monospace">Z (Height)</text>
+        <line x1="0" y1="0" x2="-30" y2="-12" stroke="#3b82f6" stroke-width="2" />
+        <text x="-36" y="-12" fill="#3b82f6" font-size="8.5" font-weight="800" font-family="ui-monospace" text-anchor="end">Y (Width)</text>
+        <line x1="0" y1="0" x2="0" y2="-35" stroke="#10b981" stroke-width="2" />
+        <text x="6" y="-33" fill="#10b981" font-size="8.5" font-weight="800" font-family="ui-monospace">Z (Height)</text>
       </g>
     </svg>
   `;

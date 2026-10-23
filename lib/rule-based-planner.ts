@@ -409,7 +409,12 @@ export function parseFacilityBuildings(text: any, totalCameraCount: number = 15)
   const isFeet = /in\s*ft|feet|\bft\b|foot/i.test(textStr);
   const buildings: FacilityBuilding[] = [];
 
-  const lines = textStr.split(/\r?\n/);
+  // 1. Separate inline or comma-separated buildings into separate lines
+  const normalizedText = textStr
+    .replace(/(?:,\s*(?:and\s+)?|;\s*|\band\s+)(?=\b(?:building|bldg|section|block)\s+[0-9A-Z])/gi, '\n')
+    .replace(/\.\s+(?=\b(?:building|bldg|section|block)\s+[0-9A-Z])/gi, '\n');
+
+  const lines = normalizedText.split(/\r?\n/);
   let currentBldg: Partial<FacilityBuilding> | null = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -422,12 +427,44 @@ export function parseFacilityBuildings(text: any, totalCameraCount: number = 15)
         buildings.push(finalizeBuilding(currentBldg, isFeet, buildings.length + 1));
       }
       const bNum = bldgMatch[1];
-      const rawName = bldgMatch[2]?.trim() || `Building ${bNum}`;
-      const cleanName = rawName.replace(/^[-–—:]\s*/, '').trim() || `Building ${bNum}`;
+      const rawPayload = bldgMatch[2]?.trim() || `Building ${bNum}`;
+
+      // Check for inline dimensions e.g. (50 ft x 50 ft x 15 ft) or [15.2m x 15.2m x 4.6m]
+      let lenFt: number | undefined;
+      let widFt: number | undefined;
+      let htFt: number | undefined;
+
+      const dimInlineMatch = rawPayload.match(/(\d+(?:\.\d+)?)\s*(?:ft|'|m)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:ft|'|m)?(?:\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:ft|'|m)?)?/i);
+      if (dimInlineMatch) {
+        const d1 = parseFloat(dimInlineMatch[1]);
+        const d2 = parseFloat(dimInlineMatch[2]);
+        const d3 = dimInlineMatch[3] ? parseFloat(dimInlineMatch[3]) : 15;
+        // If values are <= 35 and text indicates meters, convert
+        const isMeter = /\[\s*\d+(?:\.\d+)?\s*m\b|\bmeters?\b/i.test(dimInlineMatch[0]) && !/ft|feet/i.test(dimInlineMatch[0]);
+        lenFt = isMeter ? Math.round(d1 * 3.28084) : d1;
+        widFt = isMeter ? Math.round(d2 * 3.28084) : d2;
+        htFt = isMeter ? Math.round(d3 * 3.28084) : d3;
+      }
+
+      // Strip parentheses, brackets, and any trailing sentence (e.g. ". The vision architecture...")
+      let cleanName = rawPayload
+        .replace(/\(.*?\)/g, '')
+        .replace(/\[.*?\]/g, '')
+        .replace(/\.\s+[A-Z].*$/, '')
+        .replace(/[.;].*$/, '')
+        .replace(/^[-–—:]\s*/, '')
+        .trim();
+
+      if (!cleanName || cleanName.length < 2) cleanName = `Zone ${bNum}`;
+      if (cleanName.length > 36) cleanName = cleanName.slice(0, 34).trim() + '…';
+
       currentBldg = {
         id: randomUUID(),
         code: `B${bNum.padStart(2, '0')}`,
         name: `Building ${bNum.padStart(2, '0')} - ${cleanName.charAt(0).toUpperCase() + cleanName.slice(1)}`,
+        length_ft: lenFt,
+        width_ft: widFt,
+        height_ft: htFt,
       };
       continue;
     }

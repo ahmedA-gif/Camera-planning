@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import type { DetVisionProject, FacilityBuilding } from '@/lib/types';
 import { ensureMultiBuildingFleet } from '@/lib/rule-based-planner';
-import { computeReportMetrics } from '@/lib/report-content';
+import { computeReportMetrics, cleanZoneName } from '@/lib/report-content';
 import { 
   generateSiteTelemetryMapSvg, 
   generate3DPerspectiveSvg,
@@ -107,12 +107,12 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
   const m = computeReportMetrics(resolvedProject);
 
   // All 6 Visual Diagrams generated with calibrated dimensions
-  const diagram1Svg = generateSiteTelemetryMapSvg(resolvedProject, { width: 780, height: 230 });
-  const diagram2Svg = generateSideElevationSvg(resolvedProject, { width: 780, height: 230 });
-  const diagram3Svg = generateBirdCamera3DSvg(resolvedProject, { width: 780, height: 230 });
-  const diagram4Svg = generate3DPerspectiveSvg(resolvedProject, { width: 780, height: 230 });
-  const diagram5Svg = generateFrustumDori3DSvg(resolvedProject, { width: 780, height: 230 });
-  const diagram6Svg = generateCoverageTelemetryMetricsSvg(resolvedProject, { width: 780, height: 230 });
+  const diagram1Svg = generateSiteTelemetryMapSvg(resolvedProject, { width: 860, height: 420 });
+  const diagram2Svg = generateSideElevationSvg(resolvedProject, { width: 860, height: 420 });
+  const diagram3Svg = generateBirdCamera3DSvg(resolvedProject, { width: 860, height: 440 });
+  const diagram4Svg = generate3DPerspectiveSvg(resolvedProject, { width: 860, height: 440 });
+  const diagram5Svg = generateFrustumDori3DSvg(resolvedProject, { width: 860, height: 420 });
+  const diagram6Svg = generateCoverageTelemetryMetricsSvg(resolvedProject, { width: 860, height: 280 });
 
   const handleExportDocx = async () => {
     setDownloadingDocx(true);
@@ -450,19 +450,23 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                     </tr>
                   </thead>
                   <tbody>
-                    {bldgs.map((b) => (
-                      <tr key={b.id} className="border-b border-slate-200">
-                        <td className="p-1.5 font-bold text-slate-900">{b.name}</td>
-                        <td className="p-1.5 text-slate-600">{b.purpose || 'Operations'}</td>
-                        <td className="p-1.5 text-slate-700">{Math.round(b.area_sqm || 0)} m²</td>
-                        <td className="p-1.5 font-bold text-blue-900">{b.camera_count ?? 0}</td>
-                        <td className="p-1.5">
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[9.5px]">
-                            Monitored
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {bldgs.map((b) => {
+                      let p = b.purpose || 'Operations & Active Floor';
+                      if (p.length > 60) p = p.slice(0, 58) + '…';
+                      return (
+                        <tr key={b.id} className="border-b border-slate-200">
+                          <td className="p-1.5 font-bold text-slate-900">{cleanZoneName(b.name)}</td>
+                          <td className="p-1.5 text-slate-600">{p}</td>
+                          <td className="p-1.5 text-slate-700">{Math.round(b.area_sqm || 0)} m²</td>
+                          <td className="p-1.5 font-bold text-blue-900">{b.camera_count ?? 0}</td>
+                          <td className="p-1.5">
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[9.5px]">
+                              Monitored
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               ) : (
@@ -683,28 +687,37 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
 
             {/* Camera Schedule Table */}
             <div className="overflow-x-auto mb-4">
-              <table className="w-full border-collapse text-left text-[10.5px]">
+              <table className="w-full border-collapse text-left text-[10px]">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
                     <th className="p-1.5 border border-slate-200">Camera #</th>
-                    <th className="p-1.5 border border-slate-200">Building / Zone</th>
+                    <th className="p-1.5 border border-slate-200">Facility Zone</th>
                     <th className="p-1.5 border border-slate-200">Mount Location</th>
                     <th className="p-1.5 border border-slate-200">Height</th>
                     <th className="p-1.5 border border-slate-200">Direction</th>
-                    <th className="p-1.5 border border-slate-200">Target Area Watched</th>
+                    <th className="p-1.5 border border-slate-200">Placement Coordinates</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {cameras.slice(0, 18).map((c, i) => (
-                    <tr key={c.id || i} className="border-b border-slate-200 even:bg-slate-50/60">
-                      <td className="p-1.5 font-bold text-blue-900">CAM-{String(i + 1).padStart(2, '0')}</td>
-                      <td className="p-1.5 text-slate-700 font-medium">{c.building_name || 'Main Facility'}</td>
-                      <td className="p-1.5 text-slate-600">{mountWords[c.mount_type || 'wall-v'] || 'Wall / Ceiling Mount'}</td>
-                      <td className="p-1.5 text-slate-700">{(c.height_m || 4.2).toFixed(1)} m</td>
-                      <td className="p-1.5 text-slate-600">{compassWord(c.orientation_degrees || 0)}</td>
-                      <td className="p-1.5 text-slate-800 font-medium">{c.target_area || 'Floor & Aisle Zone'}</td>
-                    </tr>
-                  ))}
+                  {cameras.slice(0, 18).map((c, i) => {
+                    const fl = resolvedProject.facility_length_m || 25;
+                    const fw = resolvedProject.facility_width_m || 20;
+                    const coordStr = `X: ${(c.x * fl).toFixed(1)}m, Y: ${(c.y * fw).toFixed(1)}m`;
+                    return (
+                      <tr key={c.id || i} className="border-b border-slate-200 even:bg-slate-50/60">
+                        <td className="p-1.5 font-bold text-blue-900">CAM-{String(i + 1).padStart(2, '0')}</td>
+                        <td className="p-1.5 text-slate-800 font-bold">{cleanZoneName(c.building_name)}</td>
+                        <td className="p-1.5 text-slate-600">{mountWords[c.mount_type || 'wall-v'] || 'Wall / Ceiling Mount'}</td>
+                        <td className="p-1.5 text-slate-700">{(c.height_m || 4.2).toFixed(1)} m</td>
+                        <td className="p-1.5 text-slate-600">{compassWord(c.orientation_degrees || 0)}</td>
+                        <td className="p-1.5">
+                          <span className="font-mono text-[9px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200">
+                            {coordStr}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

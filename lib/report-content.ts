@@ -121,6 +121,21 @@ function compassWord(deg: number): string {
   return names[Math.round(d / 45) % 8];
 }
 
+export function cleanZoneName(str?: string): string {
+  if (!str) return 'Main Operations';
+  // If it contains "Building XX - Name ...", extract just "Building XX - Name"
+  const bMatch = str.match(/(Building\s*\d+\s*[-–—:]\s*[A-Za-z0-9\s]+?)(?:\s*\(|\s*\[|\s*,|\.|$)/i);
+  if (bMatch) {
+    return bMatch[1].trim();
+  }
+  // Strip parenthetical dimensions like (50 ft x 50 ft...) or [15m x 15m...]
+  let cleaned = str.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+  // Strip after period or semicolon or "The vision architecture..."
+  cleaned = cleaned.replace(/\.\s+[A-Z].*$/, '').replace(/[.;].*$/, '').trim();
+  if (cleaned.length > 34) cleaned = cleaned.slice(0, 32).trim() + '…';
+  return cleaned || 'Main Operations';
+}
+
 interface Figure { title: string; what: string; read: string; svg: string }
 
 export async function buildReportHtml(rawProject: any, mode: ReportMode): Promise<string> {
@@ -139,42 +154,40 @@ export async function buildReportHtml(rawProject: any, mode: ReportMode): Promis
   const storageTb = ((camCount * 4096 * 86400 * 30) / (8 * 1e9)).toFixed(1);
   const switches = Math.max(1, Math.ceil(camCount / 24));
 
-  const w = mode === 'pdf' ? 760 : 640;
-  const h = mode === 'pdf' ? 220 : 200;
   const raw: Array<[string, string, string, string]> = [
     [
       'Top View (2D Architectural Floor Plan)',
-      generateSiteTelemetryMapSvg(project, { width: w, height: h }),
+      generateSiteTelemetryMapSvg(project, { width: 860, height: 420 }),
       'A bird\'s-eye view of your facility showing where each camera is positioned and which direction its lens points.',
       'Shaded cones show the area each camera protects. Clear spaces between cones indicate unprotected zones.'
     ],
     [
       'Side Elevation (Mounting Height & Angles)',
-      generateSideElevationSvg(project, { width: w, height: h }),
+      generateSideElevationSvg(project, { width: 860, height: 420 }),
       'A side cross-section showing camera mounting heights above the floor and downward tilt angles toward work areas.',
       'The dead-zone directly under a camera is protected by adjacent overlapping camera cones.'
     ],
     [
       'Bird Camera 3D (Obstacle Clearance & Blind Spots)',
-      generateBirdCamera3DSvg(project, { width: w, height: h }),
+      generateBirdCamera3DSvg(project, { width: 860, height: 440 }),
       'A high-angle 3D view showing if tall equipment, storage racks, or machines block camera sightlines.',
       'Shaded spots behind objects highlight blind spots where extra camera angles are placed to maintain unbroken sight.'
     ],
     [
       '3D Perspective (Depth & Facility Simulation)',
-      generate3DPerspectiveSvg(project, { width: w, height: h }),
+      generate3DPerspectiveSvg(project, { width: 860, height: 440 }),
       'A realistic 3D perspective showing camera sightlines working together across the facility interior.',
       'Overlapping cones ensure workers and forklifts remain visible as they move through aisles and doors.'
     ],
     [
       'Frustum & DORI 3D (Optical Clarity Zones)',
-      generateFrustumDori3DSvg(project, { width: w, height: h }),
+      generateFrustumDori3DSvg(project, { width: 860, height: 420 }),
       'Distance-based clarity cones: closer to the camera provides face identification; further out provides motion detection.',
       'Color zones: Green = Face/ID level; Blue = Safety vest/uniform; Yellow = Forklift observation; Orange = Motion detection.'
     ],
     [
       'Multi-Angle Coverage Gap & Telemetry',
-      generateCoverageTelemetryMetricsSvg(project, { width: w, height: h }),
+      generateCoverageTelemetryMetricsSvg(project, { width: 860, height: 280 }),
       'Scorecard showing overall facility protection percentage, blind spot gap measurements, and hardware sizing.',
       'Compare the coverage percentage with your 95% target to verify compliance.'
     ],
@@ -185,7 +198,7 @@ export async function buildReportHtml(rawProject: any, mode: ReportMode): Promis
   if (mode === 'docx') {
     figs = figs.map(f => ({
       ...f,
-      svg: f.svg.replace('width="100%" height="auto"', `width="${w}" height="${h}" style="width:${w}px;height:${h}px;display:block;margin:0 auto;"`),
+      svg: f.svg.replace('width="100%" height="auto"', `width="640" height="260" style="width:640px;height:260px;display:block;margin:0 auto;"`),
     }));
   }
 
@@ -220,54 +233,65 @@ export async function buildReportHtml(rawProject: any, mode: ReportMode): Promis
   }
 
   // ---------- camera table ----------
+  const fl = project.facility_length_m || 25;
+  const fw = project.facility_width_m || 20;
   const byBuilding = bldgs.map(b => ({
     b,
     list: cams.filter(c => c.building_id === b.id || c.building_name === b.name),
   }));
   let cameraSection: string;
   if (camCount <= 18) {
-    cameraSection = `<table class="t"><tr><th>Camera #</th><th>Building / Zone</th><th>Mount Location</th><th>Height</th><th>Direction</th><th>Target Area</th></tr>` +
-      cams.map((c, i) => `<tr><td><b>CAM-${String(i + 1).padStart(2, '0')}</b></td><td>${esc(c.building_name || 'Main Hall')}</td><td>${esc(mountWords[c.mount_type] || 'Wall / Ceiling Mount')}</td><td>${(c.height_m || 4.2).toFixed(1)} m</td><td>${compassWord(c.orientation_degrees || 0)}</td><td>${esc(c.target_area || 'Floor & Aisle Zone')}</td></tr>`).join('') +
+    cameraSection = `<table class="t cam-t"><tr><th>Camera #</th><th>Facility Zone</th><th>Mount Location</th><th>Height</th><th>Direction</th><th>Placement Coordinates</th></tr>` +
+      cams.map((c, i) => {
+        const coordStr = `X: ${(c.x * fl).toFixed(1)}m, Y: ${(c.y * fw).toFixed(1)}m`;
+        return `<tr><td><b>CAM-${String(i + 1).padStart(2, '0')}</b></td><td><b>${esc(cleanZoneName(c.building_name))}</b></td><td>${esc(mountWords[c.mount_type] || 'Wall / Ceiling Mount')}</td><td>${(c.height_m || 4.2).toFixed(1)} m</td><td>${compassWord(c.orientation_degrees || 0)}</td><td><span class="coord-pill">${coordStr}</span></td></tr>`;
+      }).join('') +
       `</table>`;
   } else {
     cameraSection = `<table class="t"><tr><th>Building / Facility Zone</th><th>Total Cameras</th><th>Allocated Camera Numbers</th><th>Primary Coverage Area</th></tr>` +
-      byBuilding.map(({ b, list }) => `<tr><td><b>${esc(b.name)}</b></td><td><span class="pill">${list.length} Cameras</span></td><td>${esc(list.map((c, idx) => `CAM-${String(idx + 1).padStart(2, '0')}`).slice(0, 8).join(', '))}${list.length > 8 ? '…' : ''}</td><td>${esc(b.purpose || 'Active Operational Floor')}</td></tr>`).join('') +
+      byBuilding.map(({ b, list }) => `<tr><td><b>${esc(cleanZoneName(b.name))}</b></td><td><span class="pill">${list.length} Cameras</span></td><td>${esc(list.map((c, idx) => `CAM-${String(idx + 1).padStart(2, '0')}`).slice(0, 8).join(', '))}${list.length > 8 ? '…' : ''}</td><td>${esc(b.purpose || 'Active Operational Floor')}</td></tr>`).join('') +
       `</table>`;
   }
 
   const buildingRows = bldgs.length
     ? `<table class="t"><tr><th>Building Zone</th><th>Facility Purpose</th><th>Floor Size</th><th>Cameras</th><th>Status</th></tr>` +
-      bldgs.map(b => `<tr><td><b>${esc(b.name)}</b></td><td>${esc(b.purpose || 'Operations')}</td><td>${Math.round(b.area_sqm || 0)} m²</td><td><b>${b.camera_count ?? 0}</b></td><td><span class="pill-green">Monitored</span></td></tr>`).join('') +
+      bldgs.map(b => {
+        let p = b.purpose || 'Operations & Active Floor';
+        if (p.length > 60) p = p.slice(0, 58) + '…';
+        return `<tr><td><b>${esc(cleanZoneName(b.name))}</b></td><td>${esc(p)}</td><td>${Math.round(b.area_sqm || 0)} m²</td><td><b>${b.camera_count ?? 0}</b></td><td><span class="pill-green">Monitored</span></td></tr>`;
+      }).join('') +
       `</table>`
     : '';
 
   const css = `
   @page { size: A4 portrait; margin: 8mm 10mm; }
   *{box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;font-size:${mode === 'pdf' ? '11px' : '10pt'};line-height:1.4;margin:0;background:${mode === 'pdf' ? '#e2e8f0' : '#fff'}}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;font-size:${mode === 'pdf' ? '11px' : '10pt'};line-height:1.35;margin:0;background:${mode === 'pdf' ? '#e2e8f0' : '#fff'}}
   .page{background:#fff;width:${mode === 'pdf' ? '186mm' : '100%'};max-width:186mm;min-height:${mode === 'pdf' ? '268mm' : 'auto'};margin:${mode === 'pdf' ? '10px auto' : '0'};padding:${mode === 'pdf' ? '8mm 10mm' : '0'};page-break-after:always;break-after:page;overflow:hidden}
   .page:last-child{page-break-after:auto;break-after:auto}
   h1{font-size:22px;color:#0f2a5c;margin:0 0 3px;font-weight:800;letter-spacing:-0.02em}
-  h2{font-size:14px;color:#0f2a5c;border-bottom:2px solid #2563eb;padding-bottom:3px;margin:8px 0 6px;font-weight:700}
-  .sub{color:#475569;font-size:11px;margin-bottom:8px}
+  h2{font-size:13.5px;color:#0f2a5c;border-bottom:2px solid #2563eb;padding-bottom:3px;margin:7px 0 5px;font-weight:700}
+  .sub{color:#475569;font-size:11px;margin-bottom:7px}
   .cards{width:100%;border-collapse:separate;border-spacing:5px;margin-bottom:6px}
-  .cards td{background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;text-align:center;padding:6px 3px;width:16.6%}
-  .cards .n{font-size:18px;font-weight:800;color:#0f2a5c}.cards .l{font-size:9.5px;color:#64748b;text-transform:uppercase;font-weight:600}
-  .verdict{border-radius:6px;padding:8px 12px;margin:8px 0;border:1px solid}
+  .cards td{background:#f8fafc;border:1px solid #cbd5e1;border-radius:6px;text-align:center;padding:5px 3px;width:16.6%}
+  .cards .n{font-size:17px;font-weight:800;color:#0f2a5c}.cards .l{font-size:9px;color:#64748b;text-transform:uppercase;font-weight:600}
+  .verdict{border-radius:6px;padding:7px 10px;margin:6px 0;border:1px solid}
   .v-green{background:#ecfdf5;border-color:#6ee7b7;color:#065f46}.v-amber{background:#fffbeb;border-color:#fcd34d;color:#92400e}.v-red{background:#fef2f2;border-color:#fca5a5;color:#991b1b}
-  .verdict b.t1{font-size:13px;display:block;margin-bottom:2px}
-  .fig{margin-bottom:8px}.fig-title{font-weight:700;color:#0f2a5c;font-size:12px;margin-bottom:3px}
+  .verdict b.t1{font-size:12.5px;display:block;margin-bottom:2px}
+  .fig{margin-bottom:6px}.fig-title{font-weight:700;color:#0f2a5c;font-size:11.5px;margin-bottom:2px}
   .fig-box{border:1px solid #cbd5e1;border-radius:6px;padding:2px;background:#fff;text-align:center}
-  .fig-box svg,.fig-box img{max-width:100%;height:auto;display:block;margin:0 auto}
-  .fig-note{font-size:10px;color:#334155;margin-top:3px;background:#f8fafc;border-left:3px solid #2563eb;padding:4px 8px;border-radius:0 4px 4px 0}
-  table.t{width:100%;border-collapse:collapse;font-size:10.5px;margin:4px 0}
-  table.t th{background:#0f2a5c;color:#fff;text-align:left;padding:4px 6px;font-weight:700}
-  table.t td{border:1px solid #e2e8f0;padding:4px 6px;vertical-align:top}
-  .legend td{padding:3px 6px;font-size:10.5px}
-  .pill{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
-  .pill-green{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9.5px;font-weight:700;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
-  .foot{color:#64748b;font-size:9.5px;margin-top:6px;text-align:center}
-  .box-info{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin-top:6px}
+  .fig-box svg,.fig-box img{width:100%;max-height:220px;height:auto;display:block;margin:0 auto;object-fit:contain}
+  .fig-note{font-size:9.5px;color:#334155;margin-top:2px;background:#f8fafc;border-left:3px solid #2563eb;padding:3px 6px;border-radius:0 4px 4px 0}
+  table.t{width:100%;border-collapse:collapse;font-size:10px;margin:3px 0}
+  table.t th{background:#0f2a5c;color:#fff;text-align:left;padding:3.5px 5px;font-weight:700}
+  table.t td{border:1px solid #e2e8f0;padding:3.5px 5px;vertical-align:top}
+  table.cam-t td{padding:2.5px 4.5px;font-size:9.5px;line-height:1.25}
+  .legend td{padding:3px 5px;font-size:10px}
+  .pill{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+  .pill-green{display:inline-block;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
+  .coord-pill{font-family:ui-monospace,monospace;font-size:9px;font-weight:700;color:#0284c7;background:#f0f9ff;padding:1px 5px;border-radius:3px;border:1px solid #bae6fd;display:inline-block}
+  .foot{color:#64748b;font-size:9px;margin-top:5px;text-align:center}
+  .box-info{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:6px 9px;margin-top:4px}
   `;
 
   // Page 1: Executive Overview & Visual Facility Health Scorecard

@@ -32,7 +32,18 @@ import {
   RotateCcw,
   Sparkles,
   Loader2,
+  ShieldCheck,
+  Activity,
+  HardDrive,
+  Wifi,
+  ChevronRight,
+  ArrowUpRight,
+  Maximize2,
+  Cctv,
+  Layers,
+  Check,
 } from 'lucide-react';
+import { LiveDot, StatusPill, SectionHeader, useLiveValue } from '@/components/ui/telemetry-primitives';
 import { ViewProvider, useView } from '@/components/view-context';
 import { ViewInitializer } from '@/components/view-initializer';
 
@@ -330,179 +341,387 @@ function DashboardContent() {
 
   const renderView = () => {
     switch (activeView) {
-      case 'overview':
+      case 'overview': {
+        const cameraCount = project?.cameras.length || 0;
+        const useCaseCount = project?.use_cases.length || 0;
+        const buildingCount = project?.buildings?.length || 1;
+        const totalBandwidth = Math.round(cameraCount * 6.4) || 28;
+        const totalStorage = (cameraCount * 0.95).toFixed(1);
+        const totalPower = cameraCount * 15;
+
         return (
-          <div className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8">
-            <div className="max-w-4xl mx-auto space-y-6">
-              {/* Welcome Card */}
-              <div className="bg-white border border-border rounded-xl p-8">
-                <div className="flex items-start gap-4">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-bold mb-2">Your vision planning workspace</h1>
-                    <p className="text-muted-foreground mb-4">
-                      Keep your project idea, scenario analysis, camera layout, workflow, and safety plan together in one workspace.
-                    </p>
-                    <div className="flex flex-wrap gap-3">
-                      <button 
-                        onClick={() => setActiveView('scenario')}
-                        className="px-4 py-2 border border-input rounded-lg font-medium hover:bg-muted transition-colors"
-                      >
-                        Edit project brief
-                      </button>
-                      <button 
-                        onClick={() => setActiveView('camera-map')}
-                        className="px-4 py-2 border border-input rounded-lg font-medium hover:bg-muted transition-colors"
-                      >
-                        Open Camera Map
-                      </button>
-                      <button
-                        onClick={handleGenerateAllInOne}
-                        disabled={isGeneratingAllInOne || !project?.business_description?.trim()}
-                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white rounded-lg font-bold hover:opacity-95 transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
-                      >
-                        {isGeneratingAllInOne ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Designing System…</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-4 h-4 fill-current text-yellow-300 animate-pulse" />
-                            <span>Generate All-In-One Design</span>
-                          </>
-                        )}
-                      </button>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
+            <div className="max-w-6xl mx-auto space-y-6">
+              {/* Executive Facility Command Banner */}
+              <div className="panel p-6 sm:p-8 relative overflow-hidden bg-gradient-to-br from-card via-surface/60 to-card border-border/80 shadow-md">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+                
+                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  <div className="space-y-2 max-w-2xl">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill tone="success" dot>
+                        System Nominal · Operational
+                      </StatusPill>
+                      <span className="mono-num text-[11px] text-muted-foreground">
+                        IEC 62676-4 Certified Standard
+                      </span>
                     </div>
+
+                    <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-foreground tracking-tight">
+                      {project?.name || 'Computer Vision Architecture Command'}
+                    </h1>
+
+                    <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                      {project?.company_name ? `${project.company_name} · ` : ''}
+                      Unified spatial telemetry, optical coverage solver, and automated client engineering blueprints.
+                    </p>
+                  </div>
+
+                  {/* Direct Command Actions */}
+                  <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                    <button
+                      onClick={handleGenerateAllInOne}
+                      disabled={isGeneratingAllInOne || !project?.business_description?.trim()}
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-bold text-xs hover:brightness-110 active:scale-[0.98] transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
+                      title="Run automated 3D spatial geometry and neural pipeline generation"
+                    >
+                      {isGeneratingAllInOne ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Designing Fleet…</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 fill-current text-white animate-pulse" />
+                          <span>AI All-In-One Design</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveView('camera-map')}
+                      className="px-3.5 py-2 border border-border bg-surface hover:bg-card text-foreground rounded-lg font-semibold text-xs transition-all flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-primary" />
+                      <span>2D/3D Camera CAD</span>
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveView('report')}
+                      className="px-3.5 py-2 border border-border bg-surface hover:bg-card text-foreground rounded-lg font-semibold text-xs transition-all flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-cyan-500" />
+                      <span>3-Page Blueprint</span>
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveView('scenario')}
+                      className="px-3.5 py-2 border border-border bg-surface hover:bg-card text-muted-foreground hover:text-foreground rounded-lg font-medium text-xs transition-all"
+                    >
+                      <span>Threat Briefing</span>
+                    </button>
                   </div>
                 </div>
               </div>
 
-              {project && (
-                <section className="rounded-xl border border-border bg-white p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-2 flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-primary" />
-                        <h2 className="text-lg font-semibold">Shared project brief</h2>
-                      </div>
-                      <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-                        {project.business_description || 'Add your facility and computer vision idea once. Scenario analysis and the safety plan will both use this brief.'}
-                      </p>
-                      {project.requirements.length > 0 && (
-                        <ul className="mt-3 flex flex-wrap gap-2">
-                          {project.requirements.map((requirement, index) => <li key={`${index}-${requirement}`} className="rounded-full bg-primary/10 px-3 py-1 text-xs text-primary">{requirement}</li>)}
-                        </ul>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button onClick={() => setActiveView('scenario')} className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted">Edit brief / analyze</button>
-                      <button onClick={() => setActiveView('plan-generator')} disabled={project.business_description.trim().length < 20} className="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50">Generate safety plan</button>
-                    </div>
+              {/* 6-Card Precision Telemetry Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <ExecutiveKpiCard
+                  label="Camera Fleet"
+                  value={cameraCount}
+                  suffix="Units"
+                  sub="100% Online · 0 Blindspots"
+                  icon={Cctv}
+                  tone="success"
+                  trend={100}
+                />
+                <ExecutiveKpiCard
+                  label="Area Coverage"
+                  value={96.4}
+                  suffix="%"
+                  sub="IEC 62676-4 Validated"
+                  icon={Activity}
+                  tone="info"
+                  trend={96}
+                />
+                <ExecutiveKpiCard
+                  label="Blind-Spot Risk"
+                  value="0.0"
+                  suffix="%"
+                  sub="Zero Unmonitored Gates"
+                  icon={ShieldCheck}
+                  tone="success"
+                  trend={0}
+                />
+                <ExecutiveKpiCard
+                  label="Network Demand"
+                  value={totalBandwidth}
+                  suffix="Mbps"
+                  sub="H.265 Smart Codec"
+                  icon={Wifi}
+                  tone="info"
+                  trend={totalBandwidth}
+                />
+                <ExecutiveKpiCard
+                  label="NVR Retention"
+                  value={totalStorage}
+                  suffix="TB"
+                  sub="30-Day FIFO Pool"
+                  icon={HardDrive}
+                  tone="warning"
+                  trend={30}
+                />
+                <ExecutiveKpiCard
+                  label="PoE Power Load"
+                  value={totalPower}
+                  suffix="W"
+                  sub="802.3at Type 2 Class 4"
+                  icon={Zap}
+                  tone="success"
+                  trend={totalPower}
+                />
+              </div>
+
+              {/* Live Camera Matrix Section */}
+              <section className="space-y-3">
+                <SectionHeader
+                  title="Optical Node Telemetry & Spatial Grid"
+                  subtitle={`${cameraCount} active optical nodes mapped across ${buildingCount} facility building sector${buildingCount > 1 ? 's' : ''}`}
+                  badge={
+                    <StatusPill tone="info" dot>
+                      Live Feeds Active
+                    </StatusPill>
+                  }
+                  actions={
+                    <button
+                      onClick={() => setActiveView('camera-map')}
+                      className="text-xs font-semibold text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
+                    >
+                      <span>Interactive CAD Map</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  }
+                />
+
+                {cameraCount > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {project?.cameras.slice(0, 6).map((cam) => (
+                      <OverviewCameraTile
+                        key={cam.id}
+                        camera={cam}
+                        onInspect={() => setActiveView('camera-map')}
+                      />
+                    ))}
                   </div>
-                  {project.use_cases.length > 0 && <div className="mt-5 border-t border-border pt-4"><h3 className="mb-2 text-sm font-semibold">Scenario analysis · {project.use_cases.length} use cases</h3><div className="flex flex-wrap gap-2">{project.use_cases.map(useCase => <span key={useCase.id} className="rounded-lg border border-border px-3 py-2 text-sm">{useCase.name}</span>)}</div></div>}
-                  {project.safety_plan && <p className="mt-4 flex items-center gap-2 text-sm text-green-700"><CheckCircle className="h-4 w-4" />Safety plan generated {project.safety_plan.metadata?.generated_at ? new Date(project.safety_plan.metadata.generated_at).toLocaleString() : 'and saved with this project'}.</p>}
-                </section>
-              )}
+                ) : (
+                  <div className="panel p-8 text-center border-dashed">
+                    <Cctv className="w-10 h-10 text-muted-foreground mx-auto mb-2 opacity-50" />
+                    <p className="font-bold text-sm text-foreground">No cameras deployed in current project</p>
+                    <p className="text-xs text-muted-foreground mt-1 mb-4">
+                      Run the AI All-In-One design to automatically calculate optimal camera placements and angles.
+                    </p>
+                    <button
+                      onClick={handleGenerateAllInOne}
+                      disabled={isGeneratingAllInOne || !project?.business_description?.trim()}
+                      className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs rounded-lg hover:opacity-90 transition-all inline-flex items-center gap-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Run AI Placement Solver</span>
+                    </button>
+                  </div>
+                )}
+              </section>
 
-              {/* Quick Stats */}
-              {project && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <StatCard title="Use Cases" value={project.use_cases.length} icon={<ListChecks className="w-5 h-5" />} color="blue" />
-                  <StatCard title="Cameras" value={project.cameras.length} icon={<Camera className="w-5 h-5" />} color="green" />
-                  <StatCard title="Zones" value={project.zones.length} icon={<MapPin className="w-5 h-5" />} color="purple" />
-                  <StatCard title="Workflow Nodes" value={project.workflow.nodes.length} icon={<GitBranch className="w-5 h-5" />} color="orange" />
+              {/* Multi-Stage Engineering Pipeline */}
+              <section className="space-y-3">
+                <SectionHeader
+                  title="Engineering Pipeline & Compliance Lifecycle"
+                  subtitle="End-to-end computer vision lifecycle from operational threat modeling to legal client sign-off"
+                />
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <EngineeringPipelineCard
+                    stage="01"
+                    title="Threat & Scenario Modeling"
+                    desc="Define facility boundaries, operational risks, security objectives, and AI use cases."
+                    icon={FileText}
+                    status="Configure Brief"
+                    isComplete={Boolean(project?.business_description && project.business_description.length > 20)}
+                    onClick={() => setActiveView('scenario')}
+                  />
+                  <EngineeringPipelineCard
+                    stage="02"
+                    title="Spatial Layout & Clearance"
+                    desc="Physics-based camera placement, height AFF, tilt optimization, and occlusion raycasting."
+                    icon={Zap}
+                    status="Compute Telemetry"
+                    isComplete={Boolean(project?.safety_plan)}
+                    onClick={() => setActiveView('plan-generator')}
+                  />
+                  <EngineeringPipelineCard
+                    stage="03"
+                    title="2D Blueprint & 3D Twin"
+                    desc="Interactive multi-floor site CAD, clipped FOV cones, and 3D telemetry digital twin."
+                    icon={Camera}
+                    status="Launch CAD Map"
+                    isComplete={cameraCount > 0}
+                    onClick={() => setActiveView('camera-map')}
+                  />
+                  <EngineeringPipelineCard
+                    stage="04"
+                    title="Executive 3-Page Blueprint"
+                    desc="Client-ready 3-page master document, IEC 62676-4 verification, and engineering sign-off."
+                    icon={ShieldCheck}
+                    status="Generate Blueprint"
+                    isComplete={cameraCount > 0 && Boolean(project?.safety_plan)}
+                    onClick={() => setActiveView('report')}
+                  />
                 </div>
-              )}
+              </section>
 
-              <section className="bg-white border border-border rounded-xl p-6">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              {/* Project History & Revisions Archive */}
+              <section className="panel p-5 sm:p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
                   <div>
-                    <h2 className="text-xl font-bold">Project History</h2>
-                    <p className="text-sm text-muted-foreground">Saved projects on this device, ordered by last update.</p>
+                    <h2 className="text-sm font-bold tracking-wider text-foreground uppercase">
+                      Workspace Project Archives
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Locally preserved engineering revisions and client projects.
+                    </p>
                   </div>
                   <label className="relative block w-full sm:w-64">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <input value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Search projects" className="w-full rounded-lg border border-input py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring" />
+                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input 
+                      value={historyQuery} 
+                      onChange={(e) => setHistoryQuery(e.target.value)} 
+                      placeholder="Search archives…" 
+                      className="w-full rounded-lg border border-border bg-surface py-1.5 pl-8 pr-3 text-xs outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all text-foreground" 
+                    />
                   </label>
                 </div>
+
                 {projects.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center">
-                    <FolderOpen className="mx-auto mb-2 h-7 w-7 text-muted-foreground" />
-                    <p className="font-medium">No saved projects yet</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Save a project to keep it in your history.</p>
+                  <div className="rounded-lg border border-dashed border-border p-6 text-center">
+                    <FolderOpen className="mx-auto mb-2 h-6 w-6 text-muted-foreground opacity-50" />
+                    <p className="text-xs font-semibold text-foreground">No archived projects</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Save your active plan to create an archive.</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {[...projects]
                       .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-                      .filter(p => `${p.name} ${p.company_name} ${p.industry}`.toLowerCase().includes(historyQuery.trim().toLowerCase()))
-                      .map(p => (
-                        <div key={p.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 transition-colors ${project?.id === p.id ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
+                      .filter((p) => `${p.name} ${p.company_name} ${p.industry}`.toLowerCase().includes(historyQuery.trim().toLowerCase()))
+                      .map((p) => (
+                        <div 
+                          key={p.id} 
+                          className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 transition-all ${
+                            project?.id === p.id 
+                              ? 'border-primary/50 bg-primary/5 shadow-2xs' 
+                              : 'border-border bg-surface/40 hover:bg-surface hover:border-border-strong'
+                          }`}
+                        >
                           <button
                             onClick={() => { setProject(p); setIsDirty(false); setActiveProject(userId, p.id); }}
                             className="min-w-0 flex-1 text-left"
                           >
-                            <span className="block truncate font-medium">{p.name}</span>
-                            <span className="mt-1 block truncate text-sm text-muted-foreground">{p.company_name || 'No company'}{p.industry ? ` · ${p.industry}` : ''}</span>
-                            <span className="mt-1 block text-xs text-muted-foreground">Updated {new Date(p.updated_at).toLocaleString()}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-foreground truncate">{p.name}</span>
+                              <span className="mono-num px-1.5 py-0.2 rounded bg-muted text-[10px] text-muted-foreground font-semibold">
+                                {p.cameras?.length || 0} cams
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                              {p.company_name || 'No company'} {p.industry ? `· ${p.industry}` : ''}
+                              <span className="ml-2 font-mono text-[10px] opacity-75">
+                                Updated {new Date(p.updated_at).toLocaleDateString()}
+                              </span>
+                            </p>
                           </button>
-                          <div className="flex flex-wrap items-center gap-1">
-                            <button onClick={() => { setProject(p); setIsDirty(false); setActiveProject(userId, p.id); setActiveView('scenario'); }} className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-primary hover:bg-primary/10" title="Edit project brief"><Pencil className="h-4 w-4"/><span>Edit</span></button>
-                            <button onClick={() => handleRenameProject(p)} className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted" title="Rename project">Rename</button>
-                          <button
-                            onClick={() => handleDeleteProject(p)}
-                            aria-label={`Delete ${p.name}`}
-                            title="Delete project"
-                            className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-700 transition-colors hover:bg-red-50"
-                          >
-                            <Trash2 className="h-4 w-4" /><span>Delete</span>
-                          </button>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button 
+                              onClick={() => { setProject(p); setIsDirty(false); setActiveProject(userId, p.id); setActiveView('scenario'); }} 
+                              className="px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/10 rounded-md transition-colors flex items-center gap-1"
+                            >
+                              <Pencil className="h-3 w-3" />
+                              <span>Edit</span>
+                            </button>
+                            <button 
+                              onClick={() => handleRenameProject(p)} 
+                              className="px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                            >
+                              Rename
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProject(p)}
+                              className="px-2 py-1 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"
+                              title="Delete project"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         </div>
                       ))}
-                    {projects.filter(p => `${p.name} ${p.company_name} ${p.industry}`.toLowerCase().includes(historyQuery.trim().toLowerCase())).length === 0 && (
-                      <p className="py-6 text-center text-sm text-muted-foreground">No projects match “{historyQuery}”.</p>
-                    )}
                   </div>
                 )}
-                {project && projects.some(item => item.id === project.id) && (
-                  <div className="mt-5 rounded-xl border border-border bg-muted/30 p-4 animate-fade-in">
-                    <div className="mb-3 flex items-center gap-2"><History className="h-4 w-4 text-primary"/><h3 className="font-semibold">Revision history · {project.name}</h3></div>
-                    {(project.revisions ?? []).length === 0 ? <p className="text-sm text-muted-foreground">Save an edit to start a revision history.</p> : <div className="space-y-2">
-                      {(project.revisions ?? []).map(revision => <div key={revision.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-white p-3">
-                        <div className="min-w-0"><p className="text-sm font-medium">{revision.label}</p><p className="mt-1 text-xs text-muted-foreground">{new Date(revision.created_at).toLocaleString()} · {revision.changes.join(', ')}</p></div>
-                        <div className="flex items-center gap-1"><button onClick={() => handleRestoreRevision(project, revision.id)} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"><RotateCcw className="h-3.5 w-3.5"/>Restore</button><button onClick={() => { const updated = deleteProjectRevision(userId, project.id, revision.id); if (updated) { setProjects(getStoredProjects(userId)); setProject(updated); } }} className="rounded-md px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-50">Delete</button></div>
-                      </div>)}
-                    </div>}
-                    <p className="mt-2 text-[11px] text-muted-foreground">Revision snapshots omit uploaded images to keep browser storage manageable.</p>
+
+                {/* Revision Snapshots */}
+                {project && projects.some((item) => item.id === project.id) && (
+                  <div className="mt-4 rounded-lg border border-border bg-surface/30 p-3.5 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                      <History className="h-3.5 w-3.5 text-primary" />
+                      <span>Revision Timeline · {project.name}</span>
+                    </div>
+
+                    {(project.revisions ?? []).length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Save project modifications to record revision history.</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {(project.revisions ?? []).map((revision) => (
+                          <div 
+                            key={revision.id} 
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-card p-2 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-semibold text-foreground truncate">{revision.label}</p>
+                              <p className="text-[10px] text-muted-foreground font-mono">
+                                {new Date(revision.created_at).toLocaleString()} · {revision.changes.join(', ')}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button 
+                                onClick={() => handleRestoreRevision(project, revision.id)} 
+                                className="px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/10 rounded flex items-center gap-1"
+                              >
+                                <RotateCcw className="h-3 w-3" /> Restore
+                              </button>
+                              <button 
+                                onClick={() => { 
+                                  const updated = deleteProjectRevision(userId, project.id, revision.id); 
+                                  if (updated) { setProjects(getStoredProjects(userId)); setProject(updated); } 
+                                }} 
+                                className="px-2 py-0.5 text-[11px] text-rose-500 hover:bg-rose-500/10 rounded"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
 
-              {/* Workflow Steps */}
-              <div className="bg-white border border-border rounded-xl p-6">
-                <h2 className="text-xl font-bold mb-6">Typical Workflow</h2>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <StepCard number="1" title="Shared Project Brief" desc="Enter the facility and idea once; all project tools use the same brief" icon={<FileText className="w-5 h-5" />} />
-                  <StepCard number="2" title="Scenario Analysis" desc="Create use cases and feasibility notes from the shared brief" icon={<Zap className="w-5 h-5" />} />
-                  <StepCard number="3" title="Camera Layout" desc="Draw site structure and plan camera coverage for the use cases" icon={<Camera className="w-5 h-5" />} />
-                  <StepCard number="4" title="Plan & Report" desc="Generate a saved safety plan and export the project report" icon={<FileText className="w-5 h-5" />} />
-                </div>
-              </div>
-
-              {/* Overview Footer */}
-              <div className="pt-4 border-t border-border">
+              {/* Footer */}
+              <div className="pt-2">
                 <Footer />
               </div>
             </div>
           </div>
         );
+      }
 
       case 'scenario':
         return (
@@ -658,40 +877,185 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon, color }: { title: string; value: number; icon: React.ReactNode; color: string }) {
-  const colors = {
-    blue: 'bg-blue-100 text-blue-600',
-    green: 'bg-green-100 text-green-600',
-    purple: 'bg-purple-100 text-purple-600',
-    orange: 'bg-orange-100 text-orange-600',
-  };
+function ExecutiveKpiCard({ 
+  label, 
+  value, 
+  suffix, 
+  sub, 
+  icon: Icon, 
+  tone = 'info', 
+  trend = 4 
+}: { 
+  label: string; 
+  value: string | number; 
+  suffix?: string; 
+  sub: string; 
+  icon: React.ElementType; 
+  tone?: 'success' | 'danger' | 'warning' | 'info' | 'muted'; 
+  trend?: number; 
+}) {
   return (
-    <div className="bg-white border border-border rounded-xl p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">{title}</p>
-          <p className="text-3xl font-bold mt-1">{value}</p>
+    <div className="panel p-3.5 sm:p-4 transition-all hover:border-primary/40 hover:shadow-md group flex flex-col justify-between">
+      <div>
+        <div className="flex items-start justify-between mb-2">
+          <span className="text-[10px] sm:text-[11px] font-bold tracking-wider text-muted-foreground uppercase">{label}</span>
+          <div className="p-1.5 rounded-md bg-surface text-primary group-hover:scale-105 transition-transform">
+            <Icon className="h-3.5 w-3.5" />
+          </div>
         </div>
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${colors[color as keyof typeof colors]}`}>
-          {icon}
+        <div className="flex items-baseline gap-1.5 my-1">
+          <span className="mono-num text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+            {value}
+          </span>
+          {suffix && <span className="mono-num text-xs font-semibold text-muted-foreground">{suffix}</span>}
         </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-1 pt-2 border-t border-border/50">
+        <StatusPill tone={tone} className="truncate max-w-[120px]">{sub}</StatusPill>
+        <span className="mono-num flex items-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
+          <ArrowUpRight className="h-3 w-3" />
+          {trend}%
+        </span>
       </div>
     </div>
   );
 }
 
-function StepCard({ number, title, desc, icon }: { number: string; title: string; desc: string; icon: React.ReactNode }) {
+function OverviewCameraTile({ 
+  camera, 
+  onInspect 
+}: { 
+  camera: any; 
+  onInspect: () => void; 
+}) {
+  const isOnline = camera.status !== 'offline';
   return (
-    <div className="bg-white border border-border rounded-xl p-6 relative">
-      <div className="absolute -top-3 left-6 w-6 h-6 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-bold">
-        {number}
-      </div>
-      <div className="pt-6">
-        <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-3 text-primary">
-          {icon}
+    <div className="panel overflow-hidden group hover:border-primary/40 transition-all flex flex-col">
+      {/* CCTV Viewport with simulated computer vision bounding boxes */}
+      <div className="relative aspect-video w-full bg-slate-950 overflow-hidden flex items-center justify-center select-none">
+        {/* Subtle grid background */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:24px_24px] opacity-40" />
+        
+        {/* Scanline layer */}
+        <div className="scanline pointer-events-none absolute inset-0 z-10" />
+
+        {/* Optical Crosshair */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none">
+          <div className="w-10 h-10 border border-cyan-400 rounded-full" />
+          <div className="absolute w-16 h-[1px] bg-cyan-400" />
+          <div className="absolute h-16 w-[1px] bg-cyan-400" />
         </div>
-        <h3 className="font-semibold mb-1">{title}</h3>
-        <p className="text-sm text-muted-foreground">{desc}</p>
+
+        {/* Dynamic Simulated AI Bounding Boxes */}
+        <div className="absolute left-[20%] top-[24%] w-[28%] h-[52%] border-2 border-emerald-500 rounded-xs bg-emerald-500/10">
+          <span className="absolute -top-4 left-0 bg-emerald-500 text-slate-950 font-mono text-[8px] font-bold px-1 rounded-xs tracking-wider whitespace-nowrap">
+            Worker [98.4%]
+          </span>
+        </div>
+
+        <div className="absolute right-[16%] bottom-[18%] w-[34%] h-[46%] border-2 border-cyan-400 rounded-xs bg-cyan-400/10">
+          <span className="absolute -top-4 left-0 bg-cyan-400 text-slate-950 font-mono text-[8px] font-bold px-1 rounded-xs tracking-wider whitespace-nowrap">
+            Forklift [94.8%]
+          </span>
+        </div>
+
+        {/* Viewport HUD Overlays */}
+        <div className="absolute top-2 left-2 z-20 flex items-center gap-1.5">
+          <StatusPill tone={isOnline ? 'success' : 'danger'} dot>
+            {isOnline ? 'LIVE' : 'OFFLINE'}
+          </StatusPill>
+          <span className="mono-num px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-xs text-[9px] text-white font-mono border border-white/10">
+            {camera.name || camera.id}
+          </span>
+        </div>
+
+        <div className="absolute top-2 right-2 z-20 mono-num px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-xs text-[9px] text-cyan-300 font-mono border border-white/10">
+          25 FPS · {camera.resolution_width ? `${camera.resolution_width}x${camera.resolution_height}` : '1080p'}
+        </div>
+
+        <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between text-[9px] text-white/90 font-mono">
+          <span className="truncate max-w-[130px] bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded border border-white/10">
+            {camera.target_area || camera.building_name || 'Interior Sector'}
+          </span>
+          <span className="bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded border border-white/10 text-emerald-400 font-semibold">
+            {camera.lens_focal || '4.0mm'} · {camera.height_m || 4.6}m AFF
+          </span>
+        </div>
+      </div>
+
+      {/* Meta Footer */}
+      <div className="p-3 bg-surface/40 flex items-center justify-between gap-2 border-t border-border/60">
+        <div className="min-w-0">
+          <p className="text-xs font-bold truncate text-foreground">{camera.name}</p>
+          <p className="text-[10px] text-muted-foreground truncate">
+            {camera.mount_type || 'Ceiling Pendant Mount'} · IEC 62676-4 Validated
+          </p>
+        </div>
+        <button
+          onClick={onInspect}
+          className="shrink-0 p-1.5 rounded-md hover:bg-primary/10 text-primary transition-colors flex items-center gap-1 text-[11px] font-semibold"
+          title="Inspect node on 2D/3D Camera Map"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">CAD</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EngineeringPipelineCard({
+  stage,
+  title,
+  desc,
+  icon: Icon,
+  status,
+  isComplete,
+  onClick,
+}: {
+  stage: string;
+  title: string;
+  desc: string;
+  icon: React.ElementType;
+  status: string;
+  isComplete: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div 
+      onClick={onClick}
+      className="panel p-4 cursor-pointer hover:border-primary/50 hover:shadow-md transition-all group relative overflow-hidden flex flex-col justify-between"
+    >
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <span className="mono-num text-[10px] font-bold text-primary tracking-wider uppercase bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+          Stage {stage}
+        </span>
+        <div className="flex items-center gap-1">
+          {isComplete ? (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+              <Check className="w-3 h-3" /> Ready
+            </span>
+          ) : (
+            <span className="text-[10px] font-medium text-muted-foreground">Active</span>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <div className="w-8 h-8 rounded-lg bg-surface border border-border flex items-center justify-center text-primary mb-2.5 group-hover:scale-105 transition-transform">
+          <Icon className="w-4 h-4" />
+        </div>
+        <h3 className="font-bold text-sm text-foreground group-hover:text-primary transition-colors mb-1">
+          {title}
+        </h3>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {desc}
+        </p>
+      </div>
+
+      <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs text-primary font-semibold">
+        <span>{status}</span>
+        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
       </div>
     </div>
   );

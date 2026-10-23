@@ -220,24 +220,162 @@ export function ScenarioForm({
           />
         </div>
 
-        <section className="scenario-form__panel rounded-2xl border border-border bg-gradient-to-br from-white to-emerald-50/60 p-5 space-y-5">
-          <div><div className="flex items-center gap-2"><Camera className="h-5 w-5 text-emerald-600"/><h3 className="font-semibold">Site & camera planning inputs</h3></div><p className="mt-1 text-sm text-muted-foreground">Add a site image, camera details, compute hardware, and the coverage target.</p></div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="md:col-span-2 rounded-xl border border-dashed border-emerald-300 bg-white/80 p-4">
-              <label className="flex cursor-pointer items-center gap-3"><ImagePlus className="h-5 w-5 text-emerald-600"/><span><b className="block text-sm">Upload a site or object image</b><span className="text-xs text-muted-foreground">AI can suggest the scene when configured; an editable filename hint is available as a fallback.</span></span><input type="file" accept="image/*" className="sr-only" onChange={e => handleImage(e.target.files?.[0])}/></label>
-              {formData.facility_image && <div className="mt-3 flex items-start gap-3"><img src={formData.facility_image} alt="Uploaded planning reference" className="h-24 w-36 rounded-lg border object-cover"/><div className="min-w-0 flex-1"><p className="text-sm font-medium">{formData.facility_image_name}</p><p className="text-xs text-emerald-800">{formData.image_observation}</p><button type="button" onClick={() => { const next={...formData,facility_image:'',facility_image_name:'',image_observation:''}; setFormData(next); onBriefChange?.({...next,requirements:next.requirements.split('\n').filter(Boolean),critical_components:next.critical_components.split('\n').filter(Boolean),layout_sections:next.layout_sections.split('\n').map(v=>v.trim()).filter(Boolean)}); }} className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground"><X className="h-3 w-3"/>Remove image</button></div></div>}
-              <textarea aria-label="Describe uploaded image" value={formData.image_observation} onChange={e=>handleChange('image_observation',e.target.value)} rows={2} placeholder="What is shown? e.g. packaging line, forklift aisle, inspection station" className="mt-3 w-full rounded-lg border border-input px-3 py-2 text-sm"/>
+        <section className="scenario-form__panel panel p-5 sm:p-6 space-y-5 bg-card border-border shadow-xs">
+          <div>
+            <div className="flex items-center gap-2">
+              <Camera className="h-5 w-5 text-primary" />
+              <h3 className="font-bold text-sm text-foreground">Site & Optical Planning Telemetry</h3>
             </div>
-            <label className="text-sm font-medium">Camera specifications<textarea value={formData.camera_specifications} onChange={e=>handleChange('camera_specifications',e.target.value)} rows={3} placeholder="Resolution, lens/FOV, frame rate, low-light or IP rating" className="mt-1 w-full rounded-lg border border-input px-3 py-2 font-normal"/></label>
-            <label className="text-sm font-medium">Available hardware / input feeds<textarea value={formData.available_hardware} onChange={e=>handleChange('available_hardware',e.target.value)} rows={3} placeholder="Existing cameras, NVR/VMS, edge GPU, network, PLC or sensors" className="mt-1 w-full rounded-lg border border-input px-3 py-2 font-normal"/></label>
-            <label className="text-sm font-medium">Critical components (one per line)<textarea value={formData.critical_components} onChange={e=>handleChange('critical_components',e.target.value)} rows={3} placeholder="Conveyor belt\nSafety gate\nEmergency stop" className="mt-1 w-full rounded-lg border border-input px-3 py-2 font-normal"/></label>
-            <label className="text-sm font-medium">Describe each layout section<textarea value={formData.layout_sections} onChange={e=>handleChange('layout_sections',e.target.value)} rows={3} placeholder="Section 1 · Receiving\nSection 2 · Production\nSection 3 · Packing" className="mt-1 w-full rounded-lg border border-input px-3 py-2 font-normal"/></label>
-            <div className="grid grid-cols-2 gap-3"><label className="text-sm font-medium">Layout sections<input type="number" min={1} max={50} value={formData.layout_section_count} onChange={e=>setFormData(prev=>({...prev,layout_section_count:Number(e.target.value)}))} onBlur={()=>onBriefChange?.({...formData,requirements:formData.requirements.split('\n').filter(Boolean),critical_components:formData.critical_components.split('\n').filter(Boolean),layout_sections:formData.layout_sections.split('\n').map(v=>v.trim()).filter(Boolean),layout_section_count:Number(formData.layout_section_count)})} className="mt-1 w-full rounded-lg border border-input px-3 py-2"/></label><label className="text-sm font-medium">Coverage target %<input type="number" min={1} max={100} value={formData.detection_coverage_target} onChange={e=>setFormData(prev=>({...prev,detection_coverage_target:Number(e.target.value)}))} onBlur={()=>onBriefChange?.({...formData,requirements:formData.requirements.split('\n').filter(Boolean),critical_components:formData.critical_components.split('\n').filter(Boolean),layout_sections:formData.layout_sections.split('\n').map(v=>v.trim()).filter(Boolean),detection_coverage_target:Number(formData.detection_coverage_target)})} className="mt-1 w-full rounded-lg border border-input px-3 py-2"/></label></div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Provide site geometry, camera requirements, compute hardware, and coverage targets for the optical solver.
+            </p>
           </div>
-          <div className="block text-sm font-medium"><p>Planned output sections <span className="text-xs font-normal text-muted-foreground">Select only what you need in the generated document. Keep at least one selected.</span></p><div className="mt-2 flex flex-wrap gap-2">{['Executive summary','Use cases','Camera plan','Detection coverage','Hardware & critical components','Workflow','Assumptions & open questions','Implementation roadmap'].map(item=><label key={item} className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs ${formData.output_scope.includes(item)?'border-emerald-500 bg-emerald-50 text-emerald-800':'border-border'}`}><input type="checkbox" className="sr-only" checked={formData.output_scope.includes(item)} onChange={e=>{if(!e.target.checked && formData.output_scope.length===1)return;const output_scope=e.target.checked?[...formData.output_scope,item]:formData.output_scope.filter(v=>v!==item);setFormData(prev=>({...prev,output_scope}));onBriefChange?.({...formData,output_scope,requirements:formData.requirements.split('\n').filter(Boolean),critical_components:formData.critical_components.split('\n').filter(Boolean),layout_sections:formData.layout_sections.split('\n').map(v=>v.trim()).filter(Boolean)});}}/>{item}</label>)}</div></div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2 rounded-xl border border-dashed border-border bg-surface/50 p-4">
+              <label className="flex cursor-pointer items-center gap-3">
+                <ImagePlus className="h-5 w-5 text-primary"/>
+                <span>
+                  <b className="block text-xs font-bold text-foreground">Upload site floorplan or equipment image</b>
+                  <span className="text-[11px] text-muted-foreground">AI automatically analyzes architectural sectors, obstacles, and sightlines.</span>
+                </span>
+                <input type="file" accept="image/*" className="sr-only" onChange={e => handleImage(e.target.files?.[0])}/>
+              </label>
+              {formData.facility_image && (
+                <div className="mt-3 flex items-start gap-3">
+                  <img src={formData.facility_image} alt="Uploaded planning reference" className="h-24 w-36 rounded-lg border border-border object-cover"/>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-foreground">{formData.facility_image_name}</p>
+                    <p className="text-xs text-primary mt-0.5">{formData.image_observation}</p>
+                    <button 
+                      type="button" 
+                      onClick={() => { 
+                        const next = { ...formData, facility_image: '', facility_image_name: '', image_observation: '' }; 
+                        setFormData(next); 
+                        onBriefChange?.({ ...next, requirements: next.requirements.split('\n').filter(Boolean), critical_components: next.critical_components.split('\n').filter(Boolean), layout_sections: next.layout_sections.split('\n').map(v => v.trim()).filter(Boolean) }); 
+                      }} 
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] text-rose-500 hover:text-rose-600"
+                    >
+                      <X className="h-3 w-3"/>Remove image
+                    </button>
+                  </div>
+                </div>
+              )}
+              <textarea 
+                aria-label="Describe uploaded image" 
+                value={formData.image_observation} 
+                onChange={e => handleChange('image_observation', e.target.value)} 
+                rows={2} 
+                placeholder="What is shown? e.g. packaging line, forklift aisle, perimeter gate" 
+                className="mt-3 w-full rounded-lg border border-border bg-card px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              />
+            </div>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Camera specifications
+              <textarea 
+                value={formData.camera_specifications} 
+                onChange={e => handleChange('camera_specifications', e.target.value)} 
+                rows={3} 
+                placeholder="Resolution, lens/FOV, frame rate, low-light or IP rating" 
+                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground font-normal focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              />
+            </label>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Available hardware / input feeds
+              <textarea 
+                value={formData.available_hardware} 
+                onChange={e => handleChange('available_hardware', e.target.value)} 
+                rows={3} 
+                placeholder="Existing cameras, NVR/VMS, edge GPU, network, PLC or sensors" 
+                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground font-normal focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              />
+            </label>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Critical components (one per line)
+              <textarea 
+                value={formData.critical_components} 
+                onChange={e => handleChange('critical_components', e.target.value)} 
+                rows={3} 
+                placeholder="Conveyor belt&#10;Safety gate&#10;Emergency stop" 
+                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground font-normal focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              />
+            </label>
+
+            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Describe each layout section
+              <textarea 
+                value={formData.layout_sections} 
+                onChange={e => handleChange('layout_sections', e.target.value)} 
+                rows={3} 
+                placeholder="Section 1 · Receiving&#10;Section 2 · Production&#10;Section 3 · Packing" 
+                className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground font-normal focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Layout sections
+                <input 
+                  type="number" 
+                  min={1} 
+                  max={50} 
+                  value={formData.layout_section_count} 
+                  onChange={e => setFormData(prev => ({ ...prev, layout_section_count: Number(e.target.value) }))} 
+                  onBlur={() => onBriefChange?.({ ...formData, requirements: formData.requirements.split('\n').filter(Boolean), critical_components: formData.critical_components.split('\n').filter(Boolean), layout_sections: formData.layout_sections.split('\n').map(v => v.trim()).filter(Boolean), layout_section_count: Number(formData.layout_section_count) })} 
+                  className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                />
+              </label>
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Coverage target %
+                <input 
+                  type="number" 
+                  min={1} 
+                  max={100} 
+                  value={formData.detection_coverage_target} 
+                  onChange={e => setFormData(prev => ({ ...prev, detection_coverage_target: Number(e.target.value) }))} 
+                  onBlur={() => onBriefChange?.({ ...formData, requirements: formData.requirements.split('\n').filter(Boolean), critical_components: formData.critical_components.split('\n').filter(Boolean), layout_sections: formData.layout_sections.split('\n').map(v => v.trim()).filter(Boolean), detection_coverage_target: Number(formData.detection_coverage_target) })} 
+                  className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="block">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+              Planned Blueprint Sections
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {['Executive summary', 'Use cases', 'Camera plan', 'Detection coverage', 'Hardware & critical components', 'Workflow', 'Assumptions & open questions', 'Implementation roadmap'].map(item => (
+                <label 
+                  key={item} 
+                  className={`cursor-pointer rounded-md border px-2.5 py-1 text-xs transition-all font-medium ${
+                    formData.output_scope.includes(item)
+                      ? 'border-primary/40 bg-primary/10 text-primary font-semibold' 
+                      : 'border-border bg-surface text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <input 
+                    type="checkbox" 
+                    className="sr-only" 
+                    checked={formData.output_scope.includes(item)} 
+                    onChange={e => {
+                      if (!e.target.checked && formData.output_scope.length === 1) return;
+                      const output_scope = e.target.checked ? [...formData.output_scope, item] : formData.output_scope.filter(v => v !== item);
+                      setFormData(prev => ({ ...prev, output_scope }));
+                      onBriefChange?.({ ...formData, output_scope, requirements: formData.requirements.split('\n').filter(Boolean), critical_components: formData.critical_components.split('\n').filter(Boolean), layout_sections: formData.layout_sections.split('\n').map(v => v.trim()).filter(Boolean) });
+                    }}
+                  />
+                  {item}
+                </label>
+              ))}
+            </div>
+          </div>
         </section>
 
-        <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg">
+        <div className="flex items-center gap-2 p-3 bg-surface border border-border/60 rounded-lg">
           <input
             type="checkbox"
             id="use-ai"
@@ -245,27 +383,27 @@ export function ScenarioForm({
             onChange={e => setFormData(prev => ({ ...prev, use_ai: e.target.checked }))}
             className="w-4 h-4 accent-primary"
           />
-          <label htmlFor="use-ai" className="flex items-center gap-2 text-sm font-medium cursor-pointer">
-            <Brain className="w-4 h-4 text-emerald-600" />
-            <span>Use NVIDIA Vision AI Analysis</span>
+          <label htmlFor="use-ai" className="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer">
+            <Brain className="w-4 h-4 text-primary" />
+            <span>Use NVIDIA & Spatial AI Geometry Engine</span>
           </label>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 pt-2">
           <button
             type="submit"
             disabled={isLoading || isGeneratingAllInOne || !formData.business_description.trim()}
-            className="w-full sm:w-auto px-6 py-2.5 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full sm:w-auto px-5 py-2.5 bg-surface border border-border hover:bg-card text-foreground rounded-lg font-semibold text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-2xs"
           >
             {isLoading ? (
               <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Analyzing...</span>
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <span>Analyzing Brief…</span>
               </>
             ) : (
               <>
-                <Send className="w-5 h-5" />
-                <span>{formData.use_ai ? 'Run AI analysis' : 'Create project draft'}</span>
+                <Send className="w-4 h-4 text-primary" />
+                <span>{formData.use_ai ? 'Run AI Analysis' : 'Save Brief Draft'}</span>
               </>
             )}
           </button>
@@ -275,18 +413,18 @@ export function ScenarioForm({
               type="button"
               onClick={onGenerateAllInOne}
               disabled={isLoading || isGeneratingAllInOne || !formData.business_description.trim()}
-              className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white rounded-lg font-bold hover:opacity-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
-              title="End-to-End: Automatically analyze requirements, design 3D telemetry and structures, solve camera placements, and generate safety plan"
+              className="w-full sm:w-auto px-6 py-2.5 bg-primary text-primary-foreground rounded-lg font-bold text-xs hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
+              title="Automatically analyze requirements, design 3D telemetry, solve camera placements, and generate safety plan"
             >
               {isGeneratingAllInOne ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Auto-Designing System…</span>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Designing Fleet & Blueprint…</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-5 h-5 fill-current text-yellow-300 animate-pulse" />
-                  <span>Generate All-In-One Design</span>
+                  <Sparkles className="w-4 h-4 fill-current text-white animate-pulse" />
+                  <span>AI All-In-One Design</span>
                 </>
               )}
             </button>

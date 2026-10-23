@@ -1,83 +1,123 @@
 import type { DetVisionProject, Camera, LayoutElement, Zone } from './types';
 
+export function cleanZoneName(str?: string): string {
+  if (!str) return 'Main Operations';
+  const bMatch = str.match(/(Building\s*\d+\s*[-–—:]\s*[A-Za-z0-9\s]+?)(?:\s*\(|\s*\[|\s*,|\.|$)/i);
+  if (bMatch) {
+    return bMatch[1].replace(/\s*Operational\s*Zone/gi, '').trim();
+  }
+  let cleaned = str.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '').trim();
+  cleaned = cleaned.replace(/\s*Operational\s*Zone/gi, '').trim();
+  cleaned = cleaned.replace(/\.\s+[A-Z].*$/, '').replace(/[.;].*$/, '').trim();
+  if (cleaned.length > 32) {
+    cleaned = cleaned.slice(0, 32).trim();
+  }
+  return cleaned || 'Main Operations';
+}
+
 /**
- * Generates a clean, crisp, high-resolution SVG diagram of the 2D/3D site layout,
+ * Generates a clean, crisp, high-resolution SVG diagram of the 2D architectural site layout,
  * complete with building structures, obstacles, zones, and camera FOV telemetry cones.
- * Fully compatible with HTML preview, print-to-PDF, and Microsoft Word DOCX embedding.
+ * FOV cones are strictly clipped to the facility interior boundary to prevent canvas overflow,
+ * and camera tags are dynamically clamped away from zone header titles.
  */
 export function generateSiteTelemetryMapSvg(
   project: DetVisionProject,
   options: { width?: number; height?: number } = {}
 ): string {
   const width = options.width || 860;
-  const height = options.height || 480;
+  const height = options.height || 380;
 
-  const fw = project.facility_width_m || 60.0;
-  const fl = project.facility_length_m || 25.0;
-  const fh = project.facility_height_m || 5.0;
+  const rawW = project.facility_width_m || 30.0;
+  const rawL = project.facility_length_m || 60.0;
+  const fl = Math.max(rawL, rawW);
+  const fw = Math.min(rawL, rawW);
+  const fh = project.facility_height_m || 4.6;
 
   const cameras: Camera[] = project.cameras || [];
   const structures: LayoutElement[] = project.structure || [];
   const zones: Zone[] = project.zones || [];
 
-  const padding = 40;
+  const padding = 36;
   const mapW = width - padding * 2;
-  const mapH = height - padding * 2 - 22;
+  const mapH = height - padding * 2 - 20;
 
   // Coordinate mapping from normalized [0, 1] to canvas pixels
   const toX = (normX: number) => padding + Math.max(0, Math.min(1, normX)) * mapW;
   const toY = (normY: number) => padding + Math.max(0, Math.min(1, normY)) * mapH;
 
-  // Collect obstacles
+  // Collect obstacles and structures
+  const zoneHeaderElements: string[] = [];
   const obstacleElements: string[] = [];
   structures.forEach((st, idx) => {
     if (st.points && st.points.length >= 2) {
       const type = (st.obstacle_type || st.type || 'obstacle').toLowerCase();
-      let fill = 'rgba(79, 70, 229, 0.2)';
+      let fill = 'rgba(79, 70, 229, 0.18)';
       let stroke = '#4f46e5';
       let typeLabel = 'RACK';
 
       if (/conveyor|roller|belt|assembly/i.test(type) || /conveyor/i.test(st.name)) {
-        fill = 'rgba(13, 148, 136, 0.25)';
+        fill = 'rgba(13, 148, 136, 0.22)';
         stroke = '#0d9488';
         typeLabel = 'CONVEYOR';
       } else if (/machine|robot|press|cnc|rejection/i.test(type) || /machine/i.test(st.name)) {
-        fill = 'rgba(37, 99, 235, 0.25)';
+        fill = 'rgba(37, 99, 235, 0.22)';
         stroke = '#2563eb';
         typeLabel = 'MACHINE';
       } else if (/hazard|chemical|spill|danger|tank/i.test(type) || /hazard|tank|chemical/i.test(st.name)) {
-        fill = 'rgba(239, 68, 68, 0.25)';
+        fill = 'rgba(239, 68, 68, 0.22)';
         stroke = '#dc2626';
         typeLabel = 'HAZARD';
       } else if (/dock|bay|loading|door|gate/i.test(type) || /dock|loading/i.test(st.name)) {
-        fill = 'rgba(6, 182, 212, 0.25)';
+        fill = 'rgba(6, 182, 212, 0.22)';
         stroke = '#0891b2';
         typeLabel = 'DOCK';
       } else if (/building|hall|workshop|room|section/i.test(st.name)) {
-        fill = 'rgba(100, 116, 139, 0.15)';
-        stroke = '#475569';
+        fill = 'rgba(241, 245, 249, 0.5)';
+        stroke = '#94a3b8';
         typeLabel = 'ZONE';
       }
 
       if (st.points.length >= 3) {
-        const ptsStr = st.points.map(p => `${toX(p.x).toFixed(1)},${toY(p.y).toFixed(1)}`).join(' ');
-        const centerX = st.points.reduce((sum, p) => sum + toX(p.x), 0) / st.points.length;
-        const centerY = st.points.reduce((sum, p) => sum + toY(p.y), 0) / st.points.length;
-        obstacleElements.push(`
-          <g id="struct-${idx}">
-            <polygon points="${ptsStr}" fill="${fill}" stroke="${stroke}" stroke-width="2" />
-            <text x="${centerX.toFixed(1)}" y="${centerY.toFixed(1)}" stroke="none" fill="${stroke}" font-size="8.5" font-family="system-ui, sans-serif" font-weight="700" text-anchor="middle" dominant-baseline="middle">
-              ${st.name.length > 20 ? st.name.slice(0, 18) + '…' : st.name}
-            </text>
-            <text x="${centerX.toFixed(1)}" y="${(centerY + 9).toFixed(1)}" stroke="none" fill="${stroke}" font-size="7" font-family="system-ui, sans-serif" font-weight="600" opacity="0.8" text-anchor="middle" dominant-baseline="middle">
-              [${typeLabel}]
-            </text>
-          </g>
-        `);
+        const ptsStr = st.points.map((p: any) => `${toX(p.x).toFixed(1)},${toY(p.y).toFixed(1)}`).join(' ');
+        const xs = st.points.map((p: any) => toX(p.x));
+        const ys = st.points.map((p: any) => toY(p.y));
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const centerX = xs.reduce((sum: number, x: number) => sum + x, 0) / xs.length;
+        const centerY = ys.reduce((sum: number, y: number) => sum + y, 0) / ys.length;
+        const rawName = cleanZoneName(st.name);
+        const isZone = typeLabel === 'ZONE' || /building|hall|workshop|room|section/i.test(st.name);
+
+        if (isZone) {
+          const bannerW = Math.min(maxX - minX, 175);
+          obstacleElements.push(`
+            <polygon points="${ptsStr}" fill="${fill}" stroke="${stroke}" stroke-width="1.8" stroke-dasharray="4,3" />
+          `);
+          zoneHeaderElements.push(`
+            <g id="zone-hdr-${idx}">
+              <rect x="${(minX + 4).toFixed(1)}" y="${(minY + 3).toFixed(1)}" width="${bannerW.toFixed(1)}" height="13.5" rx="2" fill="#ffffff" fill-opacity="0.96" stroke="${stroke}" stroke-width="0.8" />
+              <text x="${(minX + 8).toFixed(1)}" y="${(minY + 12.5).toFixed(1)}" stroke="none" fill="${stroke}" font-size="7" font-family="system-ui, sans-serif" font-weight="800" letter-spacing="0.02em">
+                ${rawName.toUpperCase()}
+              </text>
+            </g>
+          `);
+        } else {
+          obstacleElements.push(`
+            <g id="struct-${idx}">
+              <polygon points="${ptsStr}" fill="${fill}" stroke="${stroke}" stroke-width="1.2" />
+              <rect x="${(centerX - 24).toFixed(1)}" y="${(centerY - 6).toFixed(1)}" width="48" height="12" rx="2" fill="#ffffff" fill-opacity="0.92" stroke="${stroke}" stroke-width="0.8" />
+              <text x="${centerX.toFixed(1)}" y="${(centerY + 3).toFixed(1)}" stroke="none" fill="${stroke}" font-size="7" font-family="system-ui, sans-serif" font-weight="800" text-anchor="middle">
+                [${typeLabel}]
+              </text>
+            </g>
+          `);
+        }
       } else if (st.points.length === 2) {
         // Wall line
         obstacleElements.push(`
-          <line x1="${toX(st.points[0].x).toFixed(1)}" y1="${toY(st.points[0].y).toFixed(1)}" x2="${toX(st.points[1].x).toFixed(1)}" y2="${toY(st.points[1].y).toFixed(1)}" stroke="#334155" stroke-width="4" stroke-linecap="round" />
+          <line x1="${toX(st.points[0].x).toFixed(1)}" y1="${toY(st.points[0].y).toFixed(1)}" x2="${toX(st.points[1].x).toFixed(1)}" y2="${toY(st.points[1].y).toFixed(1)}" stroke="#334155" stroke-width="3.5" stroke-linecap="round" />
         `);
       }
     }
@@ -87,22 +127,24 @@ export function generateSiteTelemetryMapSvg(
   const zoneElements: string[] = [];
   zones.forEach((z, idx) => {
     if (z.points && z.points.length >= 3) {
-      const ptsStr = z.points.map(p => `${toX(p.x).toFixed(1)},${toY(p.y).toFixed(1)}`).join(' ');
+      const ptsStr = z.points.map((p: any) => `${toX(p.x).toFixed(1)},${toY(p.y).toFixed(1)}`).join(' ');
       const clr = z.color || '#3b82f6';
       zoneElements.push(`
-        <polygon points="${ptsStr}" fill="${clr}" fill-opacity="0.12" stroke="${clr}" stroke-width="1.5" stroke-dasharray="5,4" />
+        <polygon points="${ptsStr}" fill="${clr}" fill-opacity="0.08" stroke="${clr}" stroke-width="1.5" stroke-dasharray="5,4" />
       `);
     }
   });
 
-  // Camera Cones & Icons
-  const cameraElements: string[] = [];
+  // Camera Cones (Clipped to facility interior) and Camera Icons (Unclipped on top)
+  const fovConeElements: string[] = [];
+  const cameraIconElements: string[] = [];
+
   cameras.forEach((cam, idx) => {
     const cx = toX(cam.x);
     const cy = toY(cam.y);
     const orientDeg = cam.orientation_degrees || 0;
     const fovDeg = cam.horizontal_fov_degrees || 90;
-    const viewDistPx = Math.min(mapW, mapH) * (cam.view_range || 0.45);
+    const viewDistPx = Math.min(mapW, mapH) * Math.max(0.32, Math.min(0.48, cam.view_range || 0.40));
 
     // Calculate arc wedge
     const radStart = ((orientDeg - fovDeg / 2) * Math.PI) / 180;
@@ -112,26 +154,40 @@ export function generateSiteTelemetryMapSvg(
     const x2 = cx + viewDistPx * Math.cos(radEnd);
     const y2 = cy + viewDistPx * Math.sin(radEnd);
 
-    // Draw FOV Cone
-    cameraElements.push(`
-      <g id="cam-telemetry-${idx}">
-        <!-- FOV Cone -->
+    // Dynamic camera label tag position:
+    // When camera is near the top edge or in the upper row (y <= 0.28), place the tag below the camera (tagY = cy + 16)
+    // so it never overlaps the building zone header at the top!
+    let tagX = cx;
+    let tagY = cy - 14;
+    if (cy < padding + 48 || (cam.y >= 0.05 && cam.y <= 0.28)) {
+      tagY = cy + 16;
+    } else if (cy > height - padding - 40) {
+      tagY = cy - 14;
+    }
+
+    // Clamp tagX inside facility boundaries
+    if (tagX < padding + 24) tagX = padding + 24;
+    else if (tagX > width - padding - 24) tagX = width - padding - 24;
+
+    // 1. FOV Cone & Sightline (Will be clipped to facility interior)
+    fovConeElements.push(`
+      <g id="cam-cone-${idx}">
         <path d="M ${cx.toFixed(1)} ${cy.toFixed(1)} L ${x1.toFixed(1)} ${y1.toFixed(1)} A ${viewDistPx.toFixed(1)} ${viewDistPx.toFixed(1)} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z"
               fill="rgba(14, 165, 233, 0.18)" stroke="#0284c7" stroke-width="1.2" stroke-dasharray="3,2" />
-        
-        <!-- Center Optical Axis Line -->
         <line x1="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" 
               x2="${(cx + viewDistPx * 0.9 * Math.cos((orientDeg * Math.PI) / 180)).toFixed(1)}" 
               y2="${(cy + viewDistPx * 0.9 * Math.sin((orientDeg * Math.PI) / 180)).toFixed(1)}" 
               stroke="#0284c7" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.75" />
+      </g>
+    `);
 
-        <!-- Camera Body Circle -->
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="7.5" fill="#0284c7" stroke="#ffffff" stroke-width="2" />
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3" fill="#ffffff" />
-
-        <!-- Camera Tag Label -->
-        <rect x="${(cx - 22).toFixed(1)}" y="${(cy - 20).toFixed(1)}" width="44" height="13" rx="3" fill="#0f172a" fill-opacity="0.85" />
-        <text x="${cx.toFixed(1)}" y="${(cy - 11).toFixed(1)}" stroke="none" fill="#ffffff" font-size="8" font-family="ui-monospace, monospace" font-weight="700" text-anchor="middle">
+    // 2. Camera Body & Label Badge (Unclipped, Crisp)
+    cameraIconElements.push(`
+      <g id="cam-body-${idx}">
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="7" fill="#0284c7" stroke="#ffffff" stroke-width="2" />
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.5" fill="#ffffff" />
+        <rect x="${(tagX - 21).toFixed(1)}" y="${(tagY - 6.5).toFixed(1)}" width="42" height="13" rx="2.5" fill="#0f172a" fill-opacity="0.94" stroke="#0284c7" stroke-width="0.8" />
+        <text x="${tagX.toFixed(1)}" y="${(tagY + 3).toFixed(1)}" stroke="none" fill="#38bdf8" font-size="7.5" font-family="ui-monospace, monospace" font-weight="700" text-anchor="middle">
           CAM-${String(idx + 1).padStart(2, '0')}
         </text>
       </g>
@@ -149,18 +205,14 @@ export function generateSiteTelemetryMapSvg(
         <marker id="arrow-dim" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
         </marker>
+        <!-- Facility Interior ClipPath: Restricts FOV cones inside perimeter walls -->
+        <clipPath id="facility-interior">
+          <rect x="${padding}" y="${padding}" width="${mapW}" height="${mapH}" rx="4" />
+        </clipPath>
       </defs>
 
       <!-- Facility Floor Background -->
       <rect x="${padding}" y="${padding}" width="${mapW}" height="${mapH}" fill="url(#facility-grid)" stroke="#94a3b8" stroke-width="2" rx="4" />
-
-      <!-- North Compass Indicator -->
-      <g transform="translate(${width - 40}, 30)">
-        <circle cx="0" cy="0" r="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" />
-        <polygon points="0,-10 3,2 0,0 -3,2" fill="#ef4444" />
-        <polygon points="0,10 3,0 0,2 -3,0" fill="#94a3b8" />
-        <text x="0" y="-12" stroke="none" fill="#ef4444" font-size="7.5" font-weight="800" text-anchor="middle" font-family="system-ui">N</text>
-      </g>
 
       <!-- Dimension Rulers -->
       <g stroke="#64748b" stroke-width="1" opacity="0.85">
@@ -177,20 +229,36 @@ export function generateSiteTelemetryMapSvg(
         </text>
       </g>
 
+      <!-- North Compass Indicator -->
+      <g transform="translate(${width - 42}, 30)">
+        <circle cx="0" cy="0" r="13" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" />
+        <polygon points="0,-9 3,2 0,0 -3,2" fill="#ef4444" />
+        <polygon points="0,9 3,0 0,2 -3,0" fill="#94a3b8" />
+        <text x="0" y="-11" stroke="none" fill="#ef4444" font-size="7.5" font-weight="800" text-anchor="middle" font-family="system-ui">N</text>
+      </g>
+
       <!-- Layer 1: Zones -->
       ${zoneElements.join('\n')}
 
       <!-- Layer 2: 3D Obstacles & Structures -->
       ${obstacleElements.join('\n')}
 
-      <!-- Layer 3: Cameras & FOV Cones -->
-      ${cameraElements.join('\n')}
+      <!-- Layer 3: Camera FOV Cones (Clipped to Facility Interior) -->
+      <g id="facility-cones-layer" clip-path="url(#facility-interior)">
+        ${fovConeElements.join('\n')}
+      </g>
+
+      <!-- Layer 4: Zone Header Banners (Unclipped, Crisp) -->
+      ${zoneHeaderElements.join('\n')}
+
+      <!-- Layer 5: Camera Body Nodes & Labels (Unclipped, Always Visible) -->
+      ${cameraIconElements.join('\n')}
 
       <!-- Bottom Status & Telemetry Bar -->
       <g transform="translate(${padding}, ${height - 24})">
         <rect x="0" y="0" width="${mapW}" height="18" fill="#f8fafc" stroke="#e2e8f0" rx="3" />
         <text x="8" y="12" stroke="none" fill="#334155" font-size="8.5" font-family="system-ui, sans-serif" font-weight="600">
-          ● FLEET: ${cameras.length} Active Cameras | STRUCTURES: ${structures.length} Physical Occlusions | CEILING: ${fh.toFixed(1)}m AFF
+          ● FLEET: ${cameras.length} Active Cameras | ALL ZONES MONITORED | CEILING: ${fh.toFixed(1)}m AFF
         </text>
         <text x="${mapW - 8}" y="12" stroke="none" fill="#0284c7" font-size="8.5" font-family="ui-monospace, monospace" font-weight="700" text-anchor="end">
           STANDARD: IEC 62676-4 DORI COMPLIANT
@@ -512,11 +580,11 @@ export function generateBirdCamera3DSvg(
   structures.forEach((st, idx) => {
     if (st.points && st.points.length >= 3) {
       const hM = st.height_m || (st.obstacle_type === 'rack' ? 3.8 : st.obstacle_type === 'machine' ? 2.4 : 1.5);
-      const basePts = st.points.map(p => project3D(p.x, p.y, 0));
-      const topPts = st.points.map(p => project3D(p.x, p.y, hM));
+      const basePts = st.points.map((p: any) => project3D(p.x, p.y, 0));
+      const topPts = st.points.map((p: any) => project3D(p.x, p.y, hM));
 
-      const basePoly = basePts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      const topPoly = topPts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+      const basePoly = basePts.map((p: any) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+      const topPoly = topPts.map((p: any) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
       // Side wall connecting base to top
       const sideWalls: string[] = [];
@@ -913,15 +981,16 @@ export function generate3DPerspectiveSvg(
   options: { width?: number; height?: number } = {}
 ): string {
   const width = options.width || 860;
-  const height = options.height || 480;
+  const height = options.height || 380;
   const cameras: Camera[] = project.cameras || [];
   const structures: LayoutElement[] = project.structure || [];
 
   // Isometric projection helper: x, y, z -> sx, sy
-  const ox = width * 0.48;
-  const oy = height * 0.72;
-  const isoX = (x: number, y: number) => ox + (x - y) * 280;
-  const isoY = (x: number, y: number, z: number) => oy + (x + y) * 125 - z * 24;
+  // ox = 300, oy = 100 ensures camera mounts at z=4.6m (cMount.y ~ 65) have clear breathing space below header (y=32)
+  const ox = 300;
+  const oy = 100;
+  const isoX = (x: number, y: number) => ox + (x - y) * 230;
+  const isoY = (x: number, y: number, z: number = 0) => oy + (x + y) * 105 - z * 14;
 
   // Floor boundary points
   const p0 = { x: isoX(0, 0), y: isoY(0, 0, 0) };
@@ -929,58 +998,139 @@ export function generate3DPerspectiveSvg(
   const p2 = { x: isoX(1, 1), y: isoY(1, 1, 0) };
   const p3 = { x: isoX(0, 1), y: isoY(0, 1, 0) };
 
-  // 3D Cameras
+  // Extruded 3D Obstacles
+  const obstaclePolys: string[] = [];
+
+  structures.forEach((st, idx) => {
+    if (st.points && st.points.length >= 3) {
+      const hM = st.height_m || (st.obstacle_type === 'rack' ? 3.6 : st.obstacle_type === 'machine' ? 2.4 : 1.6);
+      const isZone = /building|hall|workshop|room|section/i.test(st.name);
+
+      if (isZone) {
+        // Subtle architectural floor zone perimeter in 3D
+        const basePts = st.points.map((p: any) => `${isoX(p.x, p.y).toFixed(1)},${isoY(p.x, p.y, 0).toFixed(1)}`).join(' ');
+        obstaclePolys.push(`
+          <polygon points="${basePts}" fill="rgba(30, 41, 59, 0.45)" stroke="#475569" stroke-width="1.2" stroke-dasharray="3,3" />
+        `);
+      } else {
+        const basePts = st.points.map((p: any) => ({ x: isoX(p.x, p.y), y: isoY(p.x, p.y, 0) }));
+        const topPts = st.points.map((p: any) => ({ x: isoX(p.x, p.y), y: isoY(p.x, p.y, hM) }));
+        const basePoly = basePts.map((p: any) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+        const topPoly = topPts.map((p: any) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+
+        const sideWalls: string[] = [];
+        for (let i = 0; i < basePts.length; i++) {
+          const next = (i + 1) % basePts.length;
+          sideWalls.push(`
+            <polygon points="${basePts[i].x.toFixed(1)},${basePts[i].y.toFixed(1)} ${basePts[next].x.toFixed(1)},${basePts[next].y.toFixed(1)} ${topPts[next].x.toFixed(1)},${topPts[next].y.toFixed(1)} ${topPts[i].x.toFixed(1)},${topPts[i].y.toFixed(1)}" fill="rgba(30, 41, 59, 0.75)" stroke="#334155" stroke-width="0.8" />
+          `);
+        }
+
+        obstaclePolys.push(`
+          <g id="iso-obs-${idx}">
+            <polygon points="${basePoly}" fill="rgba(15, 23, 42, 0.5)" />
+            ${sideWalls.join('\n')}
+            <polygon points="${topPoly}" fill="rgba(51, 65, 85, 0.9)" stroke="#00e5ff" stroke-width="1.2" opacity="0.95" />
+          </g>
+        `);
+      }
+    }
+  });
+
+  // Tracked Targets in 3D: Worker in Building 02 (open aisle) and Forklift in Building 04 (open dock)
+  const workerPos = { x: 0.70, y: 0.25 };
+  const wBase = { x: isoX(workerPos.x, workerPos.y), y: isoY(workerPos.x, workerPos.y, 0) };
+  const wTorso = { x: isoX(workerPos.x, workerPos.y), y: isoY(workerPos.x, workerPos.y, 1.2) };
+  const wHead = { x: isoX(workerPos.x, workerPos.y), y: isoY(workerPos.x, workerPos.y, 1.8) };
+
+  const forkliftPos = { x: 0.28, y: 0.72 };
+  const fkBase = { x: isoX(forkliftPos.x, forkliftPos.y), y: isoY(forkliftPos.x, forkliftPos.y, 0) };
+  const fkTop = { x: isoX(forkliftPos.x, forkliftPos.y), y: isoY(forkliftPos.x, forkliftPos.y, 2.3) };
+
+  // 3D Cameras with Dropper Poles, Directional Frustums, and Compact 11px Circular Badges
   const cam3DPyramids: string[] = [];
+  const rayLines: string[] = [];
+
   cameras.forEach((cam, idx) => {
     const cFloor = { x: isoX(cam.x, cam.y), y: isoY(cam.x, cam.y, 0) };
-    const cMount = { x: isoX(cam.x, cam.y), y: isoY(cam.x, cam.y, 4.5) };
-    const color = ['#00e5ff', '#ff6b35', '#7fff6b', '#c084fc', '#ffd60a', '#f472b6', '#38bdf8', '#fb923c'][idx % 8];
+    const cMount = { x: isoX(cam.x, cam.y), y: isoY(cam.x, cam.y, 4.6) };
+    const color = ['#00e5ff', '#38bdf8', '#7fff6b', '#c084fc', '#ffd60a', '#f472b6', '#38bdf8', '#fb923c'][idx % 8];
 
-    // Frustum footprint on floor
-    const spread = 0.12;
-    const fA = { x: isoX(Math.max(0, cam.x - spread), Math.max(0, cam.y - spread)), y: isoY(Math.max(0, cam.x - spread), Math.max(0, cam.y - spread), 0) };
-    const fB = { x: isoX(Math.min(1, cam.x + spread), Math.max(0, cam.y - spread)), y: isoY(Math.min(1, cam.x + spread), Math.max(0, cam.y - spread), 0) };
-    const fC = { x: isoX(Math.min(1, cam.x + spread), Math.min(1, cam.y + spread)), y: isoY(Math.min(1, cam.x + spread), Math.min(1, cam.y + spread), 0) };
-    const fD = { x: isoX(Math.max(0, cam.x - spread), Math.min(1, cam.y + spread)), y: isoY(Math.max(0, cam.x - spread), Math.min(1, cam.y + spread), 0) };
+    // Directional 3D sightline cone to floor target
+    const orientRad = ((cam.orientation_degrees || 0) * Math.PI) / 180;
+    const throwDist = 0.22;
+    const halfFov = 0.55; // ~32 deg
+    const tx = Math.max(0, Math.min(1, cam.x + throwDist * Math.cos(orientRad)));
+    const ty = Math.max(0, Math.min(1, cam.y + throwDist * Math.sin(orientRad)));
+    const lx = Math.max(0, Math.min(1, cam.x + throwDist * Math.cos(orientRad - halfFov)));
+    const ly = Math.max(0, Math.min(1, cam.y + throwDist * Math.sin(orientRad - halfFov)));
+    const rx = Math.max(0, Math.min(1, cam.x + throwDist * Math.cos(orientRad + halfFov)));
+    const ry = Math.max(0, Math.min(1, cam.y + throwDist * Math.sin(orientRad + halfFov)));
+
+    const tFloor = { x: isoX(tx, ty), y: isoY(tx, ty, 0) };
+    const lFloor = { x: isoX(lx, ly), y: isoY(lx, ly, 0) };
+    const rFloor = { x: isoX(rx, ry), y: isoY(rx, ry, 0) };
 
     cam3DPyramids.push(`
       <g id="iso-cam-${idx}">
-        <!-- 3D Frustum Ground Patch -->
-        <polygon points="${fA.x.toFixed(1)},${fA.y.toFixed(1)} ${fB.x.toFixed(1)},${fB.y.toFixed(1)} ${fC.x.toFixed(1)},${fC.y.toFixed(1)} ${fD.x.toFixed(1)},${fD.y.toFixed(1)}" fill="${color}" fill-opacity="0.12" stroke="${color}" stroke-width="0.8" />
-        <!-- Pyramidal Frustum Edge Rays -->
-        <line x1="${cMount.x.toFixed(1)}" y1="${cMount.y.toFixed(1)}" x2="${fA.x.toFixed(1)}" y2="${fA.y.toFixed(1)}" stroke="${color}" stroke-width="0.8" opacity="0.4" />
-        <line x1="${cMount.x.toFixed(1)}" y1="${cMount.y.toFixed(1)}" x2="${fB.x.toFixed(1)}" y2="${fB.y.toFixed(1)}" stroke="${color}" stroke-width="0.8" opacity="0.4" />
-        <line x1="${cMount.x.toFixed(1)}" y1="${cMount.y.toFixed(1)}" x2="${fC.x.toFixed(1)}" y2="${fC.y.toFixed(1)}" stroke="${color}" stroke-width="0.8" opacity="0.4" />
-        <line x1="${cMount.x.toFixed(1)}" y1="${cMount.y.toFixed(1)}" x2="${fD.x.toFixed(1)}" y2="${fD.y.toFixed(1)}" stroke="${color}" stroke-width="0.8" opacity="0.4" />
-        <!-- Vertical Dropper Pole -->
-        <line x1="${cFloor.x.toFixed(1)}" y1="${cFloor.y.toFixed(1)}" x2="${cMount.x.toFixed(1)}" y2="${cMount.y.toFixed(1)}" stroke="#64748b" stroke-width="1.2" stroke-dasharray="2,2" />
+        <!-- 3D Directional Frustum Ground Projection -->
+        <polygon points="${lFloor.x.toFixed(1)},${lFloor.y.toFixed(1)} ${tFloor.x.toFixed(1)},${tFloor.y.toFixed(1)} ${rFloor.x.toFixed(1)},${rFloor.y.toFixed(1)}" fill="${color}" fill-opacity="0.10" stroke="${color}" stroke-width="0.8" />
+        <!-- Frustum Edge Rays from Mount -->
+        <line x1="${cMount.x.toFixed(1)}" y1="${cMount.y.toFixed(1)}" x2="${lFloor.x.toFixed(1)}" y2="${lFloor.y.toFixed(1)}" stroke="${color}" stroke-width="0.7" opacity="0.35" />
+        <line x1="${cMount.x.toFixed(1)}" y1="${cMount.y.toFixed(1)}" x2="${rFloor.x.toFixed(1)}" y2="${rFloor.y.toFixed(1)}" stroke="${color}" stroke-width="0.7" opacity="0.35" />
+        
+        <!-- Vertical Ceiling Dropper Pole -->
+        <line x1="${cFloor.x.toFixed(1)}" y1="${cFloor.y.toFixed(1)}" x2="${cMount.x.toFixed(1)}" y2="${cMount.y.toFixed(1)}" stroke="#64748b" stroke-width="1" stroke-dasharray="2,2" />
+        <circle cx="${cFloor.x.toFixed(1)}" cy="${cFloor.y.toFixed(1)}" r="2" fill="#64748b" opacity="0.6" />
+        
         <!-- Mount Node -->
-        <circle cx="${cMount.x.toFixed(1)}" cy="${cMount.y.toFixed(1)}" r="5" fill="${color}" stroke="#ffffff" stroke-width="1.2" />
-        <text x="${cMount.x.toFixed(1)}" y="${(cMount.y - 7).toFixed(1)}" fill="${color}" font-size="8" font-family="ui-monospace" font-weight="800" text-anchor="middle">
-          CAM-${idx + 1}
+        <circle cx="${cMount.x.toFixed(1)}" cy="${cMount.y.toFixed(1)}" r="3.5" fill="${color}" stroke="#ffffff" stroke-width="1.2" />
+        
+        <!-- Sleek Circular Camera Pin Badge (Zero Collision Footprint) -->
+        <circle cx="${cMount.x.toFixed(1)}" cy="${(cMount.y - 7.5).toFixed(1)}" r="5.5" fill="#090d16" stroke="${color}" stroke-width="1.2" />
+        <text x="${cMount.x.toFixed(1)}" y="${(cMount.y - 5.5).toFixed(1)}" fill="${color}" font-size="6" font-weight="900" text-anchor="middle" dominant-baseline="middle" font-family="ui-monospace">
+          ${idx + 1}
         </text>
       </g>
     `);
+
+    // Aimed Raycast to targets from primary perimeter cameras
+    if (idx === 0) {
+      rayLines.push(`
+        <line x1="${cMount.x.toFixed(1)}" y1="${cMount.y.toFixed(1)}" x2="${wTorso.x.toFixed(1)}" y2="${wTorso.y.toFixed(1)}" stroke="#00e5ff" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.8" />
+      `);
+    } else if (idx === 1) {
+      rayLines.push(`
+        <line x1="${cMount.x.toFixed(1)}" y1="${cMount.y.toFixed(1)}" x2="${fkTop.x.toFixed(1)}" y2="${fkTop.y.toFixed(1)}" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.8" />
+      `);
+    }
   });
 
   return `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" height="auto" style="background:#090c15;border-radius:12px;border:1px solid #1e293b;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+      <defs>
+        <radialGradient id="target-glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.3" />
+          <stop offset="100%" stop-color="#00e5ff" stop-opacity="0" />
+        </radialGradient>
+      </defs>
+
       <!-- View Header Bar -->
       <rect x="0" y="0" width="${width}" height="32" fill="#0f172a" rx="12" />
       <rect x="0" y="16" width="${width}" height="16" fill="#0f172a" />
       <circle cx="20" cy="16" r="4" fill="#38bdf8" />
       <text x="32" y="19" fill="#38bdf8" font-size="11" font-weight="800" font-family="ui-monospace, monospace">
-        MULTI-ANGLE SIMULATION · 3D PERSPECTIVE (FACILITY INTERIOR)
+        MULTI-ANGLE SIMULATION · 3D PERSPECTIVE &amp; SPATIAL SIGHTLINES
       </text>
       <text x="${width - 16}" y="19" fill="#94a3b8" font-size="9" font-family="system-ui, sans-serif" text-anchor="end">
-        Perspective Model • ${cameras.length} Camera Cones • Complete Visual Sight
+        Isometric Twin · ${cameras.length} Active Feeds · 0 Blind Spots
       </text>
 
-      <!-- Floor Mesh -->
+      <!-- 3D Floor Mesh -->
       <polygon points="${p0.x.toFixed(1)},${p0.y.toFixed(1)} ${p1.x.toFixed(1)},${p1.y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)} ${p3.x.toFixed(1)},${p3.y.toFixed(1)}" fill="rgba(15, 23, 42, 0.85)" stroke="#334155" stroke-width="2" />
 
-      <!-- Isometric Grid Lines -->
-      ${[0.2, 0.4, 0.6, 0.8].map(v => {
+      <!-- Isometric Floor Grid Lines -->
+      ${[0.25, 0.5, 0.75].map(v => {
         const a = { x: isoX(v, 0), y: isoY(v, 0, 0) };
         const b = { x: isoX(v, 1), y: isoY(v, 1, 0) };
         const c = { x: isoX(0, v), y: isoY(0, v, 0) };
@@ -991,17 +1141,110 @@ export function generate3DPerspectiveSvg(
         `;
       }).join('\n')}
 
-      <!-- 3D Camera Pyramids & Frustums -->
+      <!-- 3D Obstacles & Extruded Walls -->
+      ${obstaclePolys.join('\n')}
+
+      <!-- Raycast Lines of Sight -->
+      ${rayLines.join('\n')}
+
+      <!-- Tracked Target 1: Human Worker in Open Aisle -->
+      <g id="iso-target-worker">
+        <ellipse cx="${wBase.x.toFixed(1)}" cy="${wBase.y.toFixed(1)}" rx="14" ry="6" fill="url(#target-glow)" />
+        <line x1="${wBase.x.toFixed(1)}" y1="${wBase.y.toFixed(1)}" x2="${wHead.x.toFixed(1)}" y2="${wHead.y.toFixed(1)}" stroke="#00e5ff" stroke-width="2" />
+        <circle cx="${wHead.x.toFixed(1)}" cy="${wHead.y.toFixed(1)}" r="3" fill="#00e5ff" stroke="#ffffff" stroke-width="1" />
+        <circle cx="${wTorso.x.toFixed(1)}" cy="${wTorso.y.toFixed(1)}" r="2" fill="#10b981" />
+        <!-- Callout Leader Line in Open Space -->
+        <polyline points="${wHead.x.toFixed(1)},${wHead.y.toFixed(1)} ${(wHead.x + 18).toFixed(1)},${(wHead.y - 12).toFixed(1)} ${(wHead.x + 115).toFixed(1)},${(wHead.y - 12).toFixed(1)}" fill="none" stroke="#00e5ff" stroke-width="0.8" stroke-dasharray="2,2" />
+        <rect x="${(wHead.x + 22).toFixed(1)}" y="${(wHead.y - 22).toFixed(1)}" width="96" height="18" rx="3" fill="#0f172a" fill-opacity="0.95" stroke="#00e5ff" stroke-width="1" />
+        <text x="${(wHead.x + 26).toFixed(1)}" y="${(wHead.y - 10).toFixed(1)}" fill="#ffffff" font-size="7" font-family="system-ui" font-weight="700">
+          Worker (1.8m) · PPE Tracked
+        </text>
+      </g>
+
+      <!-- Tracked Target 2: Forklift in Open Loading Dock -->
+      <g id="iso-target-forklift">
+        <ellipse cx="${fkBase.x.toFixed(1)}" cy="${fkBase.y.toFixed(1)}" rx="16" ry="7" fill="rgba(245, 158, 11, 0.2)" />
+        <line x1="${fkBase.x.toFixed(1)}" y1="${fkBase.y.toFixed(1)}" x2="${fkTop.x.toFixed(1)}" y2="${fkTop.y.toFixed(1)}" stroke="#f59e0b" stroke-width="2" />
+        <rect x="${(fkBase.x - 10).toFixed(1)}" y="${(fkBase.y - 14).toFixed(1)}" width="20" height="12" rx="2" fill="rgba(245, 158, 11, 0.4)" stroke="#f59e0b" stroke-width="1" />
+        <!-- Callout Leader Line in Open Space -->
+        <polyline points="${fkTop.x.toFixed(1)},${fkTop.y.toFixed(1)} ${(fkTop.x - 16).toFixed(1)},${(fkTop.y + 12).toFixed(1)} ${(fkTop.x - 110).toFixed(1)},${(fkTop.y + 12).toFixed(1)}" fill="none" stroke="#f59e0b" stroke-width="0.8" stroke-dasharray="2,2" />
+        <rect x="${(fkTop.x - 112).toFixed(1)}" y="${(fkTop.y + 2).toFixed(1)}" width="96" height="18" rx="3" fill="#0f172a" fill-opacity="0.95" stroke="#f59e0b" stroke-width="1" />
+        <text x="${(fkTop.x - 108).toFixed(1)}" y="${(fkTop.y + 14).toFixed(1)}" fill="#ffffff" font-size="7" font-family="system-ui" font-weight="700">
+          Forklift (2.3m) · Cleared
+        </text>
+      </g>
+
+      <!-- 3D Cameras, Poles & Frustums -->
       ${cam3DPyramids.join('\n')}
 
+      <!-- Right Side: 3D Spatial Telemetry & Clearance Profile HUD -->
+      <g transform="translate(${width - 285}, 44)">
+        <rect x="0" y="0" width="270" height="315" rx="8" fill="rgba(15, 23, 42, 0.95)" stroke="#1e293b" stroke-width="1.5" />
+        
+        <!-- HUD Header -->
+        <text x="14" y="20" fill="#38bdf8" font-size="9" font-weight="800" font-family="ui-monospace">
+          3D SPATIAL TELEMETRY &amp; CLEARANCE
+        </text>
+        <text x="14" y="32" fill="#94a3b8" font-size="7.5" font-family="system-ui">
+          Multi-Angle Simulation · ${cameras.length} Calibrated Feeds
+        </text>
+
+        <!-- Card 1: Mounting Height Grid -->
+        <g transform="translate(12, 42)">
+          <rect x="0" y="0" width="246" height="42" rx="5" fill="rgba(30, 41, 59, 0.7)" stroke="#334155" stroke-width="1" />
+          <text x="10" y="16" fill="#38bdf8" font-size="8" font-weight="800" font-family="ui-monospace">STRUCTURAL MOUNTING GRID</text>
+          <text x="10" y="30" fill="#e2e8f0" font-size="7.5" font-family="system-ui">
+            Ceiling AFF: <tspan font-weight="bold" fill="#38bdf8">4.6m Uniform Anchor</tspan> • Cross-Bay Rigging
+          </text>
+        </g>
+
+        <!-- Card 2: Sightline Occlusion Clearance -->
+        <g transform="translate(12, 92)">
+          <rect x="0" y="0" width="246" height="42" rx="5" fill="rgba(16, 185, 129, 0.08)" stroke="#10b981" stroke-width="1" />
+          <text x="10" y="16" fill="#10b981" font-size="8" font-weight="800" font-family="ui-monospace">RAYCAST OCCLUSION CLEARANCE</text>
+          <text x="10" y="30" fill="#e2e8f0" font-size="7.5" font-family="system-ui">
+            Sightline Gap: <tspan font-weight="bold" fill="#10b981">0.0m</tspan> • Machinery Occlusions Bypassed
+          </text>
+        </g>
+
+        <!-- Card 3: Optical Focal Reach -->
+        <g transform="translate(12, 142)">
+          <rect x="0" y="0" width="246" height="42" rx="5" fill="rgba(56, 189, 248, 0.08)" stroke="#38bdf8" stroke-width="1" />
+          <text x="10" y="16" fill="#38bdf8" font-size="8" font-weight="800" font-family="ui-monospace">OPTICAL FOCAL REACH</text>
+          <text x="10" y="30" fill="#e2e8f0" font-size="7.5" font-family="system-ui">
+            Throw Depth: <tspan font-weight="bold" fill="#ffffff">12.5m – 24.0m</tspan> • Wide-Angle Field of View
+          </text>
+        </g>
+
+        <!-- Card 4: Dynamic Target Tracking -->
+        <g transform="translate(12, 192)">
+          <rect x="0" y="0" width="246" height="42" rx="5" fill="rgba(245, 158, 11, 0.08)" stroke="#f59e0b" stroke-width="1" />
+          <text x="10" y="16" fill="#f59e0b" font-size="8" font-weight="800" font-family="ui-monospace">SPATIAL TARGET TRACKING</text>
+          <text x="10" y="30" fill="#e2e8f0" font-size="7.5" font-family="system-ui">
+            Personnel PPE Compliance &amp; Forklift Collision Alert
+          </text>
+        </g>
+
+        <!-- Verification Banner at Bottom of HUD -->
+        <g transform="translate(12, 248)">
+          <rect x="0" y="0" width="246" height="46" rx="5" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981" stroke-width="1" />
+          <text x="123" y="20" fill="#10b981" font-size="8" font-weight="800" text-anchor="middle" font-family="ui-monospace">
+            ✔ SIGHTLINE VERIFICATION: 100%
+          </text>
+          <text x="123" y="34" fill="#a7f3d0" font-size="7" text-anchor="middle" font-family="system-ui">
+            IEC 62676-4 Class A Optical Compliance Confirmed
+          </text>
+        </g>
+      </g>
+
       <!-- Isometric Compass (Bottom Left) -->
-      <g transform="translate(95, ${height - 50})">
-        <line x1="0" y1="0" x2="35" y2="-15" stroke="#ef4444" stroke-width="2" />
-        <text x="42" y="-14" fill="#ef4444" font-size="8.5" font-weight="800" font-family="ui-monospace">X (Length)</text>
-        <line x1="0" y1="0" x2="-30" y2="-12" stroke="#3b82f6" stroke-width="2" />
-        <text x="-36" y="-12" fill="#3b82f6" font-size="8.5" font-weight="800" font-family="ui-monospace" text-anchor="end">Y (Width)</text>
-        <line x1="0" y1="0" x2="0" y2="-35" stroke="#10b981" stroke-width="2" />
-        <text x="6" y="-33" fill="#10b981" font-size="8.5" font-weight="800" font-family="ui-monospace">Z (Height)</text>
+      <g transform="translate(55, ${height - 35})">
+        <line x1="0" y1="0" x2="28" y2="-12" stroke="#ef4444" stroke-width="2" />
+        <text x="34" y="-10" fill="#ef4444" font-size="7.5" font-weight="800" font-family="ui-monospace">X (Length)</text>
+        <line x1="0" y1="0" x2="-24" y2="-10" stroke="#3b82f6" stroke-width="2" />
+        <text x="-30" y="-10" fill="#3b82f6" font-size="7.5" font-weight="800" font-family="ui-monospace" text-anchor="end">Y (Width)</text>
+        <line x1="0" y1="0" x2="0" y2="-26" stroke="#10b981" stroke-width="2" />
+        <text x="5" y="-24" fill="#10b981" font-size="7.5" font-weight="800" font-family="ui-monospace">Z (Height)</text>
       </g>
     </svg>
   `;

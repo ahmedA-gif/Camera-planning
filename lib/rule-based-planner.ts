@@ -365,11 +365,14 @@ function finalizeBuilding(b: Partial<FacilityBuilding>, isFeet: boolean, index: 
 function distributeCameras(buildings: FacilityBuilding[], total: number) {
   if (buildings.length === 0) return;
   const targetTotal = Math.max(1, total);
-  const totalArea = buildings.reduce((acc, b) => acc + Math.max(10, b.area_sqft), 0);
+  const getSqft = (b: FacilityBuilding) => b.area_sqft || (b.area_sqm ? Math.round(b.area_sqm * 10.764) : 0) || 100;
+  const totalArea = buildings.reduce((acc, b) => acc + Math.max(10, getSqft(b)), 0);
   
   let allocated = 0;
   const minPerBldg = targetTotal >= buildings.length ? 1 : 0;
   buildings.forEach(b => {
+    b.area_sqft = getSqft(b);
+    if (!b.area_sqm) b.area_sqm = Math.round(b.area_sqft / 10.764);
     const raw = Math.round((Math.max(10, b.area_sqft) / totalArea) * targetTotal);
     b.camera_count = Math.max(minPerBldg, raw);
     allocated += b.camera_count;
@@ -380,18 +383,18 @@ function distributeCameras(buildings: FacilityBuilding[], total: number) {
   while (diff !== 0 && safetyIter < 200) {
     safetyIter++;
     if (diff > 0) {
-      const candidates = [...buildings].sort((a, b) => (b.area_sqft / (b.camera_count + 1)) - (a.area_sqft / (a.camera_count + 1)));
-      candidates[0].camera_count += 1;
+      const candidates = [...buildings].sort((a, b) => (getSqft(b) / ((b.camera_count || 0) + 1)) - (getSqft(a) / ((a.camera_count || 0) + 1)));
+      candidates[0].camera_count = (candidates[0].camera_count || 0) + 1;
       diff--;
     } else {
-      const eligible = buildings.filter(b => b.camera_count > minPerBldg);
+      const eligible = buildings.filter(b => (b.camera_count || 0) > minPerBldg);
       if (eligible.length > 0) {
-        eligible.sort((a, b) => b.camera_count - a.camera_count)[0].camera_count -= 1;
+        eligible.sort((a, b) => (b.camera_count || 0) - (a.camera_count || 0))[0].camera_count -= 1;
         diff++;
       } else {
-        const eligibleZero = buildings.filter(b => b.camera_count > 0);
+        const eligibleZero = buildings.filter(b => (b.camera_count || 0) > 0);
         if (eligibleZero.length > 0) {
-          eligibleZero.sort((a, b) => b.camera_count - a.camera_count)[0].camera_count -= 1;
+          eligibleZero.sort((a, b) => (b.camera_count || 0) - (a.camera_count || 0))[0].camera_count -= 1;
           diff++;
         } else {
           break;
@@ -1484,6 +1487,18 @@ export function ensureMultiBuildingFleet(project: Partial<DetVisionProject>, tar
         if (!cam.dori_recognize_m) cam.dori_recognize_m = i % 3 === 0 ? 11.0 : i % 3 === 1 ? 16.0 : 24.0;
       }
     });
+
+    while (camOffset < existingCams.length) {
+      const cam = existingCams[camOffset++];
+      const lastB = bldgs[bldgs.length - 1];
+      if (lastB) {
+        if (!lastB.camera_ids) lastB.camera_ids = [];
+        lastB.camera_ids.push(cam.id);
+        lastB.camera_count = (lastB.camera_count || 0) + 1;
+        cam.building_name = lastB.name;
+        cam.building_id = lastB.id;
+      }
+    }
 
     const structure = (project.structure && project.structure.length >= 10)
       ? project.structure

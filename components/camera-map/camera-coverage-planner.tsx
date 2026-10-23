@@ -972,15 +972,25 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const handleApplyToCanvas = () => {
     if (!onApplyToProject) return;
     const rawUcs = project?.use_cases || [];
+    const bldgs = project?.buildings || [];
     const projectCameras: ProjectCamera[] = poses.map((p, idx) => {
       const normX = Math.max(0.02, Math.min(0.98, p.x / bayLength));
       const normY = Math.max(0.02, Math.min(0.98, p.y / bayWidth));
       const st = result.cameras[idx];
       const assignedUc = rawUcs.length > 0 ? rawUcs[idx % rawUcs.length] : null;
 
+      const existingCam = project?.cameras?.find(c => c.name?.includes(`CAM-${p.id}`) || c.id === String(p.id));
+      let bldgName = existingCam?.building_name;
+      let bldgId = existingCam?.building_id;
+      if (!bldgName && bldgs.length > 0) {
+        const bIdx = Math.min(bldgs.length - 1, Math.floor((idx / Math.max(1, poses.length)) * bldgs.length));
+        bldgName = bldgs[bIdx].name;
+        bldgId = bldgs[bIdx].id;
+      }
+
       return {
         id: crypto.randomUUID(),
-        name: `CAM-${p.id} (${p.mount.toUpperCase()})`,
+        name: `CAM-${String(p.id).padStart(2, '0')}`,
         x: normX,
         y: normY,
         orientation_degrees: (p.panDeg + 360) % 360,
@@ -994,6 +1004,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
         mount_type: p.mount,
         height_m: p.z,
         tilt_degrees: p.tiltDeg,
+        building_name: bldgName || 'Main Operations',
+        building_id: bldgId,
         rationale: `${cameraModel} (${resolutionPreset.toUpperCase()}) · Codec: ${videoCodec} @ ${framerateFps}fps · Span: ${st ? (st.coverEnd - st.coverStart).toFixed(1) : ''}m, Blind: ${st ? st.nearBlind.toFixed(1) : ''}m. ${MOUNT_INFO[p.mount].tip}`
       };
     });
@@ -1017,8 +1029,8 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
     }));
 
     onApplyToProject(projectCameras, projectStructure, {
-      facility_width_m: bayLength,
-      facility_length_m: bayWidth,
+      facility_length_m: bayLength,
+      facility_width_m: bayWidth,
       facility_height_m: mountHeight,
       facility_type: activeFacilityPreset !== 'custom' ? activeFacilityPreset : (initialFacility.facilityType || 'custom'),
     });

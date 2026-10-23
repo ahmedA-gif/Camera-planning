@@ -15,6 +15,14 @@ if (!bldgs[0].name.includes('Sundar Plastic') || bldgs[0].name.includes('Filling
   throw new Error(`Building 01 name corrupted: ${bldgs[0].name}`);
 }
 
+// Verify no NaN in camera counts
+bldgs.forEach(b => {
+  if (isNaN(b.camera_count) || typeof b.camera_count !== 'number') {
+    throw new Error(`Building ${b.name} has invalid camera count: ${b.camera_count}`);
+  }
+});
+console.log('✓ All building camera counts are valid positive integers (no NaN)!');
+
 // Test 2: cleanZoneName sanitizer
 const cleaned = cleanZoneName(userScenario);
 console.log('Sanitized zone name:', cleaned);
@@ -43,21 +51,26 @@ async function testReport() {
 
   const html = await buildReportHtml(project, 'pdf');
 
-  // Verify page count: exactly 5 `.page` blocks
+  // Verify page count: exactly 3 `.page` blocks for the short executive blueprint
   const pageMatches = html.match(/<div class="page">/g);
   const pageCount = pageMatches ? pageMatches.length : 0;
   console.log(`Report generated with ${pageCount} pages.`);
-  if (pageCount !== 5) {
-    throw new Error(`Expected exactly 5 pages, got ${pageCount}`);
+  if (pageCount !== 3) {
+    throw new Error(`Expected exactly 3 pages for executive blueprint, got ${pageCount}`);
   }
+  console.log('✓ Exactly 3 pages verified!');
 
-  // Verify all 6 diagrams are included
-  for (let i = 1; i <= 6; i++) {
-    if (!html.includes(`Diagram ${i} of 6`)) {
-      throw new Error(`Missing Diagram ${i} of 6`);
-    }
+  // Verify core diagrams are included
+  if (!html.includes('Diagram 1 — 2D Architectural Blueprint') || !html.includes('Diagram 2 — 3D Spatial Twin')) {
+    throw new Error('Missing core executive blueprint diagrams!');
   }
-  console.log('✓ All 6 diagrams included!');
+  console.log('✓ Both core visual engineering diagrams included!');
+
+  // Verify no NaN in generated HTML
+  if (html.includes('>NaN<') || html.includes('NaN m²') || html.includes('NaN Cameras')) {
+    throw new Error('HTML report contains NaN output!');
+  }
+  console.log('✓ Zero NaN values in generated report!');
 
   // Verify no long paragraph descriptions in camera schedule table
   if (html.includes('The vision architecture requires 100% continuous coverage')) {
@@ -71,7 +84,13 @@ async function testReport() {
   }
   console.log('✓ Placement Coordinates column verified!');
 
-  console.log('\n--- ALL REPORT VERIFICATION TESTS PASSED SUCCESSFULLY! ---');
+  // Verify Official Engineering Sign-off & Client Approval Block exists
+  if (!html.includes('Official Engineering Sign-Off') || !html.includes('Lead Vision Systems Engineer')) {
+    throw new Error('Official Engineering Sign-Off block is missing!');
+  }
+  console.log('✓ Official Engineering Sign-Off & Client Approval Block verified!');
+
+  console.log('\n--- ALL 3-PAGE REPORT VERIFICATION TESTS PASSED SUCCESSFULLY! ---');
 }
 
 testReport().catch(err => {

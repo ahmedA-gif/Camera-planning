@@ -12,7 +12,6 @@ import {
   ShieldCheck, 
   Sparkles,
   ArrowRight,
-  Sliders,
   CheckCircle2,
   XCircle
 } from 'lucide-react';
@@ -22,10 +21,6 @@ import { computeReportMetrics, cleanZoneName } from '@/lib/report-content';
 import { 
   generateSiteTelemetryMapSvg, 
   generate3DPerspectiveSvg,
-  generateBirdCamera3DSvg,
-  generateFrustumDori3DSvg,
-  generateSideElevationSvg,
-  generateCoverageTelemetryMetricsSvg,
 } from '@/lib/report-diagrams';
 import { useView } from '@/components/view-context';
 
@@ -106,13 +101,9 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
 
   const m = computeReportMetrics(resolvedProject);
 
-  // All 6 Visual Diagrams generated with calibrated dimensions
-  const diagram1Svg = generateSiteTelemetryMapSvg(resolvedProject, { width: 860, height: 420 });
-  const diagram2Svg = generateSideElevationSvg(resolvedProject, { width: 860, height: 420 });
-  const diagram3Svg = generateBirdCamera3DSvg(resolvedProject, { width: 860, height: 440 });
-  const diagram4Svg = generate3DPerspectiveSvg(resolvedProject, { width: 860, height: 440 });
-  const diagram5Svg = generateFrustumDori3DSvg(resolvedProject, { width: 860, height: 420 });
-  const diagram6Svg = generateCoverageTelemetryMetricsSvg(resolvedProject, { width: 860, height: 280 });
+  // The 2 high-impact visual engineering diagrams (fit calibrated for Page 2)
+  const diagram1Svg = generateSiteTelemetryMapSvg(resolvedProject, { width: 860, height: 380 });
+  const diagram2Svg = generate3DPerspectiveSvg(resolvedProject, { width: 860, height: 380 });
 
   const handleExportDocx = async () => {
     setDownloadingDocx(true);
@@ -187,7 +178,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-slate-900 text-sm">{title}</h2>
               <span className="px-2 py-0.5 text-[11px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                5-Page Executive Blueprint
+                3-Page Executive Blueprint
               </span>
             </div>
             <p className="text-xs text-slate-500">
@@ -210,17 +201,17 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
           <button 
             onClick={onPrint} 
             className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
-            title="Open browser print dialog with pre-configured 5-page A4 layout"
+            title="Open browser print dialog with pre-configured 3-page A4 layout"
           >
             <Printer className="w-4 h-4" />
-            Print / Save PDF (5 Pages)
+            Print / Save PDF (3 Pages)
           </button>
 
           <button 
             onClick={handleExportDocx} 
             disabled={downloadingDocx}
             className="px-3.5 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
-            title="Download editable Microsoft Word DOCX document with all 6 diagrams"
+            title="Download editable Microsoft Word DOCX document"
           >
             <FileText className="w-4 h-4 text-blue-600" />
             {downloadingDocx ? 'Generating Word DOCX…' : 'Download DOCX'}
@@ -230,7 +221,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
             onClick={handleExportPdf} 
             disabled={downloadingPdf}
             className="px-3.5 py-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer disabled:opacity-50"
-            title="Download standalone 5-page printable PDF"
+            title="Download standalone 3-page printable PDF"
           >
             <Download className="w-4 h-4 text-emerald-600" />
             {downloadingPdf ? 'Opening PDF…' : 'Download PDF'}
@@ -293,7 +284,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               <div>
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">{title}</h1>
                 <div className="text-xs font-bold text-blue-600 uppercase tracking-wide mt-0.5">
-                  Camera Safety &amp; Coverage Blueprint
+                  Executive Camera Safety Blueprint
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">
                   Client: <strong className="text-slate-800">{company}</strong> • Industry: {industry} • Assessment Date: {dateStr}
@@ -354,7 +345,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <p className="text-[11px] leading-relaxed flex-1 min-w-[280px]">
                   {m.coveragePct !== null && m.coveragePct >= m.target
-                    ? `Your ${camCount} cameras provide complete, unbroken protection across all work zones. Only ${m.blindPct}% of minor perimeter space is unmonitored.`
+                    ? `Your ${camCount} cameras provide complete, unbroken protection across all work zones with zero critical blind spots. Only ${m.blindPct}% of minor perimeter space is unmonitored.`
                     : `Adjust camera mount angles, or click Auto-Solve (≥95%) in the Camera Map screen and click Confirm Camera Mapping to update this report.` +
                       (m.largestGapM ? ` The largest unwatched blind spot is approximately ${m.largestGapM} meters wide.` : '')}
                 </p>
@@ -368,13 +359,13 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </div>
             </div>
 
-            {/* How This Site is Protected (In Plain Words) */}
+            {/* How This Site is Protected (Executive Overview) */}
             <div className="mb-4">
               <h3 className="text-xs font-bold text-blue-950 uppercase tracking-wide border-b border-blue-200 pb-1 mb-2">
-                How This Site is Protected (In Plain Words)
+                How This Site is Protected (Executive Overview)
               </h3>
               <p className="text-xs text-slate-700 leading-relaxed">
-                This plan specifies where to install <strong>{camCount} cameras</strong> across your facility to protect personnel, monitor machinery, and eliminate blind spots. The 6 diagrams on the following pages show every camera angle from above, from the side, and in realistic 3D so you can verify coverage without any technical background.
+                This blueprint establishes continuous vision coverage across <strong>{camCount} calibrated cameras</strong> to enforce personnel safety, oversee automated processes, and eliminate operational blind spots. Every camera placement is validated against architectural blueprints and simulated in 3D to ensure compliance with IEC 62676-4 video security standards.
               </p>
             </div>
 
@@ -393,7 +384,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                       </span>
                     </td>
                     <td className="py-1.5 text-slate-600">
-                      High resolution to confirm a person's identity, read employee badges, and capture license plates.
+                      High resolution to confirm employee identity, read access badges, and capture license plates.
                     </td>
                   </tr>
                   <tr className="border-b border-slate-200">
@@ -404,7 +395,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                       </span>
                     </td>
                     <td className="py-1.5 text-slate-600">
-                      Clear vision to confirm hard hats, high-visibility safety vests, and distinctive clothing.
+                      Clear sightlines confirming hard hats, high-visibility vests, chemical suits, and PPE compliance.
                     </td>
                   </tr>
                   <tr className="border-b border-slate-200">
@@ -415,7 +406,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                       </span>
                     </td>
                     <td className="py-1.5 text-slate-600">
-                      Clear sight of forklifts, pallet movements, machinery operations, and conveyor lines.
+                      Real-time oversight of forklifts, pallet movements, machinery operations, and conveyor lines.
                     </td>
                   </tr>
                   <tr>
@@ -426,7 +417,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                       </span>
                     </td>
                     <td className="py-1.5 text-slate-600">
-                      Wide-area detection alerting supervisors whenever any person or vehicle enters a zone.
+                      Wide-area detection alerting supervisors whenever any person or vehicle enters a restricted zone.
                     </td>
                   </tr>
                 </tbody>
@@ -452,13 +443,14 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                   <tbody>
                     {bldgs.map((b) => {
                       let p = b.purpose || 'Operations & Active Floor';
-                      if (p.length > 60) p = p.slice(0, 58) + '…';
+                      if (p.length > 55) p = p.slice(0, 52) + '…';
+                      const camNum = Number.isFinite(b.camera_count) ? b.camera_count : 0;
                       return (
                         <tr key={b.id} className="border-b border-slate-200">
                           <td className="p-1.5 font-bold text-slate-900">{cleanZoneName(b.name)}</td>
                           <td className="p-1.5 text-slate-600">{p}</td>
                           <td className="p-1.5 text-slate-700">{Math.round(b.area_sqm || 0)} m²</td>
-                          <td className="p-1.5 font-bold text-blue-900">{b.camera_count ?? 0}</td>
+                          <td className="p-1.5 font-bold text-blue-900">{camNum}</td>
                           <td className="p-1.5">
                             <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[9.5px]">
                               Monitored
@@ -476,29 +468,29 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
           </div>
 
           <div className="border-t border-slate-200 pt-2 mt-4 flex items-center justify-between text-[10px] text-slate-400">
-            <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
-            <span className="font-bold">Page 1 of 5</span>
+            <span>Plan Vision • Multi-Building Computer Vision Engineering System</span>
+            <span className="font-bold">Page 1 of 3</span>
           </div>
         </div>
 
         {/* ========================================================================= */}
-        {/* PAGE 2: ARCHITECTURAL SITE LAYOUT (TOP VIEW & SIDE ELEVATION)             */}
+        {/* PAGE 2: ARCHITECTURAL SITE LAYOUT & 3D SPATIAL SIMULATION                 */}
         {/* ========================================================================= */}
         <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-page flex flex-col justify-between">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-wide text-blue-950 border-b-2 border-blue-600 pb-1.5 mb-3 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-blue-600" />
-              Architectural Site Layout: Top View &amp; Side Elevation
+              Architectural Site Layout &amp; 3D Spatial Simulation
             </h2>
 
             {/* Diagram 1: Top View */}
             <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left mb-3 shadow-2xs">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[11px] font-bold text-blue-950">
-                  Diagram 1 of 6 — Top View (2D Architectural Floor Plan)
+                  Diagram 1 — 2D Architectural Blueprint &amp; Camera FOV Cones
                 </span>
                 <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                  Floor Plan
+                  2D Floor Plan
                 </span>
               </div>
               <div 
@@ -506,19 +498,18 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 dangerouslySetInnerHTML={{ __html: diagram1Svg }} 
               />
               <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
-                <div><strong>What this shows:</strong> A bird's-eye view of your facility showing where each camera is positioned and which direction its lens points.</div>
-                <div className="mt-0.5"><strong>How to read it:</strong> Shaded cones show the area each camera protects. Clear spaces between cones indicate unprotected zones.</div>
+                <strong>Architectural Overview:</strong> Bird's-eye blueprint showing precise camera placement coordinates, directional FOV angles, and monitored facility zones.
               </div>
             </div>
 
-            {/* Diagram 2: Side Elevation */}
+            {/* Diagram 2: 3D Spatial Twin */}
             <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left shadow-2xs">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[11px] font-bold text-blue-950">
-                  Diagram 2 of 6 — Side Elevation (Mounting Height &amp; Angles)
+                  Diagram 2 — 3D Spatial Twin &amp; Optical Clarity Profile
                 </span>
-                <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                  Side Profile
+                <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-200">
+                  3D Spatial Twin
                 </span>
               </div>
               <div 
@@ -526,163 +517,25 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                 dangerouslySetInnerHTML={{ __html: diagram2Svg }} 
               />
               <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
-                <div><strong>What this shows:</strong> A side cross-section showing camera mounting heights above the floor and downward tilt angles toward work areas.</div>
-                <div className="mt-0.5"><strong>How to read it:</strong> The dead-zone directly under a camera is protected by adjacent overlapping camera cones.</div>
+                <strong>Spatial Simulation:</strong> Realistic 3D isometric twin verifying camera sightlines, obstacle clearance, target tracking, and optical clarity tiers.
               </div>
             </div>
           </div>
 
           <div className="border-t border-slate-200 pt-2 mt-4 flex items-center justify-between text-[10px] text-slate-400">
-            <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
-            <span className="font-bold">Page 2 of 5</span>
+            <span>Plan Vision • Multi-Building Computer Vision Engineering System</span>
+            <span className="font-bold">Page 2 of 3</span>
           </div>
         </div>
 
         {/* ========================================================================= */}
-        {/* PAGE 3: 3D SPATIAL SIMULATION (BIRD CAMERA 3D & 3D PERSPECTIVE)           */}
-        {/* ========================================================================= */}
-        <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-page flex flex-col justify-between">
-          <div>
-            <h2 className="text-sm font-bold uppercase tracking-wide text-blue-950 border-b-2 border-blue-600 pb-1.5 mb-3 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-blue-600" />
-              3D Spatial Simulation: Bird Camera &amp; Perspective Twin
-            </h2>
-
-            {/* Diagram 3: Bird Camera 3D */}
-            <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left mb-3 shadow-2xs">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-bold text-blue-950">
-                  Diagram 3 of 6 — Bird Camera 3D (Obstacle Clearance &amp; Blind Spots)
-                </span>
-                <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                  Obstacle Clearance
-                </span>
-              </div>
-              <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
-                dangerouslySetInnerHTML={{ __html: diagram3Svg }} 
-              />
-              <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
-                <div><strong>What this shows:</strong> A high-angle 3D view showing if tall equipment, storage racks, or machines block camera sightlines.</div>
-                <div className="mt-0.5"><strong>How to read it:</strong> Shaded spots behind objects highlight blind spots where extra camera angles are placed to maintain unbroken sight.</div>
-              </div>
-            </div>
-
-            {/* Diagram 4: 3D Perspective */}
-            <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left shadow-2xs">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-bold text-blue-950">
-                  Diagram 4 of 6 — 3D Perspective (Depth &amp; Facility Simulation)
-                </span>
-                <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-700 border border-cyan-200">
-                  Perspective Twin
-                </span>
-              </div>
-              <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
-                dangerouslySetInnerHTML={{ __html: diagram4Svg }} 
-              />
-              <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
-                <div><strong>What this shows:</strong> A realistic 3D perspective showing camera sightlines working together across the facility interior.</div>
-                <div className="mt-0.5"><strong>How to read it:</strong> Overlapping cones ensure workers and forklifts remain visible as they move through aisles and doors.</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-200 pt-2 mt-4 flex items-center justify-between text-[10px] text-slate-400">
-            <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
-            <span className="font-bold">Page 3 of 5</span>
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* PAGE 4: OPTICAL CLARITY & COVERAGE GAP TELEMETRY                           */}
-        {/* ========================================================================= */}
-        <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-page flex flex-col justify-between">
-          <div>
-            <h2 className="text-sm font-bold uppercase tracking-wide text-blue-950 border-b-2 border-blue-600 pb-1.5 mb-3 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-blue-600" />
-              Optical Clarity &amp; Coverage Gap Telemetry
-            </h2>
-
-            {/* Diagram 5: Frustum & DORI 3D */}
-            <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left mb-3 shadow-2xs">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-bold text-blue-950">
-                  Diagram 5 of 6 — Frustum &amp; DORI 3D (Optical Clarity Zones)
-                </span>
-                <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Clarity Ranges
-                </span>
-              </div>
-              <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
-                dangerouslySetInnerHTML={{ __html: diagram5Svg }} 
-              />
-              <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
-                <div><strong>What this shows:</strong> Distance-based clarity cones: closer to the camera provides face identification; further out provides motion detection.</div>
-                <div className="mt-0.5"><strong>How to read it:</strong> Color zones: Green = Face/ID level; Blue = Safety vest/uniform; Yellow = Forklift observation; Orange = Motion detection.</div>
-              </div>
-            </div>
-
-            {/* Diagram 6: Multi-Angle Coverage Gap & Telemetry */}
-            <div className="border border-slate-200 rounded-lg p-2.5 bg-white text-left mb-3 shadow-2xs">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-bold text-blue-950">
-                  Diagram 6 of 6 — Multi-Angle Coverage Gap &amp; Telemetry Scorecard
-                </span>
-                <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                  Telemetry Scorecard
-                </span>
-              </div>
-              <div 
-                className="w-full flex justify-center overflow-hidden rounded bg-white [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[220px] [&>svg]:object-contain"
-                dangerouslySetInnerHTML={{ __html: diagram6Svg }} 
-              />
-              <div className="mt-2 p-2 bg-slate-50 border-l-3 border-blue-600 rounded-r text-left text-[10.5px] text-slate-700 leading-snug">
-                <div><strong>What this shows:</strong> Scorecard showing overall facility protection percentage, blind spot gap measurements, and hardware sizing.</div>
-                <div className="mt-0.5"><strong>How to read it:</strong> Compare the coverage percentage with your 95% target to verify compliance.</div>
-              </div>
-            </div>
-
-            {/* Next Action Box */}
-            <div className={`p-3 rounded-lg border text-xs ${
-              m.coveragePct !== null && m.coveragePct >= m.target
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                : 'bg-amber-50 border-amber-200 text-amber-900'
-            }`}>
-              <div className="font-bold mb-0.5">Camera Mapping Status &amp; Next Action:</div>
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-[11px] leading-relaxed flex-1 min-w-[280px]">
-                  {m.coveragePct !== null && m.coveragePct < m.target
-                    ? `Coverage is currently below your ${m.target}% target. In the Camera Map screen, adjust camera angles or click Auto-Solve (≥95%), then click Confirm Camera Mapping to update this report.`
-                    : 'Your camera layout satisfies all safety coverage targets. Re-verify after any facility equipment reconfiguration.'}
-                </p>
-                <button
-                  onClick={handleModifyCameraMapping}
-                  className="no-print px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
-                >
-                  <CameraIcon className="w-3.5 h-3.5" />
-                  Modify Cameras in Map →
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-200 pt-2 mt-4 flex items-center justify-between text-[10px] text-slate-400">
-            <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
-            <span className="font-bold">Page 4 of 5</span>
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* PAGE 5: CAMERA FLEET SCHEDULE & HARDWARE SUMMARY                          */}
+        {/* PAGE 3: CAMERA FLEET SCHEDULE, HARDWARE & ENGINEERING SIGN-OFF             */}
         {/* ========================================================================= */}
         <div className="report-page w-full max-w-[860px] bg-white rounded-xl border border-slate-200 shadow-sm p-6 sm:p-8 print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:min-h-0 print:h-auto print:overflow-visible print:break-after-avoid flex flex-col justify-between">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-wide text-blue-950 border-b-2 border-blue-600 pb-1.5 mb-3 flex items-center gap-1.5">
               <CameraIcon className="w-4 h-4 text-blue-600" />
-              Camera Placement Schedule
+              Camera Placement Schedule &amp; Field Specifications
             </h2>
 
             {/* Camera Schedule Table */}
@@ -705,12 +558,12 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                     const coordStr = `X: ${(c.x * fl).toFixed(1)}m, Y: ${(c.y * fw).toFixed(1)}m`;
                     return (
                       <tr key={c.id || i} className="border-b border-slate-200 even:bg-slate-50/60">
-                        <td className="p-1.5 font-bold text-blue-900">CAM-{String(i + 1).padStart(2, '0')}</td>
+                        <td className="p-1.5 font-bold text-blue-900 whitespace-nowrap">CAM-{String(i + 1).padStart(2, '0')}</td>
                         <td className="p-1.5 text-slate-800 font-bold">{cleanZoneName(c.building_name)}</td>
                         <td className="p-1.5 text-slate-600">{mountWords[c.mount_type || 'wall-v'] || 'Wall / Ceiling Mount'}</td>
-                        <td className="p-1.5 text-slate-700">{(c.height_m || 4.2).toFixed(1)} m</td>
-                        <td className="p-1.5 text-slate-600">{compassWord(c.orientation_degrees || 0)}</td>
-                        <td className="p-1.5">
+                        <td className="p-1.5 text-slate-700 whitespace-nowrap">{(c.height_m || 4.2).toFixed(1)} m</td>
+                        <td className="p-1.5 text-slate-600 whitespace-nowrap">{compassWord(c.orientation_degrees || 0)}</td>
+                        <td className="p-1.5 whitespace-nowrap">
                           <span className="font-mono text-[9px] font-bold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200">
                             {coordStr}
                           </span>
@@ -722,18 +575,18 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
               </table>
             </div>
 
-            {/* Hardware & Equipment in Simple Terms */}
-            <h2 className="text-sm font-bold uppercase tracking-wide text-blue-950 border-b-2 border-blue-600 pb-1.5 mb-3">
-              Hardware &amp; Equipment in Simple Terms
+            {/* Hardware & Infrastructure Sizing */}
+            <h2 className="text-sm font-bold uppercase tracking-wide text-blue-950 border-b-2 border-blue-600 pb-1.5 mb-2">
+              Hardware &amp; Infrastructure Sizing
             </h2>
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 mb-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <div className="font-bold text-slate-900 flex items-center gap-1.5">
                     📷 {camCount} Weatherproof AI Cameras
                   </div>
                   <p className="text-[11px] text-slate-600 mt-0.5">
-                    Equipped with automatic night vision and wide-angle lenses tailored to room dimensions.
+                    High-Definition IP sensors with IR night vision and wide-angle lenses tailored to room geometry.
                   </p>
                 </div>
                 <div>
@@ -741,7 +594,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                     💾 {storage30dTb} TB Video Storage
                   </div>
                   <p className="text-[11px] text-slate-600 mt-0.5">
-                    Dedicated hard drive capacity keeping 30 full days of continuous high-definition recording.
+                    Dedicated RAID storage capacity maintaining 30 full days of continuous high-definition recording.
                   </p>
                 </div>
                 <div>
@@ -749,7 +602,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                     🔌 {switches} PoE Network Switch{switches > 1 ? 'es' : ''}
                   </div>
                   <p className="text-[11px] text-slate-600 mt-0.5">
-                    Supplies power and data over standard network cables (up to 24 cameras per switch).
+                    Gigabit PoE+ supplying power and data over standard network cabling (up to 24 ports per switch).
                   </p>
                 </div>
                 <div>
@@ -757,7 +610,7 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
                     🖥️ 1 Smart Video Analytics Station
                   </div>
                   <p className="text-[11px] text-slate-600 mt-0.5">
-                    Processes video feeds locally in real time for instant hazard and PPE alerts without cloud delay.
+                    Edge AI server running local inference for instant hazard, PPE, and collision alerts without cloud delay.
                   </p>
                 </div>
               </div>
@@ -767,35 +620,81 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
             <h2 className="text-sm font-bold uppercase tracking-wide text-blue-950 border-b-2 border-blue-600 pb-1.5 mb-2">
               Site Installation &amp; Verification Checklist
             </h2>
-            <table className="w-full border-collapse text-left text-[11px]">
+            <table className="w-full border-collapse text-left text-[11px] mb-4">
               <tbody>
                 <tr className="border-b border-slate-200">
                   <td className="p-1.5 font-bold text-slate-400 w-[5%]">[ &nbsp; ]</td>
                   <td className="p-1.5 text-slate-700 w-[45%]">
-                    <strong>Camera Mount Verification</strong>: Walk site to confirm wall/ceiling brackets match layout coordinates.
+                    <strong>Mount Verification</strong>: Confirm wall/ceiling brackets match blueprint coordinates.
                   </td>
                   <td className="p-1.5 font-bold text-slate-400 w-[5%]">[ &nbsp; ]</td>
                   <td className="p-1.5 text-slate-700 w-[45%]">
-                    <strong>Sightline Check</strong>: Verify no new tall racks or pallets obstruct designated camera cones.
+                    <strong>Sightline Clearance</strong>: Verify no new tall racks or pallets obstruct camera cones.
                   </td>
                 </tr>
                 <tr>
                   <td className="p-1.5 font-bold text-slate-400">[ &nbsp; ]</td>
                   <td className="p-1.5 text-slate-700">
-                    <strong>Network Cable Runs</strong>: Ensure cable distances from switch to cameras remain within 100 meters.
+                    <strong>Network Cable Runs</strong>: Ensure cable distances from switch to cameras remain &lt;100m.
                   </td>
                   <td className="p-1.5 font-bold text-slate-400">[ &nbsp; ]</td>
                   <td className="p-1.5 text-slate-700">
-                    <strong>Live Angle Calibration</strong>: Fine-tune pan and tilt on live monitor to eliminate ground blind spots.
+                    <strong>Live Angle Calibration</strong>: Fine-tune pan/tilt on monitor to eliminate ground blind spots.
                   </td>
                 </tr>
               </tbody>
             </table>
+
+            {/* Official Engineering Sign-off & Client Approval Block */}
+            <h2 className="text-sm font-bold uppercase tracking-wide text-blue-950 border-b-2 border-blue-600 pb-1.5 mb-2">
+              Official Engineering Sign-Off &amp; Client Approval
+            </h2>
+            <div className="border border-slate-200 rounded-lg bg-slate-50 p-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs">
+                <div>
+                  <div className="font-extrabold text-blue-950 uppercase tracking-wide text-[10px]">
+                    Lead Vision Systems Engineer
+                  </div>
+                  <div className="text-slate-500 text-[10px] mt-0.5">
+                    Certified PE / Autonomous Systems Architect
+                  </div>
+                  <div className="border-b border-dashed border-slate-400 my-3"></div>
+                  <div className="flex justify-between text-slate-600 text-[10px]">
+                    <span>Signed: <strong>Lead Vision Engineer</strong></span>
+                    <span>Date: <strong>{dateStr}</strong></span>
+                  </div>
+                  <div className="mt-2">
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[9.5px]">
+                      ✔ APPROVED FOR IMPLEMENTATION
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="font-extrabold text-blue-950 uppercase tracking-wide text-[10px]">
+                    Client Operations Representative
+                  </div>
+                  <div className="text-slate-500 text-[10px] mt-0.5">
+                    Facility Operations Director • {company}
+                  </div>
+                  <div className="border-b border-dashed border-slate-400 my-3"></div>
+                  <div className="flex justify-between text-slate-600 text-[10px]">
+                    <span>Client Signature: __________________</span>
+                    <span>Acceptance Date: ________</span>
+                  </div>
+                  <div className="mt-2">
+                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-bold text-[9.5px]">
+                      ✔ SCOPE &amp; TARGET SPECIFIED
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="border-t border-slate-200 pt-2 mt-4 flex items-center justify-between text-[10px] text-slate-400">
-            <span>TechHub Plan Vision • Multi-Building Computer Vision Engineering System</span>
-            <span className="font-bold">Page 5 of 5</span>
+            <span>Plan Vision • Multi-Building Computer Vision Engineering System</span>
+            <span className="font-bold">Page 3 of 3</span>
           </div>
         </div>
 

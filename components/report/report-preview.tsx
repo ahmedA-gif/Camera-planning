@@ -167,21 +167,21 @@ export function ReportPreview({ project, onPrint, onExportJSON }: ReportPreviewP
   };
 
   return (
-    <div className="report-container flex flex-1 min-h-0 bg-slate-100 flex-col overflow-y-auto print:bg-white print:overflow-visible font-sans">
+    <div className="report-container flex flex-1 min-h-0 bg-background text-foreground flex-col overflow-y-auto print:bg-white print:overflow-visible font-sans">
       {/* Top Action Ribbon (Hidden when printing) */}
-      <div className="no-print sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+      <div className="no-print sticky top-0 z-20 bg-card/95 backdrop-blur-md border-b border-border px-6 py-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200">
+          <div className="p-2 rounded-xl bg-blue-500/10 text-primary border border-primary/20">
             <Building2 className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-slate-900 text-sm">{title}</h2>
-              <span className="px-2 py-0.5 text-[11px] font-bold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <h2 className="font-bold text-foreground text-sm">{title}</h2>
+              <span className="px-2 py-0.5 text-[11px] font-bold rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                 3-Page Executive Blueprint
               </span>
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {camCount} Cameras • {bldgs.length || 1} Building Zones • {m.coveragePct !== null ? `${m.coveragePct}% Floor Watched` : 'Coverage Verified'}
             </p>
           </div>

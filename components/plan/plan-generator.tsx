@@ -279,7 +279,7 @@ export function PlanGenerator({ project, onUpdate, onEditBrief, onSaveProject }:
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Brief Card */}
-      <section className="rounded-2xl border border-border bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-border bg-card p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex items-center gap-2">
@@ -356,7 +356,7 @@ export function PlanGenerator({ project, onUpdate, onEditBrief, onSaveProject }:
       {result && (
         <div className="space-y-6 animate-fade-in">
           {/* Header with Actions */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-white border border-border rounded-xl shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-card border border-border rounded-xl shadow-sm">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 p-2.5 bg-primary/10 rounded-xl text-primary">
                 <FileText className="w-6 h-6" />
@@ -407,7 +407,7 @@ export function PlanGenerator({ project, onUpdate, onEditBrief, onSaveProject }:
           </div>
 
           {/* Progress Bar & Telemetry */}
-          <div className="p-4 bg-white border border-border rounded-xl shadow-sm">
+          <div className="p-4 bg-card border border-border rounded-xl shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-semibold text-foreground">Generation Progress</span>
               <span className="text-sm font-bold text-primary">{completedCount}/{totalSections} sections</span>
@@ -464,7 +464,7 @@ export function PlanGenerator({ project, onUpdate, onEditBrief, onSaveProject }:
 
           {/* View Normalized Context (Structured + Collapsible Raw JSON) */}
           {result && !editingPlan && (
-            <div className="p-4 bg-white border border-border rounded-xl shadow-sm">
+            <div className="p-4 bg-card border border-border rounded-xl shadow-sm">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold flex items-center gap-2 text-sm text-foreground">
                   <Info className="w-4 h-4 text-primary" />
@@ -691,7 +691,7 @@ function NormalizedContextEditor({
   return (
     <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
       {Object.entries(context).map(([key, value]) => (
-        <div key={key} className="border border-border rounded-lg p-3.5 bg-white">
+        <div key={key} className="border border-border rounded-lg p-3.5 bg-card">
           <h4 className="font-semibold text-xs text-gray-700 mb-2 capitalize">{key.replace(/_/g, ' ')}</h4>
           {renderValue(key, value)}
         </div>
@@ -715,7 +715,7 @@ function ReportSectionCard({
 }) {
   return (
     <div 
-      className={`bg-white border rounded-xl transition-all shadow-sm ${
+      className={`bg-card border rounded-xl transition-all shadow-sm ${
         isExpanded ? 'border-primary ring-1 ring-primary/20 shadow-md' : 'border-border hover:border-primary/40'
       }`}
     >

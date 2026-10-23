@@ -461,7 +461,7 @@ export function ScenarioForm({
               <h3 className="font-semibold text-lg">Suggested use cases ({result.project.use_cases?.length || 0})</h3>
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {result.project.use_cases?.map(uc => (
-                  <div key={uc.id} className="p-3 border border-border rounded-lg bg-white">
+                  <div key={uc.id} className="p-3 border border-border rounded-lg bg-card">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium">{uc.name}</div>
@@ -585,8 +585,8 @@ export function ScenarioForm({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {result.project.cameras.map(cam => (
-                  <div key={cam.id} className="p-3 border border-border rounded-lg bg-white shadow-xs">
-                    <div className="font-medium text-slate-900">{cam.name}</div>
+                  <div key={cam.id} className="p-3 border border-border rounded-lg bg-card shadow-xs">
+                    <div className="font-medium text-foreground">{cam.name}</div>
                     <div className="text-sm text-muted-foreground mt-1 font-mono text-xs">
                       FOV: {cam.horizontal_fov_degrees}° • Range: {(cam.view_range * 100).toFixed(0)}% • {cam.resolution_width}x{cam.resolution_height}
                     </div>
@@ -603,7 +603,7 @@ export function ScenarioForm({
               <h3 className="font-semibold text-lg mb-2">Suggested Zones ({result.project.zones.length})</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {result.project.zones.map(zone => (
-                  <div key={zone.id} className="p-3 border border-border rounded-lg bg-white flex items-center gap-3">
+                  <div key={zone.id} className="p-3 border border-border rounded-lg bg-card flex items-center gap-3">
                     <div className="w-3 h-3 rounded" style={{ backgroundColor: zone.color }}></div>
                     <div>
                       <div className="font-medium">{zone.name}</div>

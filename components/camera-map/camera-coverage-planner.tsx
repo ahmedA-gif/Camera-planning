@@ -1144,21 +1144,21 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const selectedStats = selectedId != null ? result.cameras.find(c => c.id === selectedId) : null;
 
   return (
-    <div className="flex flex-col h-full bg-slate-50/60 text-slate-900 font-sans overflow-hidden">
+    <div className="flex flex-col h-full bg-background text-foreground font-sans overflow-hidden">
       {/* Top Header Control Bar */}
-      <div className="flex items-center justify-between flex-wrap gap-3 px-6 py-3.5 border-b border-border bg-white shadow-xs shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-3 px-6 py-3.5 border-b border-border bg-card shadow-xs shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
             <Camera className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-base font-bold tracking-tight text-slate-900 flex items-center gap-2">
+            <div className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
               Camera <span className="text-primary">Coverage Planner</span>
               <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-primary/20 bg-primary/10 text-primary">
                 EN 62676-4 Standard
               </span>
               {project?.business_description && (
-                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-slate-200 bg-slate-100 text-slate-600 hidden sm:inline-block">
+                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-border bg-muted text-muted-foreground hidden sm:inline-block">
                   Scenario-Linked
                 </span>
               )}
@@ -2519,7 +2519,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
           
           {/* Top KPI Metrics Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-            <div className="bg-white border border-border rounded-xl p-4 shadow-xs">
+            <div className="bg-card border border-border rounded-xl p-4 shadow-xs">
               <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Cameras</div>
               <div className="text-2xl font-mono font-bold text-primary leading-none">
                 {result.metrics.cameras}
@@ -2527,9 +2527,9 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
               <div className="text-xs text-muted-foreground mt-1.5">active mount positions</div>
             </div>
 
-            <div className="bg-white border border-border rounded-xl p-4 shadow-xs">
+            <div className="bg-card border border-border rounded-xl p-4 shadow-xs">
               <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Coverage</div>
-              <div className="text-2xl font-mono font-bold text-emerald-600 leading-none">
+              <div className="text-2xl font-mono font-bold text-emerald-600 dark:text-emerald-400 leading-none">
                 {result.metrics.coveragePct.toFixed(1)}%
               </div>
               <div className="text-xs text-muted-foreground mt-1.5">
@@ -2537,9 +2537,9 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
               </div>
             </div>
 
-            <div className="bg-white border border-border rounded-xl p-4 shadow-xs">
+            <div className="bg-card border border-border rounded-xl p-4 shadow-xs">
               <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Blind Spot</div>
-              <div className="text-2xl font-mono font-bold text-rose-600 leading-none">
+              <div className="text-2xl font-mono font-bold text-rose-600 dark:text-rose-400 leading-none">
                 {result.metrics.blindPct.toFixed(1)}%
               </div>
               <div className="text-xs text-muted-foreground mt-1.5">
@@ -2547,9 +2547,9 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
               </div>
             </div>
 
-            <div className="bg-white border border-border rounded-xl p-4 shadow-xs">
+            <div className="bg-card border border-border rounded-xl p-4 shadow-xs">
               <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Efficiency</div>
-              <div className="text-2xl font-mono font-bold text-amber-600 leading-none">
+              <div className="text-2xl font-mono font-bold text-amber-600 dark:text-amber-400 leading-none">
                 {result.metrics.efficiency.toFixed(1)}%
               </div>
               <div className="text-xs text-muted-foreground mt-1.5">coverage / camera</div>

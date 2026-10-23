@@ -305,10 +305,10 @@ export function WorkflowEditor({ project, onUpdate }: WorkflowEditorProps) {
   };
 
   return (
-    <div className="relative flex flex-1 min-h-0 bg-white">
+    <div className="relative flex flex-1 min-h-0 bg-background text-foreground">
       {/* Node Palette */}
       {showPalette && (
-        <div className="w-64 bg-white border-r border-border flex flex-col">
+        <div className="w-64 bg-card border-r border-border flex flex-col">
           <div className="p-3 border-b border-border flex items-center justify-between">
             <h3 className="font-semibold">Node Palette</h3>
             <button onClick={() => setShowPalette(false)} className="text-muted-foreground hover:text-foreground p-1">
@@ -419,7 +419,7 @@ export function WorkflowEditor({ project, onUpdate }: WorkflowEditorProps) {
 
       {/* Properties Panel */}
       {selectedNode && (
-        <div className="w-80 bg-white border-l border-border p-4 overflow-y-auto">
+        <div className="w-80 bg-card border-l border-border p-4 overflow-y-auto">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Node Properties</h3>
             <button onClick={() => setSelectedNode(null)} className="text-muted-foreground hover:text-foreground">✕</button>

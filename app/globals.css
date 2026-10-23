@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *, .dark, .dark *));
 
 :root {
   color-scheme: light;
@@ -138,25 +139,175 @@ body, header, aside, main, footer, button, input, select, textarea {
   transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
-.dark .bg-white { background-color: var(--card) !important; }
-.dark .bg-gray-50 { background-color: #0b1220 !important; }
-.dark .bg-gray-100 { background-color: #111c33 !important; }
-.dark .text-gray-900, .dark .text-gray-800 { color: #edf3fc !important; }
-.dark .text-gray-700, .dark .text-gray-600 { color: #c4d0e0 !important; }
-.dark .text-gray-500, .dark .text-gray-400 { color: #8ea3c4 !important; }
-.dark .bg-amber-50 { background-color: #3b2d16 !important; }
-.dark .text-amber-700 { color: #fcd38d !important; }
-.dark .bg-green-100 { background-color: #143526 !important; }
-.dark .text-green-700 { color: #7be0a7 !important; }
-.dark input, .dark textarea, .dark select { color: var(--foreground); }
-.dark input:not([type="checkbox"]), .dark textarea, .dark select { background-color: #0e1628; }
-.dark .bg-gray-50\/70 { background-color: rgb(14 22 40 / 80%) !important; }
-.dark .workflow-node { background-color: #111c33 !important; color: #e8eff9; }
-.dark .node-details { color: #8ea3c4; }
-.dark .node-handle { border-color: #111c33 !important; }
+/* Universal Dark Mode Conversion Rules */
+.dark .bg-white {
+  background-color: var(--card) !important;
+}
+
+.dark .bg-white\/95,
+.dark .bg-white\/90,
+.dark .bg-white\/80,
+.dark .bg-white\/70,
+.dark .bg-white\/60,
+.dark .bg-white\/50 {
+  background-color: rgb(13 21 39 / 85%) !important;
+}
+
+/* Backgrounds in dark mode */
+.dark .bg-slate-50,
+.dark .bg-gray-50,
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/60,
+.dark .bg-gray-50\/70 {
+  background-color: var(--background) !important;
+}
+
+.dark .bg-slate-100,
+.dark .bg-gray-100 {
+  background-color: var(--surface) !important;
+}
+
+.dark .bg-slate-200,
+.dark .bg-slate-200\/60,
+.dark .bg-gray-200 {
+  background-color: var(--surface-2) !important;
+}
+
+.dark .bg-slate-300,
+.dark .bg-gray-300 {
+  background-color: #1e293b !important;
+}
+
+/* Text colors in dark mode - high-contrast legibility */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-black {
+  color: #f1f5f9 !important;
+}
+
+.dark .text-slate-700,
+.dark .text-slate-600,
+.dark .text-gray-700,
+.dark .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-slate-500,
+.dark .text-slate-400,
+.dark .text-gray-500,
+.dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+/* Borders in dark mode */
+.dark .border-slate-100,
+.dark .border-slate-200,
+.dark .border-slate-300,
+.dark .border-gray-100,
+.dark .border-gray-200,
+.dark .border-gray-300 {
+  border-color: var(--border) !important;
+}
+
+/* Form inputs, textareas, selects */
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark textarea,
+.dark select {
+  background-color: #0b1220 !important;
+  border-color: var(--border) !important;
+  color: #f1f5f9 !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Hover background states in dark mode */
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover {
+  background-color: var(--surface) !important;
+}
+
+.dark .hover\:bg-slate-50\/50:hover {
+  background-color: rgb(17 28 51 / 60%) !important;
+}
+
+.dark .hover\:text-slate-900:hover,
+.dark .hover\:text-slate-800:hover,
+.dark .hover\:text-black:hover {
+  color: #ffffff !important;
+}
+
+/* Alert banners and indicator pills */
+.dark .bg-amber-50 {
+  background-color: #2b1d07 !important;
+  border-color: #78350f !important;
+}
+.dark .text-amber-800,
+.dark .text-amber-900,
+.dark .text-amber-700 {
+  color: #fde68a !important;
+}
+
+.dark .bg-rose-50 {
+  background-color: #2c0910 !important;
+  border-color: #881337 !important;
+}
+.dark .text-rose-800,
+.dark .text-rose-900,
+.dark .text-rose-700 {
+  color: #fecdd3 !important;
+}
+
+.dark .bg-emerald-50,
+.dark .bg-green-50,
+.dark .bg-green-100 {
+  background-color: #062316 !important;
+  border-color: #065f46 !important;
+}
+.dark .text-emerald-800,
+.dark .text-emerald-900,
+.dark .text-emerald-700,
+.dark .text-green-800,
+.dark .text-green-900,
+.dark .text-green-700 {
+  color: #a7f3d0 !important;
+}
+
+.dark .bg-blue-50 {
+  background-color: #0c1e38 !important;
+  border-color: #1e3a8a !important;
+}
+.dark .text-blue-800,
+.dark .text-blue-900,
+.dark .text-blue-700 {
+  color: #bfdbfe !important;
+}
+
+.dark .workflow-node {
+  background-color: #111c33 !important;
+  color: #e8eff9;
+}
+.dark .node-details {
+  color: #8ea3c4;
+}
+.dark .node-handle {
+  border-color: #111c33 !important;
+}
 .dark .react-flow__controls button,
-.dark .react-flow__minimap { background-color: var(--card); color: var(--foreground); border-color: var(--border); }
-.dark .react-flow__controls button:hover { background-color: var(--muted); }
+.dark .react-flow__minimap {
+  background-color: var(--card);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+.dark .react-flow__controls button:hover {
+  background-color: var(--muted);
+}
 
 .rounded-xl.border, .rounded-2xl.border {
   box-shadow: 0 8px 24px rgb(31 52 86 / 5%);

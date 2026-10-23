@@ -168,21 +168,6 @@ export function ProjectHeader({
         )}
       </div>
 
-      {/* Center: Live Operational Telemetry Strip */}
-      <div className="hidden 2xl:flex items-center gap-3 mono-num text-[11px] text-muted-foreground border border-border/80 rounded-lg px-3 py-1.5 bg-surface/50">
-        <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
-          <LiveDot tone="success" /> ONLINE
-        </span>
-        <span className="text-border">|</span>
-        <span className="flex items-center gap-1">
-          <Activity className="w-3 h-3 text-cyan-500" /> 100% COVERAGE
-        </span>
-        <span className="text-border">|</span>
-        <span className="text-foreground/90 font-mono">
-          {clock || '--:--:--'}
-        </span>
-      </div>
-
       {/* Right: Actions, AI Generator & Blueprint Exports */}
       <div className="flex items-center gap-2 shrink-0">
         {/* Hero AI All-in-One Generator */}

@@ -1070,8 +1070,14 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
   let covered = 0;
   const chosen: number[] = [];
   const goal = Math.ceil((clamp(opts.targetPct, 1, 100) / 100) * U);
+  const isExact = typeof opts.exactCameras === 'number' && opts.exactCameras > 0;
+  const maxAllowed = isExact ? opts.exactCameras! : opts.maxCameras;
 
-  while ((covered < goal || chosen.length < targetRequired) && chosen.length < opts.maxCameras && chosen.length < cand.length) {
+  while (
+    (isExact ? chosen.length < opts.exactCameras! : (covered < goal || chosen.length < targetRequired)) &&
+    chosen.length < maxAllowed &&
+    chosen.length < cand.length
+  ) {
     let bestIdx = -1, bestGain = -1;
     for (let c = 0; c < sets.length; c++) {
       if (chosen.includes(c)) continue;
@@ -1094,7 +1100,7 @@ export function optimizeLayout(lens: LensSpec, site: SiteSpec, mode: DoriMode, o
   }
 
   // ---- prune redundant cameras (NEVER prune below user's targetRequired count) ----
-  if (!opts.exactCameras) {
+  if (!isExact) {
     for (let i = chosen.length - 1; i >= 0; i--) {
       if (chosen.length <= targetRequired) break;
       const s = sets[chosen[i]];

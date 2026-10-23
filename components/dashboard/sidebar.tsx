@@ -108,21 +108,13 @@ export function Sidebar({
     <aside 
       className={`${collapsed ? 'w-16' : 'w-64'} h-full shrink-0 bg-card border-r border-border flex flex-col transition-[width] duration-200 select-none z-20 max-lg:h-auto max-lg:w-full max-lg:border-r-0 max-lg:border-b`}
     >
-      {/* Brand Header */}
+      {/* Brand Header - TechHub Company Logo */}
       <div className="flex items-center justify-between h-16 px-3.5 border-b border-border/80 bg-background/50">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 border border-primary/25 text-primary">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 leading-tight">
-              <span className="block truncate text-sm font-bold tracking-tight text-foreground">
-                Plan Vision <span className="text-[10px] text-primary font-mono font-normal">v2.4</span>
-              </span>
-              <span className="block truncate text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
-                CCTV & Spatial CAD
-              </span>
-            </div>
+        <div className="flex items-center gap-2 min-w-0">
+          {collapsed ? (
+            <img src="/techhub-logo.svg" alt="TechHub" className="h-8 w-8 rounded object-cover object-left" />
+          ) : (
+            <img src="/techhub-logo.svg" alt="TechHub Plan Vision" className="h-10 w-36 rounded object-contain" />
           )}
         </div>
         <button
@@ -249,29 +241,12 @@ export function Sidebar({
         })}
       </nav>
 
-      {/* Telemetry Status Footer */}
-      <div className="p-3 border-t border-border/80 bg-background/40 space-y-2">
-        {!collapsed ? (
-          <>
-            <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-surface/70 border border-border/60 text-[10px]">
-              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
-                <LiveDot tone="success" /> System Engine
-              </span>
-              <span className="mono-num text-muted-foreground">99.8% Online</span>
-            </div>
-            <div className="flex items-center justify-between px-2 py-1 rounded-md bg-surface/40 text-[10px] text-muted-foreground font-mono">
-              <span className="flex items-center gap-1">
-                <Cpu className="w-3 h-3 text-cyan-500" /> NPU ACCELERATED
-              </span>
-              <span>12ms</span>
-            </div>
-          </>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <LiveDot tone="success" />
-            <Cpu className="w-3.5 h-3.5 text-cyan-500" />
-          </div>
-        )}
+      {/* Footer */}
+      <div className="p-3 border-t border-border/80 bg-background/40">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="w-2 h-2 bg-emerald-500 rounded-full shrink-0" />
+          {!collapsed && <span>Local Storage Mode</span>}
+        </div>
       </div>
 
       {/* New Project Modal */}

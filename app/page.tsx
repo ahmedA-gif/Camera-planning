@@ -344,10 +344,6 @@ function DashboardContent() {
       case 'overview': {
         const cameraCount = project?.cameras.length || 0;
         const useCaseCount = project?.use_cases.length || 0;
-        const buildingCount = project?.buildings?.length || 1;
-        const totalBandwidth = Math.round(cameraCount * 6.4) || 28;
-        const totalStorage = (cameraCount * 0.95).toFixed(1);
-        const totalPower = cameraCount * 15;
 
         return (
           <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -424,113 +420,78 @@ function DashboardContent() {
                 </div>
               </div>
 
-              {/* 6-Card Precision Telemetry Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <ExecutiveKpiCard
-                  label="Camera Fleet"
-                  value={cameraCount}
-                  suffix="Units"
-                  sub="100% Online · 0 Blindspots"
-                  icon={Cctv}
-                  tone="success"
-                  trend={100}
-                />
-                <ExecutiveKpiCard
-                  label="Area Coverage"
-                  value={96.4}
-                  suffix="%"
-                  sub="IEC 62676-4 Validated"
-                  icon={Activity}
-                  tone="info"
-                  trend={96}
-                />
-                <ExecutiveKpiCard
-                  label="Blind-Spot Risk"
-                  value="0.0"
-                  suffix="%"
-                  sub="Zero Unmonitored Gates"
-                  icon={ShieldCheck}
-                  tone="success"
-                  trend={0}
-                />
-                <ExecutiveKpiCard
-                  label="Network Demand"
-                  value={totalBandwidth}
-                  suffix="Mbps"
-                  sub="H.265 Smart Codec"
-                  icon={Wifi}
-                  tone="info"
-                  trend={totalBandwidth}
-                />
-                <ExecutiveKpiCard
-                  label="NVR Retention"
-                  value={totalStorage}
-                  suffix="TB"
-                  sub="30-Day FIFO Pool"
-                  icon={HardDrive}
-                  tone="warning"
-                  trend={30}
-                />
-                <ExecutiveKpiCard
-                  label="PoE Power Load"
-                  value={totalPower}
-                  suffix="W"
-                  sub="802.3at Type 2 Class 4"
-                  icon={Zap}
-                  tone="success"
-                  trend={totalPower}
-                />
-              </div>
-
-              {/* Live Camera Matrix Section */}
-              <section className="space-y-3">
-                <SectionHeader
-                  title="Optical Node Telemetry & Spatial Grid"
-                  subtitle={`${cameraCount} active optical nodes mapped across ${buildingCount} facility building sector${buildingCount > 1 ? 's' : ''}`}
-                  badge={
-                    <StatusPill tone="info" dot>
-                      Live Feeds Active
-                    </StatusPill>
-                  }
-                  actions={
-                    <button
-                      onClick={() => setActiveView('camera-map')}
-                      className="text-xs font-semibold text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
-                    >
-                      <span>Interactive CAD Map</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  }
-                />
-
-                {cameraCount > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {project?.cameras.slice(0, 6).map((cam) => (
-                      <OverviewCameraTile
-                        key={cam.id}
-                        camera={cam}
-                        onInspect={() => setActiveView('camera-map')}
-                      />
-                    ))}
+              {/* Shared Project Brief Card (Real Project Data) */}
+              {project && (
+                <section className="panel p-6 space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-primary" />
+                        <h2 className="text-base font-bold text-foreground">Shared Project Brief</h2>
+                      </div>
+                      <p className="whitespace-pre-wrap text-xs sm:text-sm leading-relaxed text-muted-foreground">
+                        {project.business_description || 'Add your facility and computer vision idea once. Scenario analysis and the safety plan will both use this brief.'}
+                      </p>
+                      {project.requirements.length > 0 && (
+                        <ul className="mt-3 flex flex-wrap gap-2">
+                          {project.requirements.map((requirement, index) => (
+                            <li key={`${index}-${requirement}`} className="rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs text-primary font-medium">
+                              {requirement}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 shrink-0">
+                      <button 
+                        onClick={() => setActiveView('scenario')} 
+                        className="rounded-lg border border-border bg-surface px-3.5 py-2 text-xs font-semibold hover:bg-muted text-foreground transition-colors"
+                      >
+                        Edit Brief / Analyze
+                      </button>
+                      <button 
+                        onClick={() => setActiveView('plan-generator')} 
+                        disabled={project.business_description.trim().length < 20} 
+                        className="rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 transition-colors shadow-xs"
+                      >
+                        Generate Safety Plan
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <div className="panel p-8 text-center border-dashed">
-                    <Cctv className="w-10 h-10 text-muted-foreground mx-auto mb-2 opacity-50" />
-                    <p className="font-bold text-sm text-foreground">No cameras deployed in current project</p>
-                    <p className="text-xs text-muted-foreground mt-1 mb-4">
-                      Run the AI All-In-One design to automatically calculate optimal camera placements and angles.
+
+                  {project.use_cases.length > 0 && (
+                    <div className="border-t border-border/60 pt-4">
+                      <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        Scenario Analysis · {project.use_cases.length} Use Cases
+                      </h3>
+                      <div className="flex flex-wrap gap-2">
+                        {project.use_cases.map(useCase => (
+                          <span key={useCase.id} className="rounded-lg border border-border bg-surface/70 px-3 py-1.5 text-xs font-medium text-foreground">
+                            {useCase.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {project.safety_plan && (
+                    <p className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 pt-2 border-t border-border/40">
+                      <CheckCircle className="h-4 w-4" />
+                      Safety plan generated {project.safety_plan.metadata?.generated_at ? new Date(project.safety_plan.metadata.generated_at).toLocaleString() : 'and saved with this project'}.
                     </p>
-                    <button
-                      onClick={handleGenerateAllInOne}
-                      disabled={isGeneratingAllInOne || !project?.business_description?.trim()}
-                      className="px-4 py-2 bg-primary text-primary-foreground font-bold text-xs rounded-lg hover:opacity-90 transition-all inline-flex items-center gap-1.5"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Run AI Placement Solver</span>
-                    </button>
-                  </div>
-                )}
-              </section>
+                  )}
+                </section>
+              )}
+
+              {/* Real Project Telemetry Counts Grid */}
+              {project && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <StatCard title="Use Cases" value={project.use_cases.length} icon={<ListChecks className="w-5 h-5" />} color="blue" />
+                  <StatCard title="Cameras" value={project.cameras.length} icon={<Camera className="w-5 h-5" />} color="green" />
+                  <StatCard title="Zones" value={project.zones.length} icon={<MapPin className="w-5 h-5" />} color="purple" />
+                  <StatCard title="Workflow Nodes" value={project.workflow.nodes.length} icon={<GitBranch className="w-5 h-5" />} color="orange" />
+                </div>
+              )}
 
               {/* Multi-Stage Engineering Pipeline */}
               <section className="space-y-3">
@@ -877,128 +838,32 @@ export default function Dashboard() {
   );
 }
 
-function ExecutiveKpiCard({ 
-  label, 
+function StatCard({ 
+  title, 
   value, 
-  suffix, 
-  sub, 
-  icon: Icon, 
-  tone = 'info', 
-  trend = 4 
+  icon, 
+  color 
 }: { 
-  label: string; 
-  value: string | number; 
-  suffix?: string; 
-  sub: string; 
-  icon: React.ElementType; 
-  tone?: 'success' | 'danger' | 'warning' | 'info' | 'muted'; 
-  trend?: number; 
+  title: string; 
+  value: number; 
+  icon: React.ReactNode; 
+  color: 'blue' | 'green' | 'purple' | 'orange'; 
 }) {
+  const colorMap = {
+    blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+    green: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+    purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+    orange: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+  };
+
   return (
-    <div className="panel p-3.5 sm:p-4 transition-all hover:border-primary/40 hover:shadow-md group flex flex-col justify-between">
+    <div className="panel p-5 flex items-center justify-between transition-all hover:border-primary/40 group">
       <div>
-        <div className="flex items-start justify-between mb-2">
-          <span className="text-[10px] sm:text-[11px] font-bold tracking-wider text-muted-foreground uppercase">{label}</span>
-          <div className="p-1.5 rounded-md bg-surface text-primary group-hover:scale-105 transition-transform">
-            <Icon className="h-3.5 w-3.5" />
-          </div>
-        </div>
-        <div className="flex items-baseline gap-1.5 my-1">
-          <span className="mono-num text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-            {value}
-          </span>
-          {suffix && <span className="mono-num text-xs font-semibold text-muted-foreground">{suffix}</span>}
-        </div>
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{title}</p>
+        <p className="text-3xl font-extrabold tracking-tight mt-1 text-foreground mono-num">{value}</p>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-1 pt-2 border-t border-border/50">
-        <StatusPill tone={tone} className="truncate max-w-[120px]">{sub}</StatusPill>
-        <span className="mono-num flex items-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
-          <ArrowUpRight className="h-3 w-3" />
-          {trend}%
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function OverviewCameraTile({ 
-  camera, 
-  onInspect 
-}: { 
-  camera: any; 
-  onInspect: () => void; 
-}) {
-  const isOnline = camera.status !== 'offline';
-  return (
-    <div className="panel overflow-hidden group hover:border-primary/40 transition-all flex flex-col">
-      {/* CCTV Viewport with simulated computer vision bounding boxes */}
-      <div className="relative aspect-video w-full bg-slate-950 overflow-hidden flex items-center justify-center select-none">
-        {/* Subtle grid background */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:24px_24px] opacity-40" />
-        
-        {/* Scanline layer */}
-        <div className="scanline pointer-events-none absolute inset-0 z-10" />
-
-        {/* Optical Crosshair */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none">
-          <div className="w-10 h-10 border border-cyan-400 rounded-full" />
-          <div className="absolute w-16 h-[1px] bg-cyan-400" />
-          <div className="absolute h-16 w-[1px] bg-cyan-400" />
-        </div>
-
-        {/* Dynamic Simulated AI Bounding Boxes */}
-        <div className="absolute left-[20%] top-[24%] w-[28%] h-[52%] border-2 border-emerald-500 rounded-xs bg-emerald-500/10">
-          <span className="absolute -top-4 left-0 bg-emerald-500 text-slate-950 font-mono text-[8px] font-bold px-1 rounded-xs tracking-wider whitespace-nowrap">
-            Worker [98.4%]
-          </span>
-        </div>
-
-        <div className="absolute right-[16%] bottom-[18%] w-[34%] h-[46%] border-2 border-cyan-400 rounded-xs bg-cyan-400/10">
-          <span className="absolute -top-4 left-0 bg-cyan-400 text-slate-950 font-mono text-[8px] font-bold px-1 rounded-xs tracking-wider whitespace-nowrap">
-            Forklift [94.8%]
-          </span>
-        </div>
-
-        {/* Viewport HUD Overlays */}
-        <div className="absolute top-2 left-2 z-20 flex items-center gap-1.5">
-          <StatusPill tone={isOnline ? 'success' : 'danger'} dot>
-            {isOnline ? 'LIVE' : 'OFFLINE'}
-          </StatusPill>
-          <span className="mono-num px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-xs text-[9px] text-white font-mono border border-white/10">
-            {camera.name || camera.id}
-          </span>
-        </div>
-
-        <div className="absolute top-2 right-2 z-20 mono-num px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-xs text-[9px] text-cyan-300 font-mono border border-white/10">
-          25 FPS · {camera.resolution_width ? `${camera.resolution_width}x${camera.resolution_height}` : '1080p'}
-        </div>
-
-        <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center justify-between text-[9px] text-white/90 font-mono">
-          <span className="truncate max-w-[130px] bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded border border-white/10">
-            {camera.target_area || camera.building_name || 'Interior Sector'}
-          </span>
-          <span className="bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded border border-white/10 text-emerald-400 font-semibold">
-            {camera.lens_focal || '4.0mm'} · {camera.height_m || 4.6}m AFF
-          </span>
-        </div>
-      </div>
-
-      {/* Meta Footer */}
-      <div className="p-3 bg-surface/40 flex items-center justify-between gap-2 border-t border-border/60">
-        <div className="min-w-0">
-          <p className="text-xs font-bold truncate text-foreground">{camera.name}</p>
-          <p className="text-[10px] text-muted-foreground truncate">
-            {camera.mount_type || 'Ceiling Pendant Mount'} · IEC 62676-4 Validated
-          </p>
-        </div>
-        <button
-          onClick={onInspect}
-          className="shrink-0 p-1.5 rounded-md hover:bg-primary/10 text-primary transition-colors flex items-center gap-1 text-[11px] font-semibold"
-          title="Inspect node on 2D/3D Camera Map"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">CAD</span>
-        </button>
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${colorMap[color]} group-hover:scale-105 transition-transform`}>
+        {icon}
       </div>
     </div>
   );

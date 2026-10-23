@@ -875,10 +875,10 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
   const handleOptimize = () => {
     setIsOptimizing(true);
     setTimeout(() => {
-      const targetReqCount = cameraCount || initialFacility.count;
+      const targetReqCount = poses.length || cameraCount || initialFacility.count || 4;
       const opt = optimizeLayout(lens, site, mode, { 
         targetPct: project?.detection_coverage_target || 95, 
-        maxCameras: Math.max(60, targetReqCount),
+        maxCameras: targetReqCount,
         minCameras: targetReqCount,
         exactCameras: targetReqCount
       });
@@ -2572,7 +2572,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
                 <span className="font-medium">Only {result.metrics.blindPct.toFixed(1)}% blind spots remain. Adding 1 camera or widening HFOV fills the gap.</span>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={handleOptimize} className="underline font-bold text-amber-900 hover:text-black">Auto-Solve</button>
+                <button onClick={handleOptimize} className="underline font-bold text-amber-900 hover:text-black">Auto-Solve ({poses.length} Cams)</button>
                 <button onClick={handleConfirmAndUpdateReports} className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition-colors">
                   Confirm &amp; Update Reports
                 </button>
@@ -2585,7 +2585,7 @@ export function CameraCoveragePlanner({ project, onApplyToProject, onClose }: Ca
                 <span className="font-medium">{result.metrics.blindPct.toFixed(1)}% coverage gap. Adjust camera mount angles or click Auto-Solve.</span>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={handleOptimize} className="underline font-bold text-rose-900 hover:text-black">Auto-Solve (≥95%)</button>
+                <button onClick={handleOptimize} className="underline font-bold text-rose-900 hover:text-black">Auto-Solve ({poses.length} Cams)</button>
                 <button onClick={handleConfirmAndUpdateReports} className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition-colors">
                   Confirm &amp; Update Reports
                 </button>
